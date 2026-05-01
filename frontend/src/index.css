@@ -1,0 +1,203 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Jost:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&family=Outfit:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translateY(-10px) rotate(0deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(100vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer-bg {
+  background: linear-gradient(90deg,
+      #f3f4f6 25%,
+      #e5e7eb 50%,
+      #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes liquid {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+
+.liquid-progress {
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  animation: liquid 2s infinite linear;
+}
+
+@keyframes pulse-scale {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.hover-premium {
+  @apply transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1;
+}
+
+.glass-premium {
+  @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-lg shadow-black/5;
+}
+
+
+:root {
+  /* Dynamic Theme Variables - Defaults to HRIS Brand */
+  --color-primary: #e55400;
+  --color-primary-light: color-mix(in srgb, var(--color-primary), #fff 90%);
+  --color-primary-dark: color-mix(in srgb, var(--color-primary), #000 20%);
+
+  --color-secondary: #ffda00;
+  --color-secondary-light: color-mix(in srgb, var(--color-secondary), #fff 90%);
+
+  /* Static Semantic Colors */
+  --color-success: #28a745;
+  --color-error: #dc3545;
+  --color-warning: #ffc107;
+  --color-info: #17a2b8;
+
+  --color-k-dark-grey: #333333;
+  --color-k-medium-grey: #888888;
+  --color-k-light-grey: #f5f5f5;
+  --color-k-white: #ffffff;
+}
+
+@theme {
+  /* Map CSS Variables to Tailwind Theme */
+  --color-primary: var(--color-primary);
+  --color-primary-light: var(--color-primary-light);
+  --color-primary-dark: var(--color-primary-dark);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-light: var(--color-secondary-light);
+
+  /* Legacy variable support to prevent breakages */
+  --color-k-orange: var(--color-primary);
+  --color-k-yellow: var(--color-secondary);
+  --color-korange: var(--color-primary);
+  --color-kyellow: var(--color-secondary);
+
+  --color-k-dark-grey: var(--color-k-dark-grey);
+  --color-k-medium-grey: var(--color-k-medium-grey);
+  --color-k-light-grey: var(--color-k-light-grey);
+  --color-k-white: var(--color-k-white);
+
+  --color-success: var(--color-success);
+  --color-error: var(--color-error);
+  --color-warning: var(--color-warning);
+  --color-info: var(--color-info);
+
+  /* Font Families */
+  --font-sans: Montserrat, system-ui, -apple-system, sans-serif;
+  --font-base: Montserrat, system-ui, -apple-system, sans-serif;
+  --font-heading: Jost, "Space Grotesk", system-ui, sans-serif;
+  --font-display: "Space Grotesk", Outfit, system-ui, sans-serif;
+  --font-accent: Outfit, Jost, system-ui, sans-serif;
+}
+
+@media print {
+
+  aside,
+  header,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  body,
+  #root,
+  html {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
