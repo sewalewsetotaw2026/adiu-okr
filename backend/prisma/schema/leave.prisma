@@ -1,0 +1,232 @@
+model LeaveType {
+  id                        Int                @id @default(autoincrement())
+  company_id                Int
+  name                      String             @db.VarChar(50)
+  code                      String             @db.VarChar(20)
+  default_allowance_days    Int
+  incremental_days_per_year Int?               @default(0)
+  incremental_period_years  Int?               @default(2)
+  max_accrual_limit         Int?
+  is_carry_over_allowed     Boolean?           @default(false)
+  carry_over_expiry_months  Int?
+  applicable_gender         String?            @default("All") @db.VarChar(10)
+  requires_attachment       Boolean?           @default(false)
+  is_paid                   Boolean?           @default(true)
+  is_calendar_days          Boolean?           @default(false)
+  is_accrual_based          Boolean?           @default(false)
+  accrual_frequency         String?            @default("DAILY") @db.VarChar(20)
+  accrual_divisor           Int?               @default(365)
+  created_at                DateTime?          @default(now())
+  updated_at                DateTime?          @default(now()) @updatedAt
+  leaveApplications         LeaveApplication[]
+  leaveBalances             LeaveBalance[]
+  leaveCashOuts             LeaveCashOut[]
+  company                   Company            @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_id, code])
+  @@index([company_id], map: "idx_leave_types_company")
+  @@map("leave_types")
+}
+
+model UnpaidLeaveUsage {
+  id          Int       @id @default(autoincrement())
+  employee_id String    @db.VarChar(20)
+  company_id  Int
+  fiscal_year Int
+  usage_count Int       @default(0)
+  created_at  DateTime? @default(now())
+  updated_at  DateTime? @default(now()) @updatedAt
+
+  @@unique([employee_id, company_id, fiscal_year])
+  @@index([employee_id], map: "idx_unpaid_leave_usage_employee")
+  @@map("unpaid_leave_usage")
+}
+
+model PublicHoliday {
+  id           Int       @id @default(autoincrement())
+  company_id   Int
+  name         String    @db.VarChar(100)
+  holiday_date DateTime  @db.Date
+  is_recurring Boolean?  @default(true)
+  created_at   DateTime? @default(now())
+  updated_at   DateTime? @default(now()) @updatedAt
+  company      Company   @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@index([company_id], map: "idx_public_holidays_company")
+  @@index([holiday_date], map: "idx_public_holidays_date")
+  @@map("public_holidays")
+}
+
+model LeaveBalance {
+  id                     Int       @id @default(autoincrement())
+  employee_id            String    @db.VarChar(20)
+  company_id             Int
+  leave_type_id          Int
+  fiscal_year            Int
+  total_entitlement      Decimal   @db.Decimal(5, 2)
+  used_days              Decimal?  @default(0) @db.Decimal(5, 2)
+  pending_days           Decimal?  @default(0) @db.Decimal(5, 2)
+  remaining_days         Decimal?  @db.Decimal(5, 2)
+  manual_adjustment_days Decimal?  @default(0) @db.Decimal(5, 2)
+  expiry_date            DateTime? @db.Date
+  created_at             DateTime? @default(now())
+  updated_at             DateTime? @default(now()) @updatedAt
+  employee               Employee  @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+  leaveType              LeaveType @relation(fields: [leave_type_id], references: [id], onDelete: Cascade)
+
+  @@unique([employee_id, leave_type_id, fiscal_year])
+  @@index([employee_id], map: "idx_leave_balances_employee")
+  @@index([company_id], map: "idx_leave_balances_company")
+  @@index([leave_type_id], map: "idx_leave_balances_leave_type")
+  @@index([fiscal_year], map: "idx_leave_balances_fiscal_year")
+  @@map("leave_balances")
+}
+
+model LeaveApplication {
+  id                    Int                @id @default(autoincrement())
+  employee_id           String             @db.VarChar(20)
+  company_id            Int
+  leave_type_id         Int
+  start_date            DateTime           @db.Date
+  end_date              DateTime           @db.Date
+  return_date           DateTime           @db.Date
+  requested_days        Decimal            @db.Decimal(5, 2)
+  reason                String?
+  attachment_url        String?
+  relief_officer_id     String?            @db.VarChar(20)
+  relief_company_id     Int?
+  is_start_half_day     Boolean?           @default(false)
+  is_end_half_day       Boolean?           @default(false)
+  current_status        String             @default("PENDING_SUPERVISOR") @db.VarChar(50)
+  cancellation_status   String?            @db.VarChar(50)
+  requested_return_date DateTime?          @db.Date
+  cancellation_reason   String?
+  created_at            DateTime?          @default(now())
+  updated_at            DateTime?          @default(now()) @updatedAt
+  employee              Employee           @relation("LeaveApplications", fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+  leaveType             LeaveType          @relation(fields: [leave_type_id], references: [id])
+  reliefOfficer         Employee?          @relation("ReliefOfficer", fields: [relief_officer_id, relief_company_id], references: [id, company_id])
+  approvalLogs          LeaveApprovalLog[]
+  leaveRecalls          LeaveRecall[]
+
+  @@index([employee_id], map: "idx_leave_applications_employee")
+  @@index([company_id], map: "idx_leave_applications_company")
+  @@index([leave_type_id], map: "idx_leave_applications_leave_type")
+  @@index([current_status], map: "idx_leave_applications_status")
+  @@index([start_date, end_date], map: "idx_leave_applications_dates")
+  @@map("leave_applications")
+}
+
+model LeaveApprovalLog {
+  id                  Int              @id @default(autoincrement())
+  application_id      Int
+  approver_id         String           @db.VarChar(20)
+  approver_company_id Int
+  approver_role       String           @db.VarChar(50)
+  action              String           @db.VarChar(20)
+  comments            String?
+  action_date         DateTime?        @default(now())
+  application         LeaveApplication @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  approver            Employee         @relation("LeaveApprover", fields: [approver_id, approver_company_id], references: [id, company_id])
+
+  @@index([application_id], map: "idx_leave_approval_logs_application")
+  @@index([approver_id], map: "idx_leave_approval_logs_approver")
+  @@index([action_date], map: "idx_leave_approval_logs_action_date")
+  @@map("leave_approval_logs")
+}
+
+model LeaveRecall {
+  id                     Int              @id @default(autoincrement())
+  leave_application_id   Int
+  recalled_by            String           @db.VarChar(20)
+  recalled_by_company_id Int
+  reason                 String
+  recall_date            DateTime         @db.Date
+  actual_return_date     DateTime?        @db.Date
+  status                 String?          @default("PENDING") @db.VarChar(20)
+  employee_response      String?
+  responded_at           DateTime?
+  days_restored          Decimal?         @db.Decimal(5, 2)
+  created_at             DateTime?        @default(now())
+  updated_at             DateTime?        @default(now()) @updatedAt
+  leaveApplication       LeaveApplication @relation(fields: [leave_application_id], references: [id], onDelete: Cascade)
+  recalledBy             Employee         @relation("RecalledBy", fields: [recalled_by, recalled_by_company_id], references: [id, company_id])
+
+  @@index([leave_application_id], map: "idx_leave_recalls_application")
+  @@index([recalled_by], map: "idx_leave_recalls_recalled_by")
+  @@index([status], map: "idx_leave_recalls_status")
+  @@map("leave_recalls")
+}
+
+model LeaveSettings {
+  id                                Int          @id @default(autoincrement())
+  company_id                        Int          @unique
+  saturday_half_day                 Boolean?     @default(true)
+  sunday_off                        Boolean?     @default(true)
+  fiscal_year_start_month           Int?         @default(1)
+  accrual_basis                     String?      @default("ANNIVERSARY") @db.VarChar(20)
+  require_ceo_approval_for_managers Boolean?     @default(true)
+  auto_approve_after_days           Int?
+  annual_leave_base_days            Int?         @default(16)
+  accrual_frequency                 String?      @default("DAILY") @db.VarChar(20)
+  accrual_divisor                   Int?         @default(365)
+  increment_period_years            Int?         @default(2)
+  increment_amount                  Int?         @default(1)
+  max_annual_leave_cap              Int?
+  enable_leave_expiry               Boolean?     @default(true)
+  expiry_notification_days          Int?         @default(30)
+  balance_notification_enabled      Boolean?     @default(true)
+  notification_channels             String?      @default("EMAIL") @db.VarChar(100)
+  enable_encashment                 Boolean?     @default(false)
+  encashment_salary_divisor         Int?         @default(30)
+  max_encashment_days               Int?
+  encashment_rounding               String?      @default("ROUND") @db.VarChar(10)
+  policy_effective_date             DateTime?    @default(now()) @db.Date
+  policy_version                    Int?         @default(1)
+  created_at                        DateTime?    @default(now())
+  updated_at                        DateTime?    @default(now()) @updatedAt
+  accrualLogs                       AccrualLog[]
+  company                           Company      @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@map("leave_settings")
+}
+
+model AccrualLog {
+  id                 Int           @id @default(autoincrement())
+  company_id         Int
+  employee_id        String        @db.VarChar(20)
+  leave_type_id      Int
+  accrual_date       DateTime      @db.Date
+  days_accrued       Decimal       @db.Decimal(6, 4)
+  cumulative_accrued Decimal       @db.Decimal(6, 2)
+  annual_entitlement Int
+  fiscal_year        Int
+  created_at         DateTime?     @default(now())
+  leaveSettings      LeaveSettings @relation(fields: [company_id], references: [company_id], onDelete: Cascade)
+
+  @@index([employee_id, leave_type_id, fiscal_year], map: "idx_accrual_log_employee_type_year")
+  @@index([accrual_date], map: "idx_accrual_log_date")
+  @@map("accrual_logs")
+}
+
+model LeaveCashOut {
+  id              Int       @id @default(autoincrement())
+  employee_id     String    @db.VarChar(20)
+  company_id      Int
+  leave_type_id   Int
+  fiscal_year     Int
+  days_cashed_out Decimal   @db.Decimal(5, 2)
+  cash_value      Decimal   @db.Decimal(12, 2)
+  monthly_salary  Decimal   @db.Decimal(12, 2)
+  salary_divisor  Int
+  status          String?   @default("PENDING") @db.VarChar(20)
+  approved_by     String?   @db.VarChar(20)
+  approved_at     DateTime?
+  created_at      DateTime? @default(now())
+  updated_at      DateTime? @default(now()) @updatedAt
+  employee        Employee  @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+  leaveType       LeaveType @relation(fields: [leave_type_id], references: [id])
+
+  @@index([employee_id, fiscal_year], map: "idx_cash_out_employee_year")
+  @@map("leave_cash_outs")
+}

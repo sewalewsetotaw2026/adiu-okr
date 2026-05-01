@@ -1,0 +1,229 @@
+{
+  "info": {
+    "_postman_id": "0b2f7868-9d8a-4569-9f2c-1e3dd1871d51",
+    "name": "Employee Management System API",
+    "description": "Complete production-grade collection covering every single endpoint in the Employee Management System backend.\n\n## Modules:\n- **Authentication**: Login, Password Reset\n- **User Management**: Users, Pending Approvals\n- **Employee Management**: Profile, Addresses, Phones, Education, History\n- **Employment & Job**: Employment Records, Departments, Job Titles\n- **Onboarding Workflow**: Step-by-step onboarding process\n- **Leave Management**: Settings, Types, Balances, Applications, Cash-Out, Recall, Holidays\n- **System**: Companies, Roles",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [ { "listen": "test", "script": { "exec": [ "if (pm.response.code === 200) {", "  const json = pm.response.json();", "  pm.environment.set('auth_token', json.token);", "  pm.environment.set('user_id', json.data.user.id);", "  pm.environment.set('company_id', json.data.user.company_id);", "  pm.environment.set('role_id', json.data.user.role_id);", "  if (json.data.user.employee_id) pm.environment.set('employee_id', json.data.user.employee_id);", "}" ], "type": "text/javascript" } } ],
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] } }
+        },
+        {
+          "name": "Forgot Password",
+          "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{admin_email}}\"\n}" }, "url": { "raw": "{{base_url}}/auth/forgotPassword", "host": ["{{base_url}}"], "path": ["auth", "forgotPassword"] } }
+        },
+        {
+          "name": "Reset Password",
+          "request": { "method": "PATCH", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"password\": \"NewPassword123!\"\n}" }, "url": { "raw": "{{base_url}}/auth/resetPassword/{{reset_token}}", "host": ["{{base_url}}"], "path": ["auth", "resetPassword", "{{reset_token}}"] } }
+        },
+        {
+          "name": "Update My Password",
+          "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"{{admin_password}}\",\n  \"newPassword\": \"UpdatedPassword123!\"\n}" }, "url": { "raw": "{{base_url}}/auth/updateMyPassword", "host": ["{{base_url}}"], "path": ["auth", "updateMyPassword"] } }
+        }
+      ]
+    },
+    {
+      "name": "User Management",
+      "item": [
+        { "name": "List Users", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/users?page=1&limit=20", "host": ["{{base_url}}"], "path": ["users"], "query": [ { "key": "page", "value": "1" }, { "key": "limit", "value": "20" } ] } } },
+        { "name": "Get User", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/users/{{user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{user_id}}"] } } },
+        { "name": "Create User", "event": [ { "listen": "test", "script": { "exec": [ "if (pm.response.code === 201) {", "  pm.environment.set('created_user_id', pm.response.json().data.user.id);", "}" ], "type": "text/javascript" } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"email\": \"newuser{{$randomInt}}@test.com\",\n  \"role\": \"Employee\",\n  \"employee\": {\n    \"fullName\": \"User {{$randomInt}}\",\n    \"gender\": \"Male\",\n    \"dateOfBirth\": \"1990-01-01\",\n    \"tinNumber\": \"{{$randomInt}}\",\n    \"employment\": {\n       \"employmentType\": \"Full Time\",\n       \"grossSalary\": 15000,\n       \"departmentId\": 1,\n       \"jobTitleId\": 1,\n       \"startDate\": \"2024-01-01\"\n    }\n  },\n  \"allowances\": [\n    {\n      \"allowance_type_id\": 1,\n      \"amount\": 2000,\n      \"effective_date\": \"2024-01-01\"\n    }\n  ]\n}" }, "url": { "raw": "{{base_url}}/users", "host": ["{{base_url}}"], "path": ["users"] } } },
+        { "name": "Update User", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"is_active\": false\n}" }, "url": { "raw": "{{base_url}}/users/{{created_user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{created_user_id}}"] } } },
+        { "name": "Delete User", "request": { "method": "DELETE", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/users/{{created_user_id}}", "host": ["{{base_url}}"], "path": ["users", "{{created_user_id}}"] } } },
+        { "name": "List Pending Users", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/users/pending", "host": ["{{base_url}}"], "path": ["users", "pending"] } } },
+        { "name": "Update Pending User", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"full_name\": \"Correction Name\"\n}" }, "url": { "raw": "{{base_url}}/users/pending/{{created_user_id}}", "host": ["{{base_url}}"], "path": ["users", "pending", "{{created_user_id}}"] } } },
+        { "name": "Approve Pending User", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/users/pending/{{created_user_id}}/approve", "host": ["{{base_url}}"], "path": ["users", "pending", "{{created_user_id}}", "approve"] } } }
+      ]
+    },
+    {
+      "name": "Employee Management",
+      "item": [
+        {
+          "name": "Core Details",
+          "item": [
+            { "name": "List Employees", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/employees", "host": ["{{base_url}}"], "path": ["employees"] } } },
+            { "name": "Get Employee", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/employees/{{employee_id}}", "host": ["{{base_url}}"], "path": ["employees", "{{employee_id}}"] } } },
+            { "name": "Create Employee", "event": [ { "listen": "test", "script": { "exec": [ "if (pm.response.code === 201) pm.environment.set('employee_id', pm.response.json().data.employee.id);" ], "type": "text/javascript" } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"EMP-{{$timestamp}}\",\n  \"full_name\": \"Employee {{$randomInt}}\",\n  \"gender\": \"Female\",\n  \"date_of_birth\": \"1992-05-20\"\n}" }, "url": { "raw": "{{base_url}}/employees", "host": ["{{base_url}}"], "path": ["employees"] } } },
+            { "name": "Update Employee", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"place_of_work\": \"Branch 2\"\n}" }, "url": { "raw": "{{base_url}}/employees/{{employee_id}}", "host": ["{{base_url}}"], "path": ["employees", "{{employee_id}}"] } } },
+            { "name": "Delete Employee", "request": { "method": "DELETE", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/employees/{{employee_id}}", "host": ["{{base_url}}"], "path": ["employees", "{{employee_id}}"] } } }
+          ]
+        },
+        {
+          "name": "Addresses",
+          "item": [
+            { "name": "Get All (Employee)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/addresses/employee/{{employee_id}}", "host": ["{{base_url}}"], "path": ["addresses", "employee", "{{employee_id}}"] } } },
+            { "name": "Create Address", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"address_type\": \"Current\",\n  \"city\": \"Addis Ababa\",\n  \"sub_city\": \"Bole\"\n}" }, "url": { "raw": "{{base_url}}/addresses", "host": ["{{base_url}}"], "path": ["addresses"] } } },
+            { "name": "Create Bulk Addresses", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"addresses\": [\n    { \"employee_id\": \"{{employee_id}}\", \"address_type\": \"Permanent\", \"city\": \"Adama\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/addresses/bulk", "host": ["{{base_url}}"], "path": ["addresses", "bulk"] } } },
+            { "name": "Update Address", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"woreda\": \"03\"\n}" }, "url": { "raw": "{{base_url}}/addresses/1", "host": ["{{base_url}}"], "path": ["addresses", "1"] } } },
+            { "name": "Delete Address", "request": { "method": "DELETE", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/addresses/1", "host": ["{{base_url}}"], "path": ["addresses", "1"] } } }
+          ]
+        },
+        {
+          "name": "Phones",
+          "item": [
+            { "name": "Get All (Employee)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/phones/employee/{{employee_id}}", "host": ["{{base_url}}"], "path": ["phones", "employee", "{{employee_id}}"] } } },
+            { "name": "Create Phone", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"phone_number\": \"0911223344\",\n  \"phone_type\": \"Private\",\n  \"is_primary\": true\n}" }, "url": { "raw": "{{base_url}}/phones", "host": ["{{base_url}}"], "path": ["phones"] } } }
+          ]
+        },
+        {
+          "name": "Education",
+          "item": [
+            { "name": "Get All (Employee)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/educations/employee/{{employee_id}}", "host": ["{{base_url}}"], "path": ["educations", "employee", "{{employee_id}}"] } } },
+            { "name": "Create Education", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"education_level_id\": 1,\n  \"field_of_study_id\": 1,\n  \"institution_id\": 1,\n  \"program_type\": \"Regular\",\n  \"start_date\": \"2015-09-01\",\n  \"end_date\": \"2019-07-01\"\n}" }, "url": { "raw": "{{base_url}}/educations", "host": ["{{base_url}}"], "path": ["educations"] } } }
+          ]
+        },
+        {
+          "name": "Certifications",
+          "item": [
+            { "name": "Get All (Employee)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/certifications/employee/{{employee_id}}", "host": ["{{base_url}}"], "path": ["certifications", "employee", "{{employee_id}}"] } } },
+            { "name": "Create Certification", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"name\": \"PMP\",\n  \"issuing_organization\": \"PMI\",\n  \"issue_date\": \"2023-01-01\"\n}" }, "url": { "raw": "{{base_url}}/certifications", "host": ["{{base_url}}"], "path": ["certifications"] } } }
+          ]
+        },
+        {
+          "name": "Employment History",
+          "item": [
+            { "name": "Get All (Employee)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/history/employee/{{employee_id}}", "host": ["{{base_url}}"], "path": ["history", "employee", "{{employee_id}}"] } } },
+            { "name": "Create History", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"previous_company_name\": \"Old Corp\",\n  \"previous_job_title_text\": \"Junior Dev\",\n  \"start_date\": \"2020-01-01\",\n  \"end_date\": \"2022-01-01\"\n}" }, "url": { "raw": "{{base_url}}/history", "host": ["{{base_url}}"], "path": ["history"] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Onboarding Workflow",
+      "item": [
+        { "name": "1. Get Status", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/onboarding/status", "host": ["{{base_url}}"], "path": ["onboarding", "status"] } } },
+        { "name": "2. Personal Info", "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"date_of_birth\": \"1995-01-01\",\n  \"gender\": \"Female\",\n  \"tin_number\": \"99887766\",\n  \"pension_number\": \"55443322\"\n}" }, "url": { "raw": "{{base_url}}/onboarding/personal-info", "host": ["{{base_url}}"], "path": ["onboarding", "personal-info"] } } },
+        { "name": "3. Contact Info", "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"phone_number\": \"0911000000\",\n  \"sub_city\": \"Bole\",\n  \"woreda\": \"02\"\n}" }, "url": { "raw": "{{base_url}}/onboarding/contact-info", "host": ["{{base_url}}"], "path": ["onboarding", "contact-info"] } } },
+        { "name": "4. Education", "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"educations\": [\n    { \"education_level_id\": 1, \"field_of_study_id\": 1, \"institution_id\": 1, \"program_type\": \"Regular\", \"start_date\": \"2015-09-01\", \"end_date\": \"2019-06-30\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/onboarding/education", "host": ["{{base_url}}"], "path": ["onboarding", "education"] } } },
+        { "name": "5. Work Experience", "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"experiences\": [\n    { \"company_name\": \"StartUp Inc\", \"job_title\": \"Intern\", \"start_date\": \"2019-07-01\", \"end_date\": \"2020-01-01\" }\n  ]\n}" }, "url": { "raw": "{{base_url}}/onboarding/work-experience", "host": ["{{base_url}}"], "path": ["onboarding", "work-experience"] } } },
+        { "name": "6. Documents (Complete)", "request": { "method": "PATCH", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"cv_url\": \"http://example.com/cv.pdf\",\n  \"photo_url\": \"http://example.com/photo.jpg\"\n}" }, "url": { "raw": "{{base_url}}/onboarding/documents", "host": ["{{base_url}}"], "path": ["onboarding", "documents"] } } }
+      ]
+    },
+    {
+      "name": "Employment & Departments",
+      "item": [
+        {
+          "name": "Departments",
+          "item": [
+            { "name": "List", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/departments", "host": ["{{base_url}}"], "path": ["departments"] } } },
+            { "name": "Create", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Innovation Lab\"\n}" }, "url": { "raw": "{{base_url}}/departments", "host": ["{{base_url}}"], "path": ["departments"] } } }
+          ]
+        },
+        {
+          "name": "Job Titles",
+          "item": [
+            { "name": "List", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/job-titles", "host": ["{{base_url}}"], "path": ["job-titles"] } } },
+            { "name": "Create", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"title\": \"Principal Engineer\",\n  \"level\": \"Lead\"\n}" }, "url": { "raw": "{{base_url}}/job-titles", "host": ["{{base_url}}"], "path": ["job-titles"] } } }
+          ]
+        },
+        {
+          "name": "Employment Records",
+          "item": [
+            { "name": "List", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/employments", "host": ["{{base_url}}"], "path": ["employments"] } } },
+            { "name": "Create", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"employee_id\": \"{{employee_id}}\",\n  \"employment_type\": \"Full Time\",\n  \"start_date\": \"2024-01-01\",\n  \"gross_salary\": 30000,\n  \"department_id\": 1,\n  \"job_title_id\": 1\n}" }, "url": { "raw": "{{base_url}}/employments", "host": ["{{base_url}}"], "path": ["employments"] } } },
+            { "name": "Get", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/employments/{{employment_id}}", "host": ["{{base_url}}"], "path": ["employments", "{{employment_id}}"] } } },
+            { "name": "Assign Manager", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"managerId\": \"{{manager_employee_id}}\"\n}" }, "url": { "raw": "{{base_url}}/employments/manager/assign", "host": ["{{base_url}}"], "path": ["employments", "manager", "assign"] } } }
+          ]
+        },
+        {
+          "name": "Allowance Types",
+          "item": [
+            { "name": "List All", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/allowance-types", "host": ["{{base_url}}"], "path": ["allowance-types"] } } },
+            { "name": "Get By ID", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/allowance-types/1", "host": ["{{base_url}}"], "path": ["allowance-types", "1"] } } },
+            { "name": "Create", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Communication\",\n  \"description\": \"Mobile/Internet allowance\",\n  \"is_taxable\": false\n}" }, "url": { "raw": "{{base_url}}/allowance-types", "host": ["{{base_url}}"], "path": ["allowance-types"] } } },
+            { "name": "Update", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description\"\n}" }, "url": { "raw": "{{base_url}}/allowance-types/1", "host": ["{{base_url}}"], "path": ["allowance-types", "1"] } } },
+            { "name": "Delete", "request": { "method": "DELETE", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/allowance-types/1", "host": ["{{base_url}}"], "path": ["allowance-types", "1"] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Leave Management",
+      "item": [
+        {
+          "name": "Public Holidays",
+          "item": [
+            { "name": "List All", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/public-holidays", "host": ["{{base_url}}"], "path": ["public-holidays"] } } },
+            { "name": "List Upcoming", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/public-holidays/upcoming", "host": ["{{base_url}}"], "path": ["public-holidays", "upcoming"] } } },
+            { "name": "Create Holiday", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Victory Day\",\n  \"holiday_date\": \"2024-03-02\",\n  \"is_recurring\": true\n}" }, "url": { "raw": "{{base_url}}/public-holidays", "host": ["{{base_url}}"], "path": ["public-holidays"] } } },
+            { "name": "Seed Defaults", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/public-holidays/seed-defaults", "host": ["{{base_url}}"], "path": ["public-holidays", "seed-defaults"] } } }
+          ]
+        },
+        {
+          "name": "Leave Types",
+          "item": [
+            { "name": "List All", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-types", "host": ["{{base_url}}"], "path": ["leave-types"] } } },
+            { "name": "List Applicable (My Gender)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-types/applicable", "host": ["{{base_url}}"], "path": ["leave-types", "applicable"] } } },
+            { "name": "Create Type", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Emergency Leave\",\n  \"code\": \"EMERGENCY\",\n  \"default_allowance_days\": 5,\n  \"is_paid\": true\n}" }, "url": { "raw": "{{base_url}}/leave-types", "host": ["{{base_url}}"], "path": ["leave-types"] } } }
+          ]
+        },
+        {
+          "name": "Leave Settings",
+          "item": [
+            { "name": "Get Current", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-settings", "host": ["{{base_url}}"], "path": ["leave-settings"] } } },
+            { "name": "Update", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"enable_encashment\": true,\n  \"max_encashment_days\": 15,\n  \"annual_leave_base_days\": 18\n}" }, "url": { "raw": "{{base_url}}/leave-settings", "host": ["{{base_url}}"], "path": ["leave-settings"] } } }
+          ]
+        },
+        {
+          "name": "Leave Balances",
+          "item": [
+            { "name": "My Balance", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-balances/me", "host": ["{{base_url}}"], "path": ["leave-balances", "me"] } } },
+            { "name": "All Employees (Admin)", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-balances", "host": ["{{base_url}}"], "path": ["leave-balances"] } } },
+            { "name": "Accrue/Allocate (Manual)", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"leave_type_code\": \"ANNUAL\",\n  \"days\": 2\n}" }, "url": { "raw": "{{base_url}}/leave-balances/allocate/{{employee_id}}", "host": ["{{base_url}}"], "path": ["leave-balances", "allocate", "{{employee_id}}"] } } },
+            { "name": "Adjust Balance (Correction)", "request": { "method": "PUT", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"new_used_days\": 5,\n  \"reason\": \"Correction\"\n}" }, "url": { "raw": "{{base_url}}/leave-balances/1/adjust", "host": ["{{base_url}}"], "path": ["leave-balances", "1", "adjust"] } } }
+          ]
+        },
+        {
+          "name": "Leave Applications",
+          "item": [
+            { "name": "List All", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-applications", "host": ["{{base_url}}"], "path": ["leave-applications"] } } },
+            { "name": "My Applications", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-applications/me", "host": ["{{base_url}}"], "path": ["leave-applications", "me"] } } },
+            { "name": "Create Application", "event": [ { "listen": "test", "script": { "exec": [ "if (pm.response.code === 201) pm.environment.set('leave_application_id', pm.response.json().data.leaveApplication.id);" ], "type": "text/javascript" } } ], "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"leave_type_code\": \"ANNUAL\",\n  \"start_date\": \"2024-06-01\",\n  \"end_date\": \"2024-06-05\",\n  \"reason\": \"Annual Trip\"\n}" }, "url": { "raw": "{{base_url}}/leave-applications", "host": ["{{base_url}}"], "path": ["leave-applications"] } } },
+            { "name": "Approve", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"action\": \"APPROVED\",\n  \"comments\": \"OK\"\n}" }, "url": { "raw": "{{base_url}}/leave-applications/{{leave_application_id}}/approve", "host": ["{{base_url}}"], "path": ["leave-applications", "{{leave_application_id}}", "approve"] } } },
+            { "name": "Cancel", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-applications/{{leave_application_id}}/cancel", "host": ["{{base_url}}"], "path": ["leave-applications", "{{leave_application_id}}", "cancel"] } } }
+          ]
+        },
+        {
+          "name": "Leave Cash-Out",
+          "item": [
+            { "name": "Calculate", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-cash-out/calculate", "host": ["{{base_url}}"], "path": ["leave-cash-out", "calculate"] } } },
+            { "name": "Request", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"days_to_cash_out\": 5\n}" }, "url": { "raw": "{{base_url}}/leave-cash-out/request", "host": ["{{base_url}}"], "path": ["leave-cash-out", "request"] } } },
+            { "name": "My Requests", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-cash-out/my-requests", "host": ["{{base_url}}"], "path": ["leave-cash-out", "my-requests"] } } }
+          ]
+        },
+        {
+          "name": "Leave Recall",
+          "item": [
+            { "name": "Active Leaves", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/leave-recall/active-leaves", "host": ["{{base_url}}"], "path": ["leave-recall", "active-leaves"] } } },
+            { "name": "Initiate Recall", "request": { "method": "POST", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" }, { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\n  \"leave_application_id\": {{leave_application_id}},\n  \"recall_date\": \"2024-06-03\",\n  \"reason\": \"Emergency\"\n}" }, "url": { "raw": "{{base_url}}/leave-recall", "host": ["{{base_url}}"], "path": ["leave-recall"] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "System & Config",
+      "item": [
+        { "name": "Get Company Info", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/companies", "host": ["{{base_url}}"], "path": ["companies"] } } },
+        { "name": "Get Roles", "request": { "method": "GET", "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ], "url": { "raw": "{{base_url}}/roles", "host": ["{{base_url}}"], "path": ["roles"] } } }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000/api/v1" },
+    { "key": "admin_email", "value": "admin@kacha.com" },
+    { "key": "admin_password", "value": "password123" },
+    { "key": "auth_token", "value": "" },
+    { "key": "user_id", "value": "" },
+    { "key": "employee_id", "value": "" },
+    { "key": "created_user_id", "value": "" },
+    { "key": "leave_application_id", "value": "" },
+    { "key": "employment_id", "value": "" },
+    { "key": "manager_employee_id", "value": "" }
+  ]
+}

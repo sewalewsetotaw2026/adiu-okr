@@ -1,0 +1,719 @@
+model Company {
+  id                    Int                    @id @default(autoincrement())
+  company_code          String                 @unique @db.VarChar(20)
+  name                  String                 @db.VarChar(200)
+  logo_url              String?                @db.VarChar(255)
+  stamp_url             String?                @db.VarChar(500)
+  primary_color         String?                @default("#e55400") @db.VarChar(10)
+  secondary_color       String?                @default("#ffda00") @db.VarChar(10)
+  phone                 String?                @db.VarChar(20)
+  email                 String?                @db.VarChar(100)
+  is_active             Boolean?               @default(true)
+  is_deleted            Boolean                @default(false)
+  deleted_at            DateTime?
+  created_at            DateTime?              @default(now())
+  updated_at            DateTime?              @default(now()) @updatedAt
+  appRoles              AppRole[]
+  appUsers              AppUser[]
+  departments           Department[]
+  employees             Employee[]
+  employeeAddresses     EmployeeAddress[]      @relation("CompanyAddresses")
+  employeePhones        EmployeePhone[]        @relation("CompanyPhones")
+  employments           Employment[]
+  jobTitles             JobTitle[]
+  jobLevels             JobLevel[]
+  leaveSettings         LeaveSettings?
+  leaveTypes            LeaveType[]
+  publicHolidays        PublicHoliday[]
+  documentSignerConfigs DocumentSignerConfig[]
+  employeeSettings      EmployeeSettings?
+
+  @@map("company")
+}
+
+model Department {
+  id                   Int                   @id @default(autoincrement())
+  company_id           Int
+  name                 String                @db.VarChar(100)
+  department_code      String?               @db.VarChar(20)
+  company              Company               @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  employments          Employment[]
+  head_user_id         Int?
+  head                 AppUser?              @relation("DepartmentHead", fields: [head_user_id], references: [id])
+
+  @@unique([company_id, name])
+  @@unique([company_id, department_code])
+  @@unique([id, company_id], map: "ux_department_id_company")
+  @@index([company_id], map: "idx_dept_company")
+  @@map("department")
+}
+
+model JobTitle {
+  id                   Int                   @id @default(autoincrement())
+  company_id           Int
+  title                String                @db.VarChar(150)
+  level                String?               @db.VarChar(50)
+  appRoleJobTitle      AppRoleJobTitle?
+  newCareerEvents      EmployeeCareerEvent[] @relation("NewJobTitle")
+  previousCareerEvents EmployeeCareerEvent[] @relation("PreviousJobTitle")
+  employments          Employment[]
+  employmentHistories  EmploymentHistory[]
+  company              Company               @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_id, title, level])
+  @@unique([id, company_id], map: "ux_job_title_id_company")
+  @@index([company_id], map: "idx_jobtitle_company")
+  @@map("job_title")
+}
+
+model JobLevel {
+  id         Int     @id @default(autoincrement())
+  company_id Int
+  name       String  @db.VarChar(50)
+  company    Company @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_id, name])
+  @@map("job_level")
+}
+
+model Employee {
+  id                        String                              @id @db.VarChar(20)
+  company_id                Int
+  full_name                 String                              @db.VarChar(150)
+  gender                    String?                             @db.VarChar(10)
+  date_of_birth             DateTime?                           @db.Date
+  tin_number                String?                             @db.VarChar(20)
+  pension_number            String?                             @db.VarChar(20)
+  place_of_work             String?                             @default("Head Office") @db.VarChar(100)
+  created_at                DateTime?                           @default(now())
+  updated_at                DateTime?                           @default(now()) @updatedAt
+  profile_picture_url       String?                             @db.VarChar(500)
+  signature_url             String?                             @db.VarChar(500)
+  emergencyContacts         EmergencyContact[]
+  company                   Company                             @relation(fields: [company_id], references: [id])
+  addresses                 EmployeeAddress[]
+  approvedCareerEvents      EmployeeCareerEvent[]               @relation("EventApprover")
+  careerEvents              EmployeeCareerEvent[]
+  recordedCareerEvents      EmployeeCareerEvent[]               @relation("EventRecorder")
+  costSharing               EmployeeCostSharing[]
+  documents                 EmployeeDocument?
+  educations                EmployeeEducation[]
+  licensesAndCertifications EmployeeLicensesAndCertifications[]
+  phones                    EmployeePhone[]
+  resignations              EmployeeResignation[]
+  recordedResignations      EmployeeResignation[]               @relation("ResignationRecorder")
+  employments               Employment[]
+  managedEmployments        Employment[]                        @relation("Manager")
+  employmentHistories       EmploymentHistory[]
+  financialDetails          FinancialDetail[]
+  leaveApplications         LeaveApplication[]                  @relation("LeaveApplications")
+  reliefOfficerApplications LeaveApplication[]                  @relation("ReliefOfficer")
+  leaveApprovalLogs         LeaveApprovalLog[]                  @relation("LeaveApprover")
+  leaveBalances             LeaveBalance[]
+  leaveCashOuts             LeaveCashOut[]
+  leaveRecalls              LeaveRecall[]                       @relation("RecalledBy")
+  notifications             Notification[]                      @relation("NotificationRecipient")
+  appUsers                  AppUser[]
+  documentSignerConfigs     DocumentSignerConfig[]
+  celebrations              Celebration[]
+  celebrationMessages       CelebrationMessage[]
+  celebrationDismissals     CelebrationDismissal[]
+
+  @@unique([id, company_id], map: "ux_employee_id_company")
+  @@unique([company_id, tin_number], map: "ux_employee_tin_company")
+  @@index([company_id], map: "idx_employee_company")
+  @@index([company_id, gender], map: "idx_employee_gender")
+  @@index([company_id, date_of_birth], map: "idx_employee_dob")
+  @@map("employee")
+}
+
+model EmployeeDocument {
+  id                  Int      @id @default(autoincrement())
+  employee_id         String   @db.VarChar(20)
+  company_id          Int
+  cv                  String[] @default([])
+  certificates        String[] @default([])
+  photo               String[] @default([])
+  experienceLetters   String[] @default([])
+  taxForms            String[] @default([])
+  pensionForms        String[] @default([])
+  guarantee_letter    String[] @default([])
+  medical_certificate String[] @default([])
+  national_id         String[] @default([])
+  police_certificate  String[] @default([])
+  employee            Employee @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@unique([employee_id, company_id])
+  @@map("employee_document")
+}
+
+model EmployeeAddress {
+  id          Int       @id @default(autoincrement())
+  company_id  Int?
+  employee_id String    @db.VarChar(20)
+  region      String?   @db.VarChar(100)
+  city        String?   @db.VarChar(100)
+  sub_city    String?   @db.VarChar(100)
+  woreda      String?   @db.VarChar(20)
+  company     Company?  @relation("CompanyAddresses", fields: [company_id], references: [id], onDelete: Restrict)
+  employee    Employee? @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+
+  @@map("employee_address")
+}
+
+model EmployeePhone {
+  id           Int       @id @default(autoincrement())
+  company_id   Int?
+  employee_id  String?   @db.VarChar(50)
+  phone_number String    @db.VarChar(20)
+  phone_type   String?   @default("Private") @db.VarChar(20)
+  is_primary   Boolean?  @default(false)
+  company      Company?  @relation("CompanyPhones", fields: [company_id], references: [id], onDelete: Restrict)
+  employee     Employee? @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+
+  @@map("employee_phone")
+}
+
+model Employment {
+  id                         Int                   @id @default(autoincrement())
+  employee_id                String                @db.VarChar(20)
+  company_id                 Int
+  manager_id                 String?               @db.VarChar(20)
+  department_id              Int?
+  job_title_id               Int?
+  employment_type            String                @db.VarChar(20)
+  start_date                 DateTime              @db.Date
+  end_date                   DateTime?             @db.Date
+  gross_salary               Decimal?              @db.Decimal(12, 2)
+  basic_salary               Decimal?              @db.Decimal(12, 2)
+  cost_sharing_document_urls String[]              @default([])
+  cost_sharing_status        String?               @db.VarChar(20)
+  cost_sharing_amount        Decimal?              @db.Decimal(12, 2)
+  provider_company           String?               @db.VarChar(150)
+  contract_reference         String?               @db.VarChar(100)
+  probation_end_date         DateTime?             @db.Date
+  notes                      String?
+  is_active                  Boolean?              @default(true)
+  created_at                 DateTime              @default(now())
+  updated_at                 DateTime              @updatedAt
+  allowances                 EmployeeAllowance[]
+  newCareerEvents            EmployeeCareerEvent[] @relation("NewEmployment")
+  previousCareerEvents       EmployeeCareerEvent[] @relation("PreviousEmployment")
+  resignations               EmployeeResignation[]
+  company                    Company               @relation(fields: [company_id], references: [id])
+  department                 Department?           @relation(fields: [department_id], references: [id])
+  employee                   Employee              @relation(fields: [employee_id], references: [id])
+  jobTitle                   JobTitle?             @relation(fields: [job_title_id], references: [id])
+  manager                    Employee?             @relation("Manager", fields: [manager_id], references: [id])
+
+  @@index([company_id], map: "idx_employment_company")
+  @@index([employee_id], map: "idx_employment_employee")
+  @@index([manager_id], map: "idx_employment_manager")
+  @@index([department_id], map: "idx_employment_department")
+  @@index([job_title_id], map: "idx_employment_job_title")
+  @@index([is_active], map: "idx_employment_is_active")
+  @@index([company_id, is_active], map: "idx_employment_company_is_active")
+  @@index([company_id, start_date], map: "idx_employment_start_date")
+  @@index([company_id, cost_sharing_status], map: "idx_employment_cost_sharing")
+  @@map("employment")
+}
+
+model AllowanceType {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique @db.VarChar(100)
+  description String?
+  is_taxable  Boolean?            @default(true)
+  allowances  EmployeeAllowance[]
+
+  @@map("allowance_type")
+}
+
+model EmployeeAllowance {
+  id                Int            @id @default(autoincrement())
+  employment_id     Int?
+  allowance_type_id Int?
+  amount            Decimal        @db.Decimal(12, 2)
+  currency          String?        @default("ETB") @db.VarChar(3)
+  effective_date    DateTime       @default(now()) @db.Date
+  end_date          DateTime?      @db.Date
+  is_active         Boolean?       @default(true)
+  allowanceType     AllowanceType? @relation(fields: [allowance_type_id], references: [id])
+  employment        Employment?    @relation(fields: [employment_id], references: [id], onDelete: Restrict)
+
+  @@index([employment_id], map: "idx_emp_allowance_employment")
+  @@index([allowance_type_id], map: "idx_emp_allowance_type")
+  @@map("employee_allowance")
+}
+
+model EmploymentHistory {
+  id                    Int       @id @default(autoincrement())
+  employee_id           String    @db.VarChar(20)
+  previous_company_name String    @db.VarChar(150)
+  job_title_id          Int?
+  employment_type       String?   @db.VarChar(50)
+  previous_level        String?   @db.VarChar(50)
+  department_name       String?   @db.VarChar(100)
+  start_date            DateTime  @db.Date
+  end_date              DateTime? @db.Date
+  is_verified           Boolean?  @default(false)
+  notes                 String?
+  document_urls         String[]  @default([])
+  created_at            DateTime? @default(now())
+  updated_at            DateTime? @default(now()) @updatedAt
+  employee              Employee  @relation(fields: [employee_id], references: [id])
+  jobTitle              JobTitle? @relation(fields: [job_title_id], references: [id])
+
+  @@map("employment_history")
+}
+
+model SeparationReason {
+  id                      Int                   @id @default(autoincrement())
+  reason_category         String                @db.VarChar(50)
+  reason_detail           String                @db.VarChar(150)
+  requires_exit_interview Boolean?              @default(true)
+  resignations            EmployeeResignation[]
+
+  @@map("separation_reason")
+}
+
+model EmployeeResignation {
+  id                             Int               @id @default(autoincrement())
+  employment_id                  Int?
+  employee_id                    String?           @db.VarChar(50)
+  resignation_date               DateTime          @db.Date
+  last_working_date              DateTime?         @db.Date
+  reason_id                      Int?
+  new_company                    String?           @db.VarChar(150)
+  resigned_salary                Decimal?          @db.Decimal(12, 2)
+  termination_status             String?           @db.VarChar(50)
+  termination_payment            Decimal?          @db.Decimal(12, 2)
+  claims                         String?
+  employment_type_at_resignation String?           @db.VarChar(20)
+  position_level_at_resignation  String?           @db.VarChar(20)
+  notes                          String?
+  recorded_by                    String?           @db.VarChar(20)
+  created_at                     DateTime?         @default(now())
+  updated_at                     DateTime?         @default(now()) @updatedAt
+  employee                       Employee?         @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  employment                     Employment?       @relation(fields: [employment_id], references: [id])
+  reason                         SeparationReason? @relation(fields: [reason_id], references: [id])
+  recorder                       Employee?         @relation("ResignationRecorder", fields: [recorded_by], references: [id])
+
+  @@map("employee_resignation")
+}
+
+model EmployeeCareerEvent {
+  id                     Int         @id @default(autoincrement())
+  previous_employment_id Int?
+  new_employment_id      Int?
+  employee_id            String?     @db.VarChar(20)
+  event_date             DateTime    @db.Date
+  effective_date         DateTime    @db.Date
+  previous_job_title_id  Int?
+  new_job_title_id       Int?
+  previous_salary        Decimal?    @db.Decimal(12, 2)
+  new_salary             Decimal?    @db.Decimal(12, 2)
+  event_type             String      @db.VarChar(50)
+  justification          String?
+  approved_by            String?     @db.VarChar(20)
+  recorded_by            String?     @db.VarChar(20)
+  department_changed     Boolean?    @default(false)
+  notes                  String?
+  document_urls          String[]    @default([])
+  created_at             DateTime?   @default(now())
+  updated_at             DateTime?   @default(now()) @updatedAt
+  approver               Employee?   @relation("EventApprover", fields: [approved_by], references: [id], onDelete: SetNull)
+  employee               Employee?   @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  newEmployment          Employment? @relation("NewEmployment", fields: [new_employment_id], references: [id])
+  newJobTitle            JobTitle?   @relation("NewJobTitle", fields: [new_job_title_id], references: [id])
+  previousEmployment     Employment? @relation("PreviousEmployment", fields: [previous_employment_id], references: [id])
+  previousJobTitle       JobTitle?   @relation("PreviousJobTitle", fields: [previous_job_title_id], references: [id])
+  recorder               Employee?   @relation("EventRecorder", fields: [recorded_by], references: [id], onDelete: SetNull)
+
+  @@map("employee_career_event")
+}
+
+model EducationLevel {
+  id            Int                 @id @default(autoincrement())
+  name          String              @unique @db.VarChar(50)
+  display_order Int?                @default(0)
+  educations    EmployeeEducation[]
+
+  @@map("education_level")
+}
+
+model FieldOfStudy {
+  id         Int                 @id @default(autoincrement())
+  name       String              @unique @db.VarChar(100)
+  educations EmployeeEducation[]
+
+  @@map("field_of_study")
+}
+
+model Institution {
+  id          Int                 @id @default(autoincrement())
+  name        String              @unique @db.VarChar(150)
+  category    InstitutionCategory
+  is_verified Boolean?            @default(false)
+  educations  EmployeeEducation[]
+
+  @@map("institution")
+}
+
+model EmployeeEducation {
+  id                         Int                   @id @default(autoincrement())
+  employee_id                String?               @db.VarChar(20)
+  education_level_id         Int?
+  field_of_study_id          Int?
+  institution_id             Int?
+  program_type               ProgramType
+  has_cost_sharing           Boolean?
+  cost_sharing_document_urls String[]              @default([])
+  cost_sharing_details       String?
+  document_urls              String[]              @default([])
+  start_date                 DateTime?             @db.Date
+  end_date                   DateTime?             @db.Date
+  is_verified                Boolean?              @default(false)
+  is_current                 Boolean?              @default(false)
+  created_at                 DateTime?             @default(now())
+  updated_at                 DateTime?             @default(now()) @updatedAt
+  costSharing                EmployeeCostSharing[]
+  educationLevel             EducationLevel?       @relation(fields: [education_level_id], references: [id])
+  employee                   Employee?             @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  fieldOfStudy               FieldOfStudy?         @relation(fields: [field_of_study_id], references: [id])
+  institution                Institution?          @relation(fields: [institution_id], references: [id])
+
+  @@index([employee_id], map: "idx_emp_edu_employee")
+  @@map("employee_education")
+}
+
+model EmployeeCostSharing {
+  id                   Int                        @id @default(autoincrement())
+  employee_id          String                     @db.VarChar(20)
+  education_id         Int?
+  document_number      String?                    @db.VarChar(100)
+  issuing_institution  String?                    @db.VarChar(200)
+  issue_date           DateTime?                  @db.Date
+  declared_total_cost  Decimal?                   @db.Decimal(12, 2)
+  remaining_cost       Decimal?                   @db.Decimal(12, 2)
+  currency             String                     @default("ETB") @db.VarChar(3)
+  commitment_type      CostSharingCommitmentType?
+  regulation_reference String?                    @db.VarChar(150)
+  status               CostSharingStatus          @default(DECLARED)
+  payment_status       CostSharingPaymentStatus?  @default(UNPAID)
+  document_urls        String[]                   @default([])
+  remarks              String?
+  created_at           DateTime                   @default(now())
+  updated_at           DateTime                   @updatedAt
+  education            EmployeeEducation?         @relation(fields: [education_id], references: [id])
+  employee             Employee                   @relation(fields: [employee_id], references: [id])
+
+  @@index([employee_id])
+  @@index([status])
+  @@index([education_id])
+  @@map("employee_cost_sharing")
+}
+
+model EmployeeLicensesAndCertifications {
+  id                   Int       @id @default(autoincrement())
+  employee_id          String?   @db.VarChar(20)
+  name                 String    @db.VarChar(150)
+  issuing_organization String?   @db.VarChar(150)
+  issue_date           DateTime? @db.Date
+  expiration_date      DateTime? @db.Date
+  credential_id        String?   @db.VarChar(100)
+  credential_url       String?   @db.VarChar(255)
+  document_urls        String[]  @default([])
+  created_at           DateTime? @default(now())
+  updated_at           DateTime? @default(now()) @updatedAt
+  employee             Employee? @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+
+  @@map("employee_licenses_and_certifications")
+}
+
+model AppRole {
+  id               Int               @id @default(autoincrement())
+  company_id       Int
+  name             String            @db.VarChar(100)
+  description      String?
+  permissions      AppPermission[]
+  company          Company           @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  appRoleJobTitles AppRoleJobTitle[]
+  appUsers         AppUser[]
+
+  @@unique([company_id, name])
+  @@unique([id, company_id], map: "ux_app_role_id_company")
+  @@map("app_role")
+}
+
+model AppUser {
+  id                Int              @id @default(autoincrement())
+  company_id        Int
+  employee_id       String?          @unique @db.VarChar(20)
+  email             String           @unique @db.VarChar(150)
+  role_id           Int
+  password_hash     String
+  is_active         Boolean          @default(true)
+  onboarding_status OnboardingStatus @default(IN_PROGRESS)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @default(now()) @updatedAt
+  company           Company          @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  employee          Employee?        @relation(fields: [employee_id], references: [id])
+  role              AppRole          @relation(fields: [role_id], references: [id])
+  passwordResets    PasswordReset[]
+  employeeObjectives EmployeeObjective[]
+  headedDepartments Department[]     @relation("DepartmentHead")
+  krContributors    KrContributor[]
+
+  @@unique([company_id, employee_id])
+  @@index([company_id], map: "idx_app_user_company")
+  @@index([role_id], map: "idx_app_user_role")
+  @@map("app_user")
+}
+
+model PasswordReset {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  token_hash String   @db.VarChar(255)
+  expires_at DateTime
+  used       Boolean  @default(false)
+  created_at DateTime @default(now())
+  user       AppUser  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("password_reset")
+}
+
+model AppResource {
+  id          Int             @id @default(autoincrement())
+  code        String          @unique @db.VarChar(100)
+  name        String          @db.VarChar(150)
+  permissions AppPermission[]
+
+  @@map("app_resource")
+}
+
+model AppPermission {
+  id          Int         @id @default(autoincrement())
+  role_id     Int
+  resource_id Int
+  action      String      @db.VarChar(50)
+  resource    AppResource @relation(fields: [resource_id], references: [id], onDelete: Cascade)
+  role        AppRole     @relation(fields: [role_id], references: [id], onDelete: Cascade)
+
+  @@unique([role_id, resource_id, action])
+  @@index([role_id], map: "idx_app_permission_role")
+  @@index([resource_id], map: "idx_app_permission_resource")
+  @@map("app_permission")
+}
+
+model AppRoleJobTitle {
+  company_id   Int
+  job_title_id Int
+  role_id      Int
+  jobTitle     JobTitle @relation(fields: [job_title_id, company_id], references: [id, company_id], onDelete: Cascade)
+  appRole      AppRole  @relation(fields: [role_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@id([job_title_id, company_id])
+  @@map("app_role_job_title")
+}
+
+model Notification {
+  id                  Int       @id @default(autoincrement())
+  company_id          Int
+  recipient_id        String    @db.VarChar(20)
+  type                String    @db.VarChar(50)
+  title               String    @db.VarChar(255)
+  message             String
+  action_url          String?   @db.VarChar(255)
+  related_entity_type String?   @db.VarChar(50)
+  related_entity_id   Int?
+  is_read             Boolean   @default(false)
+  email_sent          Boolean   @default(false)
+  created_at          DateTime  @default(now())
+  read_at             DateTime?
+  recipient           Employee  @relation("NotificationRecipient", fields: [recipient_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@index([recipient_id, is_read], map: "idx_notification_recipient_read")
+  @@index([company_id, created_at], map: "idx_notification_company_created")
+  @@index([type], map: "idx_notification_type")
+  @@index([related_entity_type, related_entity_id], map: "idx_notification_entity")
+  @@map("notifications")
+}
+
+model EmergencyContact {
+  id           Int      @id @default(autoincrement())
+  employee_id  String   @db.VarChar(20)
+  company_id   Int
+  full_name    String   @db.VarChar(150)
+  relationship String   @db.VarChar(50)
+  phone_number String   @db.VarChar(20)
+  email        String?  @db.VarChar(150)
+  is_primary   Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  employee     Employee @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@index([employee_id])
+  @@map("emergency_contact")
+}
+
+model Bank {
+  id               Int               @id @default(autoincrement())
+  name             String            @unique @db.VarChar(150)
+  swift_code       String?           @db.VarChar(20)
+  is_active        Boolean           @default(true)
+  created_at       DateTime          @default(now())
+  financialDetails FinancialDetail[]
+
+  @@map("bank")
+}
+
+model FinancialDetail {
+  id                  Int      @id @default(autoincrement())
+  employee_id         String   @db.VarChar(20)
+  company_id          Int
+  bank_id             Int
+  account_number      String   @db.VarChar(50)
+  account_holder_name String   @db.VarChar(150)
+  is_primary          Boolean  @default(true)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+  bank                Bank     @relation(fields: [bank_id], references: [id])
+  employee            Employee @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@index([employee_id])
+  @@map("financial_detail")
+}
+
+model DocumentSignerConfig {
+  id                 Int      @id @default(autoincrement())
+  company_id         Int
+  document_type      String   @db.VarChar(50)
+  signer_employee_id String   @db.VarChar(20)
+  signer_title       String?  @db.VarChar(150)
+  updated_at         DateTime @updatedAt
+  employee           Employee @relation(fields: [signer_employee_id], references: [id], onDelete: Cascade)
+  company            Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_id, document_type])
+  @@map("document_signer_config")
+}
+
+enum InstitutionCategory {
+  Government
+  Private
+}
+
+enum ProgramType {
+  Regular
+  Extension
+  Weekend
+  Distance
+}
+
+enum CostSharingCommitmentType {
+  Full_Study
+  Partial_Study
+  Service_Obligation
+}
+
+enum CostSharingStatus {
+  DECLARED
+  VERIFIED
+  REJECTED
+  CLEARED
+}
+
+enum OnboardingStatus {
+  IN_PROGRESS
+  PENDING_APPROVAL
+  COMPLETED
+}
+
+enum CostSharingPaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  FULLY_PAID
+}
+
+// Celebration System Models
+enum CelebrationType {
+  BIRTHDAY
+  PROMOTION
+  ANNIVERSARY
+}
+
+enum CelebrationVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+model Celebration {
+  id               Int                    @id @default(autoincrement())
+  company_id       Int
+  employee_id      String                 @db.VarChar(20)
+  type             CelebrationType
+  visibility       CelebrationVisibility  @default(PUBLIC)
+  celebration_date DateTime               @db.Date
+  details          Json?
+  is_active        Boolean                @default(true)
+  created_at       DateTime               @default(now())
+  updated_at       DateTime               @updatedAt
+  employee         Employee               @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
+  messages         CelebrationMessage[]
+  dismissals       CelebrationDismissal[]
+
+  @@unique([employee_id, company_id, type, celebration_date])
+  @@index([company_id, celebration_date])
+  @@index([employee_id])
+  @@index([type])
+  @@map("celebration")
+}
+
+model CelebrationMessage {
+  id             Int         @id @default(autoincrement())
+  celebration_id Int
+  sender_id      String      @db.VarChar(20)
+  company_id     Int
+  message        String
+  is_reaction    Boolean     @default(false)
+  reaction_type  String?     @db.VarChar(10)
+  created_at     DateTime    @default(now())
+  celebration    Celebration @relation(fields: [celebration_id], references: [id], onDelete: Cascade)
+  sender         Employee    @relation(fields: [sender_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@index([celebration_id])
+  @@index([sender_id])
+  @@map("celebration_message")
+}
+
+model CelebrationDismissal {
+  id             Int         @id @default(autoincrement())
+  celebration_id Int
+  user_id        String      @db.VarChar(20)
+  company_id     Int
+  dismissed_at   DateTime    @default(now())
+  celebration    Celebration @relation(fields: [celebration_id], references: [id], onDelete: Cascade)
+  user           Employee    @relation(fields: [user_id, company_id], references: [id, company_id], onDelete: Cascade)
+
+  @@unique([celebration_id, user_id])
+  @@index([celebration_id])
+  @@map("celebration_dismissal")
+}
+
+model EmployeeSettings {
+  id                          Int      @id @default(autoincrement())
+  company_id                  Int      @unique
+  probation_period_days       Int      @default(90)
+  probation_notification_days Int      @default(5)
+  pension_age                 Int      @default(60)
+  pension_notification_days   Int      @default(30)
+  created_at                  DateTime @default(now())
+  updated_at                  DateTime @updatedAt
+  company                     Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@map("employee_settings")
+}
+
+// =============================================================================

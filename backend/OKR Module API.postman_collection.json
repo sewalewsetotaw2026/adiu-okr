@@ -1,0 +1,4196 @@
+{
+  "info": {
+    "_postman_id": "50363eb4-725a-4f8f-ad2e-57173599e60c",
+    "name": "OKR Module API Copy 2",
+    "description": "Kacha HRIS — OKR Module Sprint 1 APIs. Login first, then use the auto-saved token for all subsequent requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "50377917",
+    "_collection_link": "https://tesfamichael422-3924688.postman.co/workspace/Kacha-HRIS~bdec6c86-ba92-4a18-941d-6737a73096e0/collection/50377917-50363eb4-725a-4f8f-ad2e-57173599e60c?action=share&source=collection_link&creator=50377917"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.token) {",
+                  "  // Set in both scopes for maximum compatibility",
+                  "  pm.environment.set('token', res.token);",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Auth token saved to Environment and Collection variables.');",
+                  "}",
+                  "if (res.data && res.data.user && res.data.user.id) {",
+                  "  pm.environment.set('contributor_user_id', res.data.user.id);",
+                  "  pm.collectionVariables.set('contributor_user_id', res.data.user.id);",
+                  "  console.log('Contributor User ID saved:', res.data.user.id);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@kacha.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cycle Management",
+      "item": [
+        {
+          "name": "0. Create Default Metric Definition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 or 200', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                  "var jsonData = {}; try { jsonData = pm.response.json(); } catch (e) { jsonData = {}; }",
+                  "if (jsonData.data && jsonData.data.id) { pm.environment.set(\"metric_definition_id\", jsonData.data.id); }"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"FIN_GROWTH_METRIC\",\n  \"name\": \"Financial Growth Metric\",\n  \"category\": \"CURRENCY\",\n  \"unit_of_measure\": \"ETB\",\n  \"is_financial\": true,\n  \"supports_weighted_score\": true,\n  \"supports_value_rollup\": true,\n  \"allows_binary_completion\": false,\n  \"requires_target_value\": true,\n  \"description\": \"Standard metric for financial key results\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "metrics"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current Open Cycle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('cycle_id', res.data.id);",
+                  "  pm.collectionVariables.set('open_cycle_id', res.data.id);",
+                  "} else {",
+                  "  pm.collectionVariables.set('open_cycle_id', null);",
+                  "  // If no open cycle, we will fall back to using draft_cycle_id created next",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles/current",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles",
+                "current"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Cycles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Cycle",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('draft_cycle_id', res.data.id);",
+                  "  if (!pm.collectionVariables.get('open_cycle_id')) {",
+                  "    pm.collectionVariables.set('cycle_id', res.data.id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Q3 {{$timestamp}}\",\n  \"quarter_label\": \"Q3\",\n  \"start_date\": \"2026-01-01\",\n  \"end_date\": \"2026-03-31\",\n  \"description\": \"First quarter 2026 OKR cycle\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Cycle by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles/{{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles",
+                "{{cycle_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Cycle",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated Q1 2026 description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles/{{draft_cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles",
+                "{{draft_cycle_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Open Cycle",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles/{{draft_cycle_id}}/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles",
+                "{{draft_cycle_id}}",
+                "open"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "OKR Configuration",
+      "item": [
+        {
+          "name": "Get Configuration Menu",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/menu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "menu"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert Configuration Menu",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/menu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "menu"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planning_approach\": {\n    \"options\": [\"TOP_DOWN\", \"BOTTOM_UP\"],\n    \"selected\": \"TOP_DOWN\"\n  },\n  \"metric_configuration\": {\n    \"allowed_metric_definition_ids\": [{{metric_definition_id}}],\n    \"allow_financial_metrics\": true,\n    \"allow_non_financial_metrics\": true\n  },\n  \"planning_cadence_rules\": {\n    \"active_cadence\": \"WEEKLY\"\n  },\n  \"level_configuration\": {\n    \"CEO\": {\"allow_monthly\": true, \"allow_weekly\": false, \"allow_daily\": false},\n    \"DIRECTOR\": {\"allow_monthly\": true, \"allow_weekly\": false, \"allow_daily\": false},\n    \"MANAGER_TEAM_LEADER\": {\"allow_monthly\": true, \"allow_weekly\": true, \"allow_daily\": true},\n    \"EMPLOYEE\": {\"allow_monthly\": true, \"allow_weekly\": true, \"allow_daily\": true}\n  },\n  \"additional_configuration\": {\n    \"allowed_late_time\": {\n      \"annual_plan_minutes\": 120,\n      \"quarterly_plan_minutes\": 90,\n      \"monthly_plan_minutes\": 60,\n      \"weekly_plan_minutes\": 30,\n      \"daily_plan_minutes\": 15,\n      \"progress_update_minutes\": 10\n    },\n    \"confidence_level_mapping\": {\n      \"off_track_lte_percent\": 50,\n      \"on_track_gte_percent\": 60,\n      \"at_risk_lte_percent\": 40\n    },\n    \"allowed_objectives\": {\"min\": 2, \"max\": 6},\n    \"allowed_krs\": {\"min\": 2, \"max\": 6}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Raw Configuration Values",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Planning Approach",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/planning-approach",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "planning-approach"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Planning Approach",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/planning-approach",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "planning-approach"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"options\": [\"TOP_DOWN\", \"BOTTOM_UP\"],\n    \"selected\": \"TOP_DOWN\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Planning Cadence Rules",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/planning-cadence-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "planning-cadence-rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"active_cadence\": \"DAILY\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Level Configuration",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/level-configuration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "level-configuration"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"CEO\": {\"allow_monthly\": true, \"allow_weekly\": false, \"allow_daily\": false},\n    \"DIRECTOR\": {\"allow_monthly\": true, \"allow_weekly\": false, \"allow_daily\": false},\n    \"MANAGER_TEAM_LEADER\": {\"allow_monthly\": true, \"allow_weekly\": true, \"allow_daily\": true},\n    \"EMPLOYEE\": {\"allow_monthly\": true, \"allow_weekly\": true, \"allow_daily\": true}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Additional Configuration",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/additional-configuration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "additional-configuration"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"allowed_late_time\": {\n      \"annual_plan_minutes\": 120,\n      \"quarterly_plan_minutes\": 90,\n      \"monthly_plan_minutes\": 60,\n      \"weekly_plan_minutes\": 30,\n      \"daily_plan_minutes\": 15,\n      \"progress_update_minutes\": 10\n    },\n    \"confidence_level_mapping\": {\n      \"off_track_lte_percent\": 50,\n      \"on_track_gte_percent\": 60,\n      \"at_risk_lte_percent\": 40\n    },\n    \"allowed_objectives\": {\"min\": 2, \"max\": 6},\n    \"allowed_krs\": {\"min\": 2, \"max\": 6}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Planning Approach Configuration",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/configurations/planning-approach",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "configurations",
+                "planning-approach"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Company Objectives",
+      "item": [
+        {
+          "name": "List Company Objectives",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Company Objective",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('company_objective_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}},\n  \"title\": \"Company Obj {{$timestamp}}\",\n  \"description\": \"Achieve 10 million ETB in total revenue for Q1 2026\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Company Objective Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/{{company_objective_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "{{company_objective_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Company Objective",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Generate ETB 10M Revenue (Updated)\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/{{company_objective_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "{{company_objective_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Single Company Objective",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/{{company_objective_id}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "{{company_objective_id}}",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Company Key Results",
+      "item": [
+        {
+          "name": "Create Company KR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('company_kr_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Company KR {{$timestamp}}\",\n  \"description\": \"Increase revenue from existing client base\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"unit_of_measure\": \"ETB\",\n  \"target_value\": 6000000,\n  \"weight_percent\": 40,\n  \"assign_department_ids\": [{{department_id}}],\n  \"contributes_to_score\": true,\n  \"contributes_to_value\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/{{company_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "{{company_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Company KRs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/{{company_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "{{company_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Available KRs for Department",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/available-krs?cycle_id={{cycle_id}}&department_id={{department_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "available-krs"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Company KR Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/key-results/{{company_kr_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "key-results",
+                "{{company_kr_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Company KR",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_percent\": 45\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/key-results/{{company_kr_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "key-results",
+                "{{company_kr_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Departments to KR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_ids\": [1, 2]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/key-results/{{company_kr_id}}/assign-departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "key-results",
+                "{{company_kr_id}}",
+                "assign-departments"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Company Planning",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/objectives/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "objectives",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Single Company KR",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/key-results/{{company_kr_id}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "key-results",
+                "{{company_kr_id}}",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Department OKRs",
+      "item": [
+        {
+          "name": "List Department Objectives",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives?department_id={{department_id}}&cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives"
+              ],
+              "query": [
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                },
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Assigned Company KRs for Adoption",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/available-krs?department_id={{department_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "available-krs"
+              ],
+              "query": [
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Department Objective (CUSTOMIZED / DIRECT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('department_objective_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": {{department_id}},\n  \"company_kr_id\": {{company_kr_id}},\n  \"cycle_id\": {{cycle_id}},\n  \"execution_mode\": \"CUSTOMIZED\",\n  \"title\": \"Improve Product Quality\",\n  \"description\": \"Customized departmental objective from assigned company KR\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Department Objective Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create/Re-use Department Objective from Assigned KR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('department_objective_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_id\": {{department_id}},\n  \"company_kr_id\": {{company_kr_id}},\n  \"cycle_id\": {{cycle_id}},\n  \"execution_mode\": \"DIRECT_ADOPTION\",\n  \"title\": \"\",\n  \"description\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Department KR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('department_kr_id', res.data.id);",
+                  "}",
+                  "if (res && res.data && res.data.initial_contributor && res.data.initial_contributor.id) {",
+                  "  pm.collectionVariables.set('contributor_id', res.data.initial_contributor.id);",
+                  "} else {",
+                  "  if (!pm.collectionVariables.get('contributor_id')) pm.collectionVariables.set('contributor_id', '1');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Dept KR {{$timestamp}}\",\n  \"description\": \"Complete all billing portal UI designs\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"weight_percent\": 100,\n  \"contributor_user_ids\": [\"{{contributor_user_id}}\"],\n  \"contributes_to_score\": true,\n  \"is_mandatory\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Department KRs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Department KR",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_percent\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Month Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"month_number\": 1,\n  \"description\": \"Month 1: Complete UI designs and begin API implementation\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 100,\n  \"current_value\": 20,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/month-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "month-plan"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Month Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/month-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "month-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Weekly Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"week_number\": 1,\n  \"description\": \"Week 1 Plan: Initial wireframes for billing UI\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 25,\n  \"current_value\": 10,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/weekly-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "weekly-plan"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Weekly Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/weekly-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "weekly-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Department Objective (Step 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department objective submitted', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pending Department Objectives (Step 2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/pending?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "pending"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Department Objective (Step 3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department objective approved', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Department Objective (Step 4)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Department KR for Review (Step 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department KR submitted', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pending Department Key Results (Step 2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/pending?cycle_id={{cycle_id}}&department_id={{department_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "pending"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Department Objective (Idempotent Re-run)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "objectives",
+                "{{department_objective_id}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Department KR (Step 3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department KR approved', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Department KR (Step 4)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/key-results/{{department_kr_id}}/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "key-results",
+                "{{department_kr_id}}",
+                "publish"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Submit Department (Objectives + KRs)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objective_ids\": [{{department_objective_id}}],\n  \"kr_ids\": [{{department_kr_id}}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/bulk-submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "bulk-submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Approve Department (Objectives + KRs)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objective_ids\": [{{department_objective_id}}],\n  \"kr_ids\": [{{department_kr_id}}]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/bulk-approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "bulk-approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Department Daily Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/weekly-plans/{{department_weekly_plan_id}}/daily-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "weekly-plans",
+                "{{department_weekly_plan_id}}",
+                "daily-plans"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Daily daily plan {{$timestamp}}\",\n  \"weekly_task_ref\": \"Finalize daily billing integration task\",\n  \"completion_day\": \"MONDAY\",\n  \"description\": \"Daily execution target for the department week plan\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 10,\n  \"current_value\": 2,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('department_daily_plan_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Department Daily Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/weekly-plans/{{department_weekly_plan_id}}/daily-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "weekly-plans",
+                "{{department_weekly_plan_id}}",
+                "daily-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Department Daily Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/daily-plans/{{department_daily_plan_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "daily-plans",
+                "{{department_daily_plan_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Daily Plan\",\n  \"weekly_task_ref\": \"Finalize daily billing integration task\",\n  \"completion_day\": \"TUESDAY\",\n  \"status_code\": \"completed\",\n  \"current_value\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Department Daily Plan",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/department/daily-plans/{{department_daily_plan_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "department",
+                "daily-plans",
+                "{{department_daily_plan_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Metrics",
+      "item": [
+        {
+          "name": "Get all avaliable Metrics detials",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/okr/company/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "company",
+                "metrics"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard & Rollups",
+      "item": [
+        {
+          "name": "CEO Dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('CEO Dashboard returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.summary) {",
+                  "  console.log('CEO Dashboard — Avg Score: ' + res.data.summary.avgCompanyScore);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/ceo?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "ceo"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Department Comparison",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department Comparison returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.departments && res.data.departments.length > 0) {",
+                  "  console.log('Top Dept: ' + res.data.departments[0].departmentName);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/departments/compare?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "departments",
+                "compare"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Company OKR Gallery",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('OKR Gallery returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/company/gallery?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "company",
+                "gallery"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Financial Breakdown",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Financial Breakdown returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.financial) {",
+                  "  console.log('Financial KRs: ' + res.data.financial.count + ', Non-Financial: ' + res.data.nonFinancial.count);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/financial?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "financial"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "At-Risk Summary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('At-Risk Summary returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Total at-risk items: ' + res.data.totalAtRisk);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/at-risk?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "at-risk"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Completion Status (Company Objective)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Completion Status returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Completion: ' + res.data.completionRate + '%, Blocked: ' + res.data.isBlocked);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/completion/{{company_objective_id}}?level=COMPANY",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "completion",
+                "{{company_objective_id}}"
+              ],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "COMPANY"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Completion Status (Department Objective)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Department completion status returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/completion/{{department_objective_id}}?level=DEPARTMENT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "completion",
+                "{{department_objective_id}}"
+              ],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "DEPARTMENT"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Completion Status (Employee Objective)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Employee completion status returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/completion/{{employee_objective_id}}?level=EMPLOYEE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "completion",
+                "{{employee_objective_id}}"
+              ],
+              "query": [
+                {
+                  "key": "level",
+                  "value": "EMPLOYEE"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Trigger Full Rollup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rollup Refresh returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Objectives processed: ' + res.data.objectivesProcessed);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/rollup/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "rollup",
+                "refresh"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Score Snapshot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Snapshot Generation returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Snapshot date: ' + res.data.snapshotDate + ', Avg: ' + res.data.companyAvgScore);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/dashboard/snapshots/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "dashboard",
+                "snapshots",
+                "generate"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Rollup Consistency Checks",
+          "item": [
+            {
+              "name": "Verify Employee Objective Rollup",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Employee objective rollup endpoint returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Employee objective payload includes rollup fields', function () {",
+                      "  let body = {}; try { body = pm.response.json(); } catch (e) { body = {}; }",
+                      "  pm.expect(body).to.have.property('status', 'success');",
+                      "  pm.expect(body).to.have.property('data');",
+                      "  pm.expect(body.data).to.have.property('final_score');",
+                      "  pm.expect(body.data).to.have.property('final_value');",
+                      "  pm.expect(body.data).to.have.property('indirect_score');",
+                      "  pm.expect(body.data).to.have.property('indirect_value');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "okr",
+                    "employee",
+                    "objectives",
+                    "{{employee_objective_id}}"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify Department Objective Rollup",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Department objective rollup endpoint returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('Department objective payload includes rollup fields', function () {",
+                      "  let body = {}; try { body = pm.response.json(); } catch (e) { body = {}; }",
+                      "  pm.expect(body).to.have.property('status', 'success');",
+                      "  pm.expect(body).to.have.property('data');",
+                      "  pm.expect(body.data).to.have.property('final_score');",
+                      "  pm.expect(body.data).to.have.property('final_value');",
+                      "  pm.expect(body.data).to.have.property('indirect_score');",
+                      "  pm.expect(body.data).to.have.property('indirect_value');",
+                      "  pm.expect(body.data).to.have.property('keyResults');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/okr/department/objectives/{{department_objective_id}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "okr",
+                    "department",
+                    "objectives",
+                    "{{department_objective_id}}"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify CEO Rollup Snapshot",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('CEO dashboard endpoint returns 200', function () {",
+                      "  pm.response.to.have.status(200);",
+                      "});",
+                      "",
+                      "pm.test('CEO dashboard summary exposes aggregated rollup metrics', function () {",
+                      "  let body = {}; try { body = pm.response.json(); } catch (e) { body = {}; }",
+                      "  pm.expect(body).to.have.property('status', 'success');",
+                      "  pm.expect(body).to.have.property('data');",
+                      "  pm.expect(body.data).to.have.property('summary');",
+                      "  pm.expect(body.data.summary).to.have.property('avgCompanyScore');",
+                      "  pm.expect(body.data.summary).to.have.property('totalCompanyValue');",
+                      "  pm.expect(body.data.summary).to.have.property('avgCompanyIndirectScore');",
+                      "  pm.expect(body.data.summary).to.have.property('totalCompanyIndirectValue');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/okr/dashboard/ceo?cycle_id={{cycle_id}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "okr",
+                    "dashboard",
+                    "ceo"
+                  ],
+                  "query": [
+                    {
+                      "key": "cycle_id",
+                      "value": "{{cycle_id}}"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Archive & Quarter Close",
+      "item": [
+        {
+          "name": "Close Cycle",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const runArchiveNow = String(pm.collectionVariables.get('run_archive_now') || '').toLowerCase() === 'true';",
+                  "if (!runArchiveNow) {",
+                  "  console.log('Skipping Archive & Quarter Close folder. Set run_archive_now=true to execute.');",
+                  "  postman.setNextRequest('Assign Additional Contributor (Draft KR only)');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Close Cycle returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  console.log('Cycle ' + res.data.id + ' closed, status: ' + res.data.status);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/cycles/{{cycle_id}}/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "cycles",
+                "{{cycle_id}}",
+                "close"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Archive Quarter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Archive Quarter returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('archive_id', res.data.id);",
+                  "  console.log('Archive ID saved: ' + res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Archives",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('List Archives returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.length > 0 && !pm.collectionVariables.get('archive_id')) {",
+                  "  pm.collectionVariables.set('archive_id', res.data[0].id);",
+                  "  console.log('Archive ID from list: ' + res.data[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Archive Detail",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Archive Detail returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Archive: ' + res.data.quarter_name + ', Reports: ' + (res.data.reports || []).length);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives/{{archive_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives",
+                "{{archive_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Archive Report (Company Summary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Generate Report returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  console.log('Report generated: ' + res.data.report_name);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"report_type\": \"company_summary\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives/{{archive_id}}/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives",
+                "{{archive_id}}",
+                "reports"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Archive Insight (Top Performers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Generate Insight returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  console.log('Insight generated: ' + res.data.insight_title);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"insight_type\": \"top_performers\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives/{{archive_id}}/insights",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives",
+                "{{archive_id}}",
+                "insights"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Export Job (PDF)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Create Export returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.job && res.data.job.id) {",
+                  "  pm.collectionVariables.set('export_job_id', res.data.job.id);",
+                  "  console.log('Export Job ID saved: ' + res.data.job.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"export_type\": \"report_pack\",\n  \"format\": \"PDF\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives/{{archive_id}}/exports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives",
+                "{{archive_id}}",
+                "exports"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Export Job (JSON Full Quarter)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Create Export JSON returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.job && res.data.job.id) {",
+                  "  pm.collectionVariables.set('export_job_id', res.data.job.id);",
+                  "  console.log('JSON Export Job ID saved: ' + res.data.job.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"export_type\": \"full_quarter\",\n  \"format\": \"JSON\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/archives/{{archive_id}}/exports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "archives",
+                "{{archive_id}}",
+                "exports"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Export Job Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Export Job Status returns 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data) {",
+                  "  console.log('Export status: ' + res.data.status + ', File: ' + (res.data.generated_file_reference || 'pending'));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/exports/{{export_job_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "exports",
+                "{{export_job_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Contributors",
+      "item": [
+        {
+          "name": "Assign Additional Contributor (Draft KR only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.contributor && res.data.contributor.id) {",
+                  "  pm.collectionVariables.set('contributor_id', res.data.contributor.id);",
+                  "}",
+                  "if (res.data && res.data.employeeObjective && res.data.employeeObjective.id) {",
+                  "  pm.collectionVariables.set('employee_objective_id', res.data.employeeObjective.id);",
+                  "} else {",
+                  "  if (!pm.collectionVariables.get('employee_objective_id')) pm.collectionVariables.set('employee_objective_id', '1');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"department_kr_id\": {{department_kr_id}},\n  \"user_id\": \"{{contributor_user_id}}\",\n  \"role_type\": \"EMPLOYEE\",\n  \"is_required_for_completion\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/contributors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "contributors"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Contributors",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/contributors?department_kr_id={{department_kr_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "contributors"
+              ],
+              "query": [
+                {
+                  "key": "department_kr_id",
+                  "value": "{{department_kr_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Subordinates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/subordinate-positions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "subordinate-positions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Contributor Flag",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_required_for_completion\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/contributors/{{contributor_id}}/flag",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "contributors",
+                "{{contributor_id}}",
+                "flag"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Department Contributor Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/contributors/department-summary?department_id={{department_id}}&cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "contributors",
+                "department-summary"
+              ],
+              "query": [
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                },
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Employee Execution",
+      "item": [
+        {
+          "name": "List Assigned Department KRs for Adoption",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.length > 0) {",
+                  "  const first = res.data[0];",
+                  "  if (first.contributor_id) pm.collectionVariables.set('contributor_id', first.contributor_id);",
+                  "  if (first.department_kr && first.department_kr.id) pm.collectionVariables.set('department_kr_id', first.department_kr.id);",
+                  "  if (first.employee_objective && first.employee_objective.id) pm.collectionVariables.set('employee_objective_id', first.employee_objective.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/assigned-krs?cycle_id={{cycle_id}}&user_id={{contributor_user_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "assigned-krs"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "user_id",
+                  "value": "{{contributor_user_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Adopt Assigned Department KR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.objective && res.data.objective.id) {",
+                  "  pm.collectionVariables.set('employee_objective_id', res.data.objective.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contributor_id\": {{contributor_id}},\n  \"department_kr_id\": {{department_kr_id}},\n  \"cycle_id\": {{cycle_id}},\n  \"execution_mode\": \"DIRECT_ADOPTION\",\n  \"title\": \"\",\n  \"description\": \"\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/adopt-assigned-kr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "adopt-assigned-kr"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Employee Objectives",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.length > 0) {",
+                  "  const exact = res.data.find(o => o.user_id === pm.collectionVariables.get('contributor_user_id'));",
+                  "  pm.collectionVariables.set('employee_objective_id', (exact || res.data[0]).id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives?cycle_id={{cycle_id}}&user_id={{contributor_user_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "user_id",
+                  "value": "{{contributor_user_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Employee Objective Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Employee KR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('employee_kr_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Complete onboarding module\",\n  \"description\": \"Build and test the onboarding flow\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 100,\n  \"unit_of_measure\": \"%\",\n  \"weight_percent\": 50,\n  \"execution_mode\": \"DIRECT_ADOPTION\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Employee KRs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}/key-results",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}",
+                "key-results"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Employee KR",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Complete onboarding module (updated)\",\n  \"target_value\": 100,\n  \"weight_percent\": 60\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Execution Mode",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"execution_mode\": \"CUSTOMIZED\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/execution-mode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "execution-mode"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Employee Month Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('employee_month_plan_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deptMonthPlanId\": {{dept_month_plan_id}},\n  \"title\": \"Month 1 Focus\",\n  \"description\": \"Research and initial implementation\",\n  \"items\": [\n    {\n      \"employeeKrId\": {{employee_kr_id}},\n      \"targetValue\": 800,\n      \"note\": \"Initial phase target\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}/month-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}",
+                "month-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Month Plan Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employee_kr_id\": {{employee_kr_id}},\n  \"target_value\": 200,\n  \"note\": \"Additional KR contribution\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/month-plans/{{employee_month_plan_id}}/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "month-plans",
+                "{{employee_month_plan_id}}",
+                "items"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Month Plan Item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/month-plans/{{employee_month_plan_id}}/items/{{month_plan_item_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "month-plans",
+                "{{employee_month_plan_id}}",
+                "items",
+                "{{month_plan_item_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Employee Month Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}/month-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}",
+                "month-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Weekly Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('weekly_plan_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"week_number\": 1,\n  \"employee_month_plan_id\": {{employee_month_plan_id}},\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 25,\n  \"current_value\": 8,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/weekly-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "weekly-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Weekly Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/weekly-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "weekly-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Subtask",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('subtask_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Research competitive analysis\",\n  \"description\": \"Analyze competitor onboarding flows\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 100,\n  \"current_value\": 15,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true,\n  \"target_month\": 1,\n  \"target_week\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/subtasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "subtasks"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Subtasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/subtasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "subtasks"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Subtask",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Research competitive analysis (updated)\",\n  \"status_code\": \"in_progress\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/subtasks/{{subtask_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "subtasks",
+                "{{subtask_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Daily Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('daily_plan_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Research phase completed\",\n  \"weekly_task_ref\": \"Research competitive analysis\",\n  \"completion_day\": \"MONDAY\",\n  \"description\": \"All competitor analysis documents finalized\",\n  \"metric_definition_id\": {{metric_definition_id}},\n  \"target_value\": 100,\n  \"current_value\": 20,\n  \"contributes_to_parent_score\": true,\n  \"contributes_to_parent_value\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/weekly-plans/{{weekly_plan_id}}/daily-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "weekly-plans",
+                "{{weekly_plan_id}}",
+                "daily-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Daily Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/weekly-plans/{{weekly_plan_id}}/daily-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "weekly-plans",
+                "{{weekly_plan_id}}",
+                "daily-plans"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Daily Plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status_code\": \"completed\",\n  \"weekly_task_ref\": \"Research competitive analysis\",\n  \"completion_day\": \"TUESDAY\",\n  \"current_value\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/daily-plans/{{daily_plan_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "daily-plans",
+                "{{daily_plan_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Progress Update",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('progress_update_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"week_number\": 1,\n  \"month_number\": 1,\n  \"current_value\": 25,\n  \"comment\": \"Good progress on research phase\",\n  \"is_completed\": false,\n  \"// Note on validation\": \"Confidence level is auto-derived by backend from configured thresholds. If metric is BINARY, is_completed is required and current_value is optional. If PERCENTAGE, current_value must be 0-100. If NUMERIC/CURRENCY, current_value must be >= 0.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "progress"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Progress History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/progress",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "progress"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Employee Objective for Review",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/objectives/{{employee_objective_id}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "objectives",
+                "{{employee_objective_id}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Employee KR for Review",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/key-results/{{employee_kr_id}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "key-results",
+                "{{employee_kr_id}}",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Submit Employee Execution",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objective_ids\": [{{employee_objective_id}}],\n  \"kr_ids\": [{{employee_kr_id}}]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/bulk-submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "bulk-submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Publish Employee Execution (After Approvals)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objective_ids\": [{{employee_objective_id}}],\n  \"kr_ids\": [{{employee_kr_id}}]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/employee/bulk-publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "employee",
+                "bulk-publish"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Manager / Approvals",
+      "item": [
+        {
+          "name": "Team Execution Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/team-summary?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "team-summary"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Subordinate Positions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/subordinate-positions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "subordinate-positions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pending Approvals",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/pending-approvals?cycle_id={{cycle_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "pending-approvals"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pending Employee Objectives (Department)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/pending-employee-objectives?cycle_id={{cycle_id}}&department_id={{department_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "pending-employee-objectives"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Pending Employee Key Results (Department)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/pending-employee-key-results?cycle_id={{cycle_id}}&department_id={{department_id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "pending-employee-key-results"
+              ],
+              "query": [
+                {
+                  "key": "cycle_id",
+                  "value": "{{cycle_id}}"
+                },
+                {
+                  "key": "department_id",
+                  "value": "{{department_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Approve Employee Objectives/KRs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"objective_ids\": [{{employee_objective_id}}],\n  \"kr_ids\": [{{employee_kr_id}}],\n  \"action\": \"APPROVED\",\n  \"user_id\": \"{{contributor_user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/bulk-approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "bulk-approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Employee Objective (Step 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_OBJECTIVE\",\n  \"entity_id\": {{employee_objective_id}},\n  \"action\": \"APPROVED\",\n  \"comments\": \"Looks good. Approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Employee KR (Step 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_KR\",\n  \"entity_id\": {{employee_kr_id}},\n  \"action\": \"APPROVED\",\n  \"comments\": \"KR targets look achievable.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Employee Objective (Step 2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_OBJECTIVE\",\n  \"entity_id\": {{employee_objective_id}},\n  \"action\": \"PUBLISHED\",\n  \"comments\": \"Approved and published.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Employee KR (Step 2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_KR\",\n  \"entity_id\": {{employee_kr_id}},\n  \"action\": \"PUBLISHED\",\n  \"comments\": \"Approved and published.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reject / Request Changes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_OBJECTIVE\",\n  \"entity_id\": {{employee_objective_id}},\n  \"action\": \"CHANGES_REQUESTED\",\n  \"comments\": \"Please refine the KR targets.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/manager/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "manager",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Assign Department Head",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"head_user_id\": {{head_user_id}}\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/departments/{{department_id}}/assign-head",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "departments",
+            "{{department_id}}",
+            "assign-head"
+          ]
+        },
+        "description": "Assigns an employee as the head of a department. Constraints:\n1. User must be a member of the department.\n2. User cannot head multiple departments.\n3. One head per department."
+      },
+      "response": []
+    },
+    {
+      "name": "OKR Approvals",
+      "item": [
+        {
+          "name": "Submit for Approval",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let res = {}; try { res = pm.response.json(); } catch (e) { res = {}; }",
+                  "if (res && res.data && res.data.id) {",
+                  "  pm.collectionVariables.set('submission_id', res.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cycle_id\": {{cycle_id}},\n  \"type\": \"OBJECTIVE_PLANNING\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/approvals/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "approvals",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Review Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entity_type\": \"EMPLOYEE_KR\",\n  \"entity_id\": {{employee_kr_id}},\n  \"comment\": \"Please revise this target value to be more ambitious.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/okr/approvals/comment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "approvals",
+                "comment"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Submission",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/okr/approvals/{{submission_id}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "okr",
+                "approvals",
+                "{{submission_id}}",
+                "approve"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api/v1"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "cycle_id",
+      "value": "1"
+    },
+    {
+      "key": "company_objective_id",
+      "value": "1"
+    },
+    {
+      "key": "company_kr_id",
+      "value": "1"
+    },
+    {
+      "key": "department_objective_id",
+      "value": "1"
+    },
+    {
+      "key": "department_kr_id",
+      "value": "1"
+    },
+    {
+      "key": "department_id",
+      "value": "1"
+    },
+    {
+      "key": "metric_definition_id",
+      "value": "1"
+    },
+    {
+      "key": "draft_cycle_id",
+      "value": "1"
+    },
+    {
+      "key": "contributor_id",
+      "value": "1"
+    },
+    {
+      "key": "contributor_user_id",
+      "value": "EMP001"
+    },
+    {
+      "key": "employee_objective_id",
+      "value": "1"
+    },
+    {
+      "key": "employee_kr_id",
+      "value": "1"
+    },
+    {
+      "key": "employee_month_plan_id",
+      "value": "1"
+    },
+    {
+      "key": "weekly_plan_id",
+      "value": "1"
+    },
+    {
+      "key": "subtask_id",
+      "value": "1"
+    },
+    {
+      "key": "daily_plan_id",
+      "value": "1"
+    },
+    {
+      "key": "progress_update_id",
+      "value": "1"
+    },
+    {
+      "key": "archive_id",
+      "value": "1"
+    },
+    {
+      "key": "export_job_id",
+      "value": "1"
+    },
+    {
+      "key": "open_cycle_id",
+      "value": "1"
+    },
+    {
+      "key": "run_archive_now",
+      "value": "false"
+    },
+    {
+      "key": "department_weekly_plan_id",
+      "value": "1"
+    },
+    {
+      "key": "department_daily_plan_id",
+      "value": "1"
+    }
+  ]
+}
