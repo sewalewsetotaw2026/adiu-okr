@@ -11,7 +11,10 @@ export const departments = [
   "Sales and Distribution",
   "Technology",
   "Legal",
+  "Business Development",
   "Customer Support",
+  "Presales",
+  "Human Resources and Corporate Services",
 ];
 
 export const jobTitles = [
@@ -19,10 +22,13 @@ export const jobTitles = [
   { title: "Chief Executive Officer", level: "Executive" },
   { title: "Project Management Office Manager", level: "Manager" },
   { title: "Procurement and Facility Management - Head", level: "Director" },
+  { title: "Human Resource and Corporate Services Director", level: "Director" },
+  { title: "Business Development Director", level: "Director" },
   { title: "Head of Finance", level: "Director" },
   { title: "Senior Accountant", level: "Senior" },
   { title: "HR Specialist", level: "Mid" },
   { title: "Partnership and Business Development Manager", level: "Manager" },
+  { title: "Human Resource and Corporate Services Manager", level: "Manager" },
   { title: "Product Owner", level: "Mid" },
   { title: "Data Science and Insight Analyst", level: "Mid" },
   { title: "Business Development and Innovation Expert", level: "Senior" },
