@@ -54,6 +54,7 @@ function parseTeamSummary(payload: unknown): Member[] {
     objective:
       row.objective_title ?? row.employee_objective?.title ?? row.title ?? "—",
     progress: (() => {
+      if (row.progress !== undefined) return Number(Number(row.progress).toFixed(2));
       const tgt = Number(row.target_value ?? 0);
       const cur = Number(row.current_value ?? 0);
       return tgt > 0 ? Number(((cur / tgt) * 100).toFixed(2)) : 0;

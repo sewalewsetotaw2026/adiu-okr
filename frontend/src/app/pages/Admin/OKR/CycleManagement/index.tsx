@@ -238,7 +238,7 @@ export default function CycleManagement() {
                     <MdCalendarToday className="text-3xl text-white" />
                   </div>
                   <div>
-                    <h1 className="text-2xl font-black uppercase tracking-tighter text-white">
+                    <h1 className="text-2xl font-black tracking-tighter text-white">
                       Planning Cycles
                     </h1>
                     <p className="text-white/60 text-xs font-medium mt-1">
@@ -376,8 +376,7 @@ export default function CycleManagement() {
                           const isBusy = actionLoadingId === cycle.id;
                           const openDisabled = isBusy || hasOpenCycle;
                           const canEditCycle =
-                            cycle.status === "draft" ||
-                            cycle.status === "open";
+                            cycle.status === "draft" || cycle.status === "open";
 
                           return (
                             <tr

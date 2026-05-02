@@ -61,11 +61,11 @@ export default function AdminSidebar() {
       label: "Company Objectives",
       icon: MdTrackChanges,
     },
-    {
-      to: routeConstants.okrDepartmentPlanning,
-      label: "Department OKR",
-      icon: MdGroup,
-    },
+    // {
+    //   to: routeConstants.okrDepartmentPlanning,
+    //   label: "Department OKR",
+    //   icon: MdGroup,
+    // },
     {
       to: routeConstants.okrDepartmentApprovalQueue,
       label: "Approvals",
@@ -86,8 +86,12 @@ export default function AdminSidebar() {
       label: "Gallery",
       icon: MdCollectionsBookmark,
     },
-    { to: routeConstants.okrConfiguration, label: "Config", icon: MdSettings },
-    { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
+    {
+      to: routeConstants.okrConfiguration,
+      label: "Configuration",
+      icon: MdSettings,
+    },
+    // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
     {
       to: routeConstants.okrArchiveManagement,
       label: "Archive",

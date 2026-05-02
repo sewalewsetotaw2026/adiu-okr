@@ -14,6 +14,7 @@ export const departments = [
   "Business Development",
   "Customer Support",
   "Presales",
+  "Sales & Marketing",
   "Human Resources and Corporate Services",
 ];
 
@@ -34,6 +35,7 @@ export const jobTitles = [
   { title: "Business Development and Innovation Expert", level: "Senior" },
   { title: "Junior Operations Expert", level: "Junior" },
   { title: "Contact Center Supervisor", level: "Senior" },
+  { title: "Senior Sales Representative", level: "Senior" },
   { title: "Dispute and Reconcilation Management Expert", level: "Senior" },
   { title: "Operation Specialist", level: "Mid" },
   { title: "Operations Expert", level: "Senior" },
@@ -60,6 +62,7 @@ export const jobTitles = [
   { title: "QA and Process Engineer", level: "Mid" },
   { title: "Sales Representative", level: "Entry" },
   { title: "Junior Sales Representative", level: "Junior" },
+  {title: "Sales Executive", level: "Senior" },
 
   // Existing Merged
   { title: "Office Administrator", level: "Entry" },

@@ -2686,7 +2686,7 @@ export default function OKRConfigurationPage() {
                     <MdSettings className="text-3xl text-white" />
                   </div>
                   <div>
-                    <h1 className="text-2xl font-black uppercase tracking-tighter text-white">
+                    <h1 className="text-2xl font-black tracking-tighter text-white">
                       OKR Configuration
                     </h1>
                     <p className="text-white/60 text-xs font-medium mt-1">

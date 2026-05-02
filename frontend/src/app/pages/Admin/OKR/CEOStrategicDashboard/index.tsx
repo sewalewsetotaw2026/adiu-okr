@@ -321,13 +321,15 @@ export default function CEOStrategicDashboardPage() {
               OKR
             </button>
             <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
-            <span className="text-gray-800 font-medium">Strategic dashboard</span>
+            <span className="text-gray-800 font-medium">
+              Strategic Dashboard
+            </span>
           </nav>
 
           <PageHeader>
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                Strategic dashboard
+                Strategic Dashboard
               </h1>
               <p className="text-white/80 text-sm mt-1">
                 Company rollup for the active OKR cycle.
@@ -413,10 +415,14 @@ export default function CEOStrategicDashboardPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-widest font-space">Departments</h2>
-                <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-1 rounded-lg uppercase tracking-tighter">Live Tracking</span>
+                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-widest font-space">
+                  Departments
+                </h2>
+                <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-1 rounded-lg uppercase tracking-tighter">
+                  Live Tracking
+                </span>
               </div>
-              
+
               <div className="space-y-3">
                 {loading ? (
                   <LoadingSkeleton variant="table-row" count={4} />
@@ -425,7 +431,9 @@ export default function CEOStrategicDashboardPage() {
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                       <MdWarningAmber className="text-3xl text-slate-300" />
                     </div>
-                    <p className="text-sm font-medium text-slate-400">No departments participating in this cycle.</p>
+                    <p className="text-sm font-medium text-slate-400">
+                      No departments participating in this cycle.
+                    </p>
                   </div>
                 ) : (
                   departments.map((d) => (
@@ -443,14 +451,20 @@ export default function CEOStrategicDashboardPage() {
                           <span>{d.krCount} Key Results</span>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <div className="text-sm font-bold text-slate-900">{d.score}%</div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Progress</div>
+                          <div className="text-sm font-bold text-slate-900">
+                            {d.score}%
+                          </div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                            Progress
+                          </div>
                         </div>
                         <div className="w-12 h-12 rounded-full border-2 border-slate-100 flex items-center justify-center group-hover:border-primary/20 transition-colors">
-                           <div className="text-[10px] font-black text-slate-800">{d.completion}%</div>
+                          <div className="text-[10px] font-black text-slate-800">
+                            {d.completion}%
+                          </div>
                         </div>
                       </div>
                     </div>

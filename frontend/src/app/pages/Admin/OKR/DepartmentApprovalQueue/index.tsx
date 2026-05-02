@@ -419,7 +419,7 @@ export default function DepartmentApprovalQueuePage() {
                     <MdFactCheck className="text-2xl" />
                   </div>
                   <div>
-                    <h1 className="text-2xl sm:text-4xl font-black tracking-tighter uppercase">
+                    <h1 className="text-2xl sm:text-4xl font-black tracking-tighter">
                       Department Approvals
                     </h1>
                     <div className="flex items-center gap-3 mt-2">

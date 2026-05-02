@@ -694,6 +694,7 @@ async function main() {
 
   // List of employees to add (12 employees)
   const employeesToAdd = [
+    { id: "37", fullName: "Ermiyas Endalamaw", email: "ermiyas.e@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-05") },
     { id: "30", fullName: "Addisu Aynayehu Admas", email: "addisu.aynayehu@adiucommunication.com.et", gender: "Male", dob: new Date("1993-01-07") },
     { id: "35", fullName: "Sibhat Solomon Tikeher", email: "sibhat.solomon@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-06") },
     { id: "8", fullName: "Dagmawit Solomon Deneke", email: "dagmawit.solomon@adiucommunication.com.et", gender: "Female", dob: new Date("1987-03-16") },

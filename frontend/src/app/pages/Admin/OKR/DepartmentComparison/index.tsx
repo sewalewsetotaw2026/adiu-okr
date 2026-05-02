@@ -6,11 +6,21 @@ import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
 import { okrFeatureFlags } from "../okrFeatureFlags";
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
-import { okrAsArray, okrErrorMessage, okrUnwrap } from "../../../../utils/okrApi";
+import {
+  okrAsArray,
+  okrErrorMessage,
+  okrUnwrap,
+} from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 import { useNavigate } from "react-router-dom";
 import { routeConstants } from "../../../../../utils/constants";
-import { MdChevronRight, MdCompareArrows, MdAutoGraph, MdAssessment, MdOutlinedFlag } from "react-icons/md";
+import {
+  MdChevronRight,
+  MdCompareArrows,
+  MdAutoGraph,
+  MdAssessment,
+  MdOutlinedFlag,
+} from "react-icons/md";
 
 type DepartmentRow = {
   id: number;
@@ -106,7 +116,9 @@ export default function DepartmentComparisonPage() {
               OKR
             </button>
             <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
-            <span className="text-gray-800 font-medium">Department comparison</span>
+            <span className="text-gray-800 font-medium">
+              Department comparison
+            </span>
           </nav>
 
           <PageHeader>
@@ -117,13 +129,15 @@ export default function DepartmentComparisonPage() {
                     <MdCompareArrows className="text-2xl" />
                   </div>
                   <div>
-                    <h1 className="text-2xl sm:text-4xl font-black tracking-tighter uppercase">
+                    <h1 className="text-2xl sm:text-4xl font-black tracking-tighter">
                       Department Comparison
                     </h1>
                     <div className="flex items-center gap-3 mt-2">
                       <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white/10 rounded border border-white/10">
                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="text-[10px] font-black text-white/90 uppercase tracking-widest font-space">Live Metrics</span>
+                        <span className="text-[10px] font-black text-white/90 uppercase tracking-widest font-space">
+                          Live Metrics
+                        </span>
                       </div>
                       <p className="text-white/60 text-[10px] font-black uppercase tracking-widest font-space">
                         Performance benchmarks across all departments
@@ -145,7 +159,9 @@ export default function DepartmentComparisonPage() {
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3 text-sm">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">Sort Benchmark By</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
+                Sort Benchmark By
+              </span>
               <div className="relative">
                 <select
                   value={sortBy}
@@ -161,7 +177,7 @@ export default function DepartmentComparisonPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
               <MdAutoGraph className="text-primary text-lg" />
               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest font-space">
@@ -184,8 +200,12 @@ export default function DepartmentComparisonPage() {
                   <MdAssessment className="text-3xl text-slate-300" />
                 </div>
                 <div>
-                  <p className="text-slate-900 font-bold uppercase tracking-widest font-space text-xs">No Comparison Data</p>
-                  <p className="text-slate-400 text-[10px] uppercase tracking-[0.2em] font-space mt-1">Initialize department objectives to see metrics</p>
+                  <p className="text-slate-900 font-bold uppercase tracking-widest font-space text-xs">
+                    No Comparison Data
+                  </p>
+                  <p className="text-slate-400 text-[10px] uppercase tracking-[0.2em] font-space mt-1">
+                    Initialize department objectives to see metrics
+                  </p>
                 </div>
               </div>
             ) : (
@@ -199,13 +219,15 @@ export default function DepartmentComparisonPage() {
                       #{idx + 1}
                     </span>
                   </div>
-                  
+
                   <div className="relative z-10">
-                    <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] font-space mb-2">Department</p>
+                    <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] font-space mb-2">
+                      Department
+                    </p>
                     <h3 className="font-black text-slate-900 text-lg leading-tight uppercase group-hover:text-primary transition-colors">
                       {r.name}
                     </h3>
-                    
+
                     <div className="mt-6 space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -213,7 +235,9 @@ export default function DepartmentComparisonPage() {
                             <MdOutlinedFlag className="text-slate-400" />
                           </div>
                           <div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">Volume</p>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                              Volume
+                            </p>
                             <p className="text-xs font-bold text-slate-700 uppercase tracking-widest font-space">
                               {r.objectiveCount} Obj · {r.krCount} KR
                             </p>
@@ -223,12 +247,20 @@ export default function DepartmentComparisonPage() {
 
                       <div className="pt-4 border-t border-slate-50 grid grid-cols-2 gap-4">
                         <div>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">Score</p>
-                          <p className="text-xl font-black text-slate-900 tracking-tighter">{r.score}%</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                            Score
+                          </p>
+                          <p className="text-xl font-black text-slate-900 tracking-tighter">
+                            {r.score}%
+                          </p>
                         </div>
                         <div>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">Rate</p>
-                          <p className="text-xl font-black text-slate-900 tracking-tighter">{r.completion}%</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                            Rate
+                          </p>
+                          <p className="text-xl font-black text-slate-900 tracking-tighter">
+                            {r.completion}%
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -240,14 +272,16 @@ export default function DepartmentComparisonPage() {
 
           <section className="rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 overflow-hidden">
             <div className="px-6 py-4 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] font-space">Comparative Grid</h2>
+              <h2 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] font-space">
+                Comparative Grid
+              </h2>
               <div className="flex gap-1">
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
                 <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
               </div>
             </div>
-            
+
             <div className="overflow-x-auto">
               {loading ? (
                 <div className="p-8">
@@ -257,31 +291,52 @@ export default function DepartmentComparisonPage() {
                 <table className="w-full text-left align-middle">
                   <thead>
                     <tr className="bg-slate-50/30">
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">Department</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Score</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Value</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Completion</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Completed KR</th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">
+                        Department
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">
+                        Score
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">
+                        Value
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">
+                        Completion
+                      </th>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">
+                        Completed Key Result
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {sorted.map((r) => (
-                      <tr key={r.id} className="group hover:bg-slate-50/50 transition-colors">
+                      <tr
+                        key={r.id}
+                        className="group hover:bg-slate-50/50 transition-colors"
+                      >
                         <td className="px-6 py-4">
-                          <span className="font-bold text-slate-900 uppercase tracking-widest font-space text-xs">{r.name}</span>
+                          <span className="font-bold text-slate-900 uppercase tracking-widest font-space text-xs">
+                            {r.name}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <span className="text-sm font-black text-slate-700 tracking-tighter">{r.score}%</span>
+                          <span className="text-sm font-black text-slate-700 tracking-tighter">
+                            {r.score}%
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <span className="text-sm font-black text-slate-700 tracking-tighter">{r.value}</span>
+                          <span className="text-sm font-black text-slate-700 tracking-tighter">
+                            {r.value}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            <span className="text-sm font-black text-slate-700 tracking-tighter">{r.completion}%</span>
+                            <span className="text-sm font-black text-slate-700 tracking-tighter">
+                              {r.completion}%
+                            </span>
                             <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-primary transition-all duration-1000" 
+                              <div
+                                className="h-full bg-primary transition-all duration-1000"
                                 style={{ width: `${r.completion}%` }}
                               />
                             </div>
