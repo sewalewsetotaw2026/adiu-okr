@@ -18,7 +18,11 @@
     "test:okr:e2e": "node scripts/run-jest.js src/tests/e2e/okrValidationGuards.test.ts",
     "seed:csv": "ts-node prisma/seedFromCSV.ts",
     "seed": "ts-node prisma/seed.ts",
-    "seed:data": "ts-node prisma/seedData.ts",
+    "seed:leave": "ts-node prisma/seedLeaveData.ts",
+    "seed:kacha": "ts-node prisma/seedKachaEmployees.ts",
+    "seed:adiu": "ts-node prisma/seedAdiu.ts",
+    "seed:adiu-leave": "ts-node prisma/seedAdiuLeave.ts",
+    "db:truncate": "ts-node scripts/truncate-db.ts",
     "seed:okr": "ts-node prisma/seedOkrData.ts"
   },
   "repository": {

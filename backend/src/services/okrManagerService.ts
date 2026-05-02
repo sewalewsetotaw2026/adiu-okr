@@ -1150,34 +1150,23 @@ export async function getPlanningComplianceReport(params: {
   });
 
   // 2. Monthly Compliance
-  const krs = await prisma.employeeKeyResult.findMany({
+  const monthPlans = await prisma.employeeMonthPlan.findMany({
     where: {
       company_id: companyId,
       employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
+      ...(monthNumber ? { month_number: monthNumber } : {})
     },
     include: {
       employeeObjective: {
-        include: {
-          user: { include: { employee: { select: { full_name: true } } } },
-        },
-      },
-      monthPlanItems: {
-        where: monthNumber
-          ? { monthPlan: { month_number: monthNumber } }
-          : {},
-        include: { monthPlan: { select: { month_number: true } } },
-      },
-    },
+        select: { user_id: true }
+      }
+    }
   });
 
-  // Include employees who haven't adopted KRs yet?
-  // The user specifically asked for "unassigned" in the objectives/assigned part.
-  // For monthly, it's about whether the KRs have plans.
-
   const monthlyCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const empKRs = krs.filter((kr) => kr.employeeObjective.user_id === emp.id);
+    const empMonthPlans = monthPlans.filter((mp) => mp.employeeObjective.user_id === emp.id);
     const allPlannedMonths = Array.from(
-      new Set(empKRs.flatMap((kr) => kr.monthPlanItems.map((m: any) => m.monthPlan.month_number))),
+      new Set(empMonthPlans.map((mp) => mp.month_number))
     );
 
     return {
@@ -1186,9 +1175,7 @@ export async function getPlanningComplianceReport(params: {
       department_id: emp.department_id,
       department_name: emp.department_name,
       planned_months: allPlannedMonths,
-      has_month_plan: monthNumber
-        ? allPlannedMonths.includes(monthNumber)
-        : allPlannedMonths.length > 0,
+      has_month_plan: empMonthPlans.length > 0,
     };
   });
 
@@ -1199,7 +1186,7 @@ export async function getPlanningComplianceReport(params: {
       employeeKr: {
         employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
       },
-      ...(monthNumber ? { monthPlan: { month_number: monthNumber } } : {}),
+      ...(weekNumber ? { week_number: weekNumber } : {}),
     },
     include: {
       employeeKr: {
@@ -1271,10 +1258,33 @@ export async function getPlanningComplianceReport(params: {
   });
 
   // 5. Reporting Compliance
+  // To track rollup updates, we need the objective hierarchy
+  const cycleObjectivesForHierarchy = await prisma.employeeObjective.findMany({
+    where: { company_id: companyId, cycle_id: cycleId },
+    select: {
+      id: true,
+      user_id: true,
+      chosen_parent_employee_kr_id: true,
+      keyResults: { select: { id: true } }
+    }
+  });
+
+  const krOwnerMap = new Map<number, string>();
+  const krParentMap = new Map<number, number>(); // kr_id -> parent_kr_id
+  
+  for (const obj of cycleObjectivesForHierarchy) {
+    for (const kr of obj.keyResults) {
+      krOwnerMap.set(kr.id, obj.user_id);
+      if (obj.chosen_parent_employee_kr_id) {
+        krParentMap.set(kr.id, obj.chosen_parent_employee_kr_id);
+      }
+    }
+  }
+
   const progressUpdates = await prisma.progressUpdate.findMany({
     where: {
       employeeKr: {
-        employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
+        employeeObjective: { cycle_id: cycleId },
       },
     },
     select: {
@@ -1283,6 +1293,7 @@ export async function getPlanningComplianceReport(params: {
       daily_plan_id: true,
       week_number: true,
       month_number: true,
+      employee_kr_id: true,
       employeeKr: {
         select: {
           employeeObjective: { select: { user_id: true } },
@@ -1290,6 +1301,50 @@ export async function getPlanningComplianceReport(params: {
       },
     },
   });
+
+  const userUpdates = new Map<string, {
+    direct: any[],
+    indirect: any[],
+    weeklyCount: number,
+    dailyCount: number,
+    monthlyCount: number,
+    directCount: number,
+  }>();
+
+  for (const u of progressUpdates) {
+    const ownerId = u.employeeKr.employeeObjective.user_id;
+    
+    // Direct update
+    if (!userUpdates.has(ownerId)) {
+      userUpdates.set(ownerId, { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 });
+    }
+    const directStats = userUpdates.get(ownerId)!;
+    directStats.direct.push(u);
+    
+    if (u.week_number !== null && u.daily_plan_id === null) directStats.weeklyCount++;
+    else if (u.daily_plan_id !== null) directStats.dailyCount++;
+    else if (u.month_number !== null && u.week_number === null && u.daily_plan_id === null) directStats.monthlyCount++;
+    else if (u.week_number === null && u.month_number === null && u.daily_plan_id === null) directStats.directCount++;
+
+    // Indirect (Rollup) updates
+    let currentKrId = u.employee_kr_id;
+    let parentKrId = krParentMap.get(currentKrId);
+    const visited = new Set<number>();
+    
+    // Trace up the hierarchy to credit managers
+    while (parentKrId && !visited.has(parentKrId)) {
+      visited.add(parentKrId);
+      const parentOwnerId = krOwnerMap.get(parentKrId);
+      if (parentOwnerId && parentOwnerId !== ownerId) {
+        if (!userUpdates.has(parentOwnerId)) {
+          userUpdates.set(parentOwnerId, { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 });
+        }
+        userUpdates.get(parentOwnerId)!.indirect.push(u);
+      }
+      currentKrId = parentKrId;
+      parentKrId = krParentMap.get(currentKrId);
+    }
+  }
 
   const dailyPlans = await prisma.dailyPlan.findMany({
     where: {
@@ -1320,14 +1375,9 @@ export async function getPlanningComplianceReport(params: {
   });
 
   const reportingCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const empUpdates = progressUpdates.filter(
-      (u: any) => u.employeeKr.employeeObjective.user_id === emp.id,
-    );
-
-    const fromWeekly = empUpdates.filter((u: any) => u.week_number !== null && u.daily_plan_id === null).length;
-    const fromDaily = empUpdates.filter((u: any) => u.daily_plan_id !== null).length;
-    const fromMonthly = empUpdates.filter((u: any) => u.month_number !== null && u.week_number === null && u.daily_plan_id === null).length;
-    const fromDirect = empUpdates.filter((u: any) => u.week_number === null && u.month_number === null && u.daily_plan_id === null).length;
+    const stats = userUpdates.get(emp.id) || { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 };
+    const empUpdates = stats.direct;
+    const indirectUpdates = stats.indirect;
 
     const empDailyPlans = dailyPlans.filter(
       (dp: any) => dp.weeklyTask.weeklyPlan.employeeKr.employeeObjective.user_id === emp.id,
@@ -1336,27 +1386,30 @@ export async function getPlanningComplianceReport(params: {
       empUpdates.filter((u: any) => u.daily_plan_id !== null).map((u: any) => u.daily_plan_id),
     );
 
+    const allUpdates = [...empUpdates, ...indirectUpdates];
+
     return {
       employee_id: emp.id,
       employee_name: emp.name,
       department_id: emp.department_id,
       department_name: emp.department_name,
-      update_count: empUpdates.length,
+      update_count: allUpdates.length,
       breakdown: {
-        weekly: fromWeekly,
-        daily: fromDaily,
-        monthly: fromMonthly,
-        direct: fromDirect,
+        weekly: stats.weeklyCount,
+        daily: stats.dailyCount,
+        monthly: stats.monthlyCount,
+        direct: stats.directCount,
+        indirect: indirectUpdates.length,
         daily_plan_total: empDailyPlans.length,
         daily_plan_with_progress: dailyPlansWithProgressIds.size,
       },
       last_update:
-        empUpdates.length > 0
-          ? empUpdates.sort(
+        allUpdates.length > 0
+          ? allUpdates.sort(
               (a: any, b: any) => b.created_at.getTime() - a.created_at.getTime(),
             )[0].created_at
           : null,
-      has_updates: empUpdates.length > 0,
+      has_updates: allUpdates.length > 0,
     };
   });
 
