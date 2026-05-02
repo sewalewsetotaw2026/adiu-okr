@@ -308,18 +308,17 @@ async function main() {
   console.log(`Ensured Kacha Company: ${kachaCompany.name}`);
 
   // --- ADIU COMPANY SEEDING ---
-const adiuCompanyCode = "ADIU";
-const adiuCompany = await prisma.company.upsert({
-  where: { company_code: adiuCompanyCode },
-  update: { name: "ADIU Communications Service PLC" },
-  create: {
-    company_code: adiuCompanyCode,
-    name: "ADIU Communications Service PLC",
-    is_active: true,
-  },
-});
-
-console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
+  const adiuCompanyCode = "ADIU";
+  const adiuCompany = await prisma.company.upsert({
+    where: { company_code: adiuCompanyCode },
+    update: { name: "ADIU Communications Service PLC" },
+    create: {
+      company_code: adiuCompanyCode,
+      name: "ADIU Communications Service PLC",
+      is_active: true,
+    },
+  });
+  console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
 
   // Ensure test company also gets roles/permissions for E2E suites
   const testCompany = await prisma.company.upsert({
@@ -435,7 +434,7 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
   console.log("Seeding tenant-specific data...");
   await seedTenantData(platformCompany.id, resourceMap);
   await seedTenantData(kachaCompany.id, resourceMap);
-  await seedTenantData(adiuCompany.id, resourceMap);  
+  await seedTenantData(adiuCompany.id, resourceMap);
   await seedTenantData(testCompany.id, resourceMap);
 
   // --- ADMIN USERS SEEDING ---
@@ -447,7 +446,6 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
   });
   const platformRoleMap = new Map(platformRoles.map((r) => [r.name, r]));
 
-  // Create Platform Super Admin Employee
   const platformEmployee = await prisma.employee.upsert({
     where: { id: "EMP-PLATFORM-001" },
     update: { full_name: "Super Admin", company_id: platformCompany.id },
@@ -462,7 +460,6 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
   const platformPasswordHash = await bcrypt.hash("superpassword123", 12);
   const superAdminRole = platformRoleMap.get("Super Admin");
 
-  // Clean up any existing users with same employee_id/company_id or old email to avoid unique constraint issues
   await prisma.appUser.deleteMany({
     where: {
       OR: [
@@ -470,10 +467,10 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
         { email: "superadmin@platform.com" },
         {
           company_id: platformCompany.id,
-          employee_id: platformEmployee.id
-        }
-      ]
-    }
+          employee_id: platformEmployee.id,
+        },
+      ],
+    },
   });
 
   await prisma.appUser.upsert({
@@ -534,7 +531,6 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
     },
   });
 
-  // Employment for Kacha Admin (HR Manager)
   const hrDepartment = await prisma.department.findFirst({
     where: { company_id: kachaCompany.id, name: "Human Resource" },
   });
@@ -577,326 +573,259 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
     }
   }
 
-// --- ADIU ADMIN ---
-const adiuRoles = await prisma.appRole.findMany({
-  where: { company_id: adiuCompany.id },
-});
-const adiuRoleMap = new Map(adiuRoles.map((r) => [r.name, r]));
-
-const adiuEmployee = await prisma.employee.upsert({
-  where: { id: "EMP-ADIU-ADMIN" },
-  update: {
-    full_name: "ADIU Admin",
-    company_id: adiuCompany.id,
-  },
-  create: {
-    id: "EMP-ADIU-ADMIN",
-    company_id: adiuCompany.id,
-    full_name: "ADIU Admin",
-    gender: "Male",
-  },
-});
-
-const adiuPasswordHash = await bcrypt.hash("password123", 12);
-const adiuAdminRole = adiuRoleMap.get("Admin");
-
-// Clean existing (safe)
-await prisma.appUser.deleteMany({
-  where: {
-    OR: [
-      { email: "admin@adiu.com" },
-      {
-        company_id: adiuCompany.id,
-        employee_id: adiuEmployee.id,
-      },
-    ],
-  },
-});
-
-await prisma.appUser.upsert({
-  where: { email: "admin@adiu.com" },
-  update: {
-    password_hash: adiuPasswordHash,
-    role_id: adiuAdminRole?.id ?? 0,
-    company_id: adiuCompany.id,
-    employee_id: adiuEmployee.id,
-  },
-  create: {
-    company_id: adiuCompany.id,
-    employee_id: adiuEmployee.id,
-    email: "admin@adiu.com",
-    password_hash: adiuPasswordHash,
-    role_id: adiuAdminRole?.id ?? 0,
-    is_active: true,
-    onboarding_status: OnboardingStatus.COMPLETED,
-  },
-});
-const adiuHRDepartment = await prisma.department.findFirst({
-  where: { company_id: adiuCompany.id, name: "Human Resource" },
-});
-
-const adiuHRManagerJobTitle = await prisma.jobTitle.findFirst({
-  where: { company_id: adiuCompany.id, title: "HR Manager" },
-});
-
-if (adiuHRDepartment && adiuHRManagerJobTitle) {
-  const existingEmployment = await prisma.employment.findFirst({
-    where: {
-      employee_id: adiuEmployee.id,
-      company_id: adiuCompany.id,
-      is_active: true,
-    },
+  // --- ADIU ADMIN ---
+  const adiuRoles = await prisma.appRole.findMany({
+    where: { company_id: adiuCompany.id },
   });
+  const adiuRoleMap = new Map(adiuRoles.map((r) => [r.name, r]));
 
-  if (existingEmployment) {
-    await prisma.employment.update({
-      where: { id: existingEmployment.id },
-      data: {
-        department_id: adiuHRDepartment.id,
-        job_title_id: adiuHRManagerJobTitle.id,
-      },
-    });
-  } else {
-    const startDate = new Date("2024-01-01");
-    const probationEndDate = new Date(
-      startDate.getTime() + 90 * 24 * 60 * 60 * 1000
-    );
-
-    await prisma.employment.create({
-      data: {
-        employee_id: adiuEmployee.id,
-        company_id: adiuCompany.id,
-        department_id: adiuHRDepartment.id,
-        job_title_id: adiuHRManagerJobTitle.id,
-        employment_type: "Full Time",
-        start_date: startDate,
-        probation_end_date: probationEndDate,
-        is_active: true,
-      },
-    });
-  }
-}
-// ============================================================
-// ADD EMPLOYEES FOR ADIU COMPANY
-// ============================================================
-console.log("Adding employees for ADIU Company...");
-
-// Helper to fetch ADIU role and leave types
-const adiuEmployeeRole = await prisma.appRole.findFirst({
-  where: { company_id: adiuCompany.id, name: "Employee" },
-});
-
-const annualLeaveType = await prisma.leaveType.findFirst({
-  where: { company_id: adiuCompany.id, code: "ANNUAL" },
-});
-const mourningLeaveType = await prisma.leaveType.findFirst({
-  where: { company_id: adiuCompany.id, code: "MOURNING" },
-});
-
-if (!adiuEmployeeRole) {
-  console.warn("Employee role not found for ADIU – skipping user creation.");
-}
-if (!annualLeaveType || !mourningLeaveType) {
-  console.warn("Leave types not found for ADIU – skipping leave balances.");
-}
-
-// List of employees to add
-const employeesToAdd = [
-  {
-    id: "30",
-    fullName: "Addisu Aynayehu Admas",
-    email: "addisu.aynayehu@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1993-01-07"),
-  },
-  {
-    id: "35",
-    fullName: "Sibhat Solomon Tikeher",
-    email: "sibhat.solomon@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1992-01-06"),
-  },
-  {
-    id: "8",
-    fullName: "Dagmawit Solomon Deneke",
-    email: "dagmawit.solomon@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1987-03-16"),
-  },
-  {
-    id: "19",
-    fullName: "Selamawit Temechu Dagne",
-    email: "selamawit.temechu@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1999-12-04"),
-  },
-  {
-    id: "52",
-    fullName: "Gelantu Tesfaye Yebase",
-    email: "gelantu.tesfaye@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1997-08-16"),
-  },
-  {
-    id: "46",
-    fullName: "Samuel Abebe Birle",
-    email: "samuel.abebe@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1997-07-26"),
-  },
-  {
-    id: "60",
-    fullName: "Sewalew Setotaw Fentabile",
-    email: "sewalew.setotaw@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1996-04-07"),
-  },
-  
-  {
-    id: "57",
-    fullName: "Daniel Tujuma",
-    email: "daniel.tujuma@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1990-01-01"),
-  },
-  {
-    id: "53",
-    fullName: "Eden Shitahun Asmare",
-    email: "eden.shitahun@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1998-01-31"),
-  },
-  {
-    id: "29",
-    fullName: "Emnet Abebe Getahun",
-    email: "emnet.abebe@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1997-06-30"),
-  },
-  {
-    id: "45",
-    fullName: "Tina Kibru Desalegn",
-    email: "tina.kibru@adiucommunication.com.et",
-    gender: "Female",
-    dob: new Date("1998-05-25"),
-  },
-  {
-    id: "54",
-    fullName: "Yonas Sheferaw Urgessa",
-    email: "yonas.sheferaw@adiucommunication.com.et",
-    gender: "Male",
-    dob: new Date("1992-01-12"),
-  },
-];
-
-// Password hash for all new users (same as used for other employees)
-const defaultPasswordHash = await bcrypt.hash("password123", 12);
-
-for (const emp of employeesToAdd) {
-  // 1. Upsert Employee
-  const employee = await prisma.employee.upsert({
-    where: { id: emp.id },
-    update: {},
+  const adiuEmployee = await prisma.employee.upsert({
+    where: { id: "EMP-ADIU-ADMIN" },
+    update: {
+      full_name: "ADIU Admin",
+      company_id: adiuCompany.id,
+    },
     create: {
-      id: emp.id,
+      id: "EMP-ADIU-ADMIN",
       company_id: adiuCompany.id,
-      full_name: emp.fullName,
-      gender: emp.gender,
-      date_of_birth: emp.dob,
+      full_name: "ADIU Admin",
+      gender: "Male",
     },
   });
 
-  // 2. Upsert AppUser (if role exists)
-  if (adiuEmployeeRole) {
-    await prisma.appUser.upsert({
-      where: { email: emp.email },
-      update: {},
-      create: {
-        company_id: adiuCompany.id,
-        employee_id: employee.id,
-        email: emp.email,
-        password_hash: defaultPasswordHash,
-        role_id: adiuEmployeeRole.id,
-        is_active: true,
-        onboarding_status: OnboardingStatus.COMPLETED,
-      },
-    });
-  }
+  const adiuPasswordHash = await bcrypt.hash("password123", 12);
+  const adiuAdminRole = adiuRoleMap.get("Admin");
 
-  // 3. Upsert Employment (active Full Time from today)
-  const existingEmployment = await prisma.employment.findFirst({
+  await prisma.appUser.deleteMany({
     where: {
-      employee_id: employee.id,
-      company_id: adiuCompany.id,
-      is_active: true,
+      OR: [
+        { email: "admin@adiu.com" },
+        {
+          company_id: adiuCompany.id,
+          employee_id: adiuEmployee.id,
+        },
+      ],
     },
   });
 
-  if (!existingEmployment) {
-    const startDate = new Date();
-    const probationEndDate = new Date(startDate.getTime() + 90 * 24 * 60 * 60 * 1000);
-    await prisma.employment.create({
-      data: {
-        employee_id: employee.id,
+  await prisma.appUser.upsert({
+    where: { email: "admin@adiu.com" },
+    update: {
+      password_hash: adiuPasswordHash,
+      role_id: adiuAdminRole?.id ?? 0,
+      company_id: adiuCompany.id,
+      employee_id: adiuEmployee.id,
+    },
+    create: {
+      company_id: adiuCompany.id,
+      employee_id: adiuEmployee.id,
+      email: "admin@adiu.com",
+      password_hash: adiuPasswordHash,
+      role_id: adiuAdminRole?.id ?? 0,
+      is_active: true,
+      onboarding_status: OnboardingStatus.COMPLETED,
+    },
+  });
+
+  const adiuHRDepartment = await prisma.department.findFirst({
+    where: { company_id: adiuCompany.id, name: "Human Resource" },
+  });
+  const adiuHRManagerJobTitle = await prisma.jobTitle.findFirst({
+    where: { company_id: adiuCompany.id, title: "HR Manager" },
+  });
+
+  if (adiuHRDepartment && adiuHRManagerJobTitle) {
+    const existingEmployment = await prisma.employment.findFirst({
+      where: {
+        employee_id: adiuEmployee.id,
         company_id: adiuCompany.id,
-        employment_type: "Full Time",
-        start_date: startDate,
-        probation_end_date: probationEndDate,
         is_active: true,
       },
     });
+
+    if (existingEmployment) {
+      await prisma.employment.update({
+        where: { id: existingEmployment.id },
+        data: {
+          department_id: adiuHRDepartment.id,
+          job_title_id: adiuHRManagerJobTitle.id,
+        },
+      });
+    } else {
+      const startDate = new Date("2024-01-01");
+      const probationEndDate = new Date(startDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+      await prisma.employment.create({
+        data: {
+          employee_id: adiuEmployee.id,
+          company_id: adiuCompany.id,
+          department_id: adiuHRDepartment.id,
+          job_title_id: adiuHRManagerJobTitle.id,
+          employment_type: "Full Time",
+          start_date: startDate,
+          probation_end_date: probationEndDate,
+          is_active: true,
+        },
+      });
+    }
   }
 
-  // 4. Upsert Leave Balances (Annual & Mourning) – only if leave types exist
-  if (annualLeaveType && mourningLeaveType) {
-    const fiscalYear = 2026;
-    // Annual Leave
-    await prisma.leaveBalance.upsert({
-      where: {
-        employee_id_leave_type_id_fiscal_year: {
-          employee_id: employee.id,
-          leave_type_id: annualLeaveType.id,
-          fiscal_year: fiscalYear,
-        },
-      },
-      update: {},
-      create: {
-        employee_id: employee.id,
-        company_id: adiuCompany.id,
-        leave_type_id: annualLeaveType.id,
-        fiscal_year: fiscalYear,
-        total_entitlement: 16,
-        used_days: 0,
-        pending_days: 0,
-        remaining_days: 16,
-      },
-    });
+  // ============================================================
+  // ADD EMPLOYEES FOR ADIU COMPANY (FIXED UPSERT)
+  // ============================================================
+  console.log("Adding employees for ADIU Company...");
 
-    // Mourning Leave
-    await prisma.leaveBalance.upsert({
-      where: {
-        employee_id_leave_type_id_fiscal_year: {
-          employee_id: employee.id,
-          leave_type_id: mourningLeaveType.id,
-          fiscal_year: fiscalYear,
-        },
-      },
-      update: {},
-      create: {
-        employee_id: employee.id,
-        company_id: adiuCompany.id,
-        leave_type_id: mourningLeaveType.id,
-        fiscal_year: fiscalYear,
-        total_entitlement: 3,
-        used_days: 0,
-        pending_days: 0,
-        remaining_days: 3,
-      },
-    });
+  const adiuEmployeeRole = await prisma.appRole.findFirst({
+    where: { company_id: adiuCompany.id, name: "Employee" },
+  });
+
+  const annualLeaveType = await prisma.leaveType.findFirst({
+    where: { company_id: adiuCompany.id, code: "ANNUAL" },
+  });
+  const mourningLeaveType = await prisma.leaveType.findFirst({
+    where: { company_id: adiuCompany.id, code: "MOURNING" },
+  });
+
+  if (!adiuEmployeeRole) {
+    console.warn("Employee role not found for ADIU – skipping user creation.");
   }
-}
+  if (!annualLeaveType || !mourningLeaveType) {
+    console.warn("Leave types not found for ADIU – skipping leave balances.");
+  }
 
-console.log("Finished adding ADIU employees.");
+  // List of employees to add (12 employees)
+  const employeesToAdd = [
+    { id: "30", fullName: "Addisu Aynayehu Admas", email: "addisu.aynayehu@adiucommunication.com.et", gender: "Male", dob: new Date("1993-01-07") },
+    { id: "35", fullName: "Sibhat Solomon Tikeher", email: "sibhat.solomon@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-06") },
+    { id: "8", fullName: "Dagmawit Solomon Deneke", email: "dagmawit.solomon@adiucommunication.com.et", gender: "Female", dob: new Date("1987-03-16") },
+    { id: "19", fullName: "Selamawit Temechu Dagne", email: "selamawit.temechu@adiucommunication.com.et", gender: "Female", dob: new Date("1999-12-04") },
+    { id: "52", fullName: "Gelantu Tesfaye Yebase", email: "gelantu.tesfaye@adiucommunication.com.et", gender: "Female", dob: new Date("1997-08-16") },
+    { id: "46", fullName: "Samuel Abebe Birle", email: "samuel.abebe@adiucommunication.com.et", gender: "Male", dob: new Date("1997-07-26") },
+    { id: "60", fullName: "Sewalew Setotaw Fentabile", email: "sewalew.setotaw@adiucommunication.com.et", gender: "Male", dob: new Date("1996-04-07") },
+    { id: "57", fullName: "Daniel Tujuma", email: "daniel.tujuma@adiucommunication.com.et", gender: "Male", dob: new Date("1990-01-01") },
+    { id: "53", fullName: "Eden Shitahun Asmare", email: "eden.shitahun@adiucommunication.com.et", gender: "Female", dob: new Date("1998-01-31") },
+    { id: "29", fullName: "Emnet Abebe Getahun", email: "emnet.abebe@adiucommunication.com.et", gender: "Female", dob: new Date("1997-06-30") },
+    { id: "45", fullName: "Tina Kibru Desalegn", email: "tina.kibru@adiucommunication.com.et", gender: "Female", dob: new Date("1998-05-25") },
+    { id: "54", fullName: "Yonas Sheferaw Urgessa", email: "yonas.sheferaw@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-12") },
+  ];
+
+  const defaultPasswordHash = await bcrypt.hash("password123", 12);
+
+  for (const emp of employeesToAdd) {
+    try {
+      // 1. Upsert Employee
+      const employee = await prisma.employee.upsert({
+        where: { id: emp.id },
+        update: {},
+        create: {
+          id: emp.id,
+          company_id: adiuCompany.id,
+          full_name: emp.fullName,
+          gender: emp.gender,
+          date_of_birth: emp.dob,
+        },
+      });
+
+      // 2. Upsert AppUser using the correct compound unique key
+      if (adiuEmployeeRole) {
+        await prisma.appUser.upsert({
+          where: {
+            company_id_employee_id: {
+              company_id: adiuCompany.id,
+              employee_id: employee.id,
+            },
+          },
+          update: {
+            email: emp.email,
+            password_hash: defaultPasswordHash,
+            role_id: adiuEmployeeRole.id,
+          },
+          create: {
+            company_id: adiuCompany.id,
+            employee_id: employee.id,
+            email: emp.email,
+            password_hash: defaultPasswordHash,
+            role_id: adiuEmployeeRole.id,
+            is_active: true,
+            onboarding_status: OnboardingStatus.COMPLETED,
+          },
+        });
+      }
+
+      // 3. Upsert Employment (active Full Time from today)
+      const existingEmployment = await prisma.employment.findFirst({
+        where: {
+          employee_id: employee.id,
+          company_id: adiuCompany.id,
+          is_active: true,
+        },
+      });
+
+      if (!existingEmployment) {
+        const startDate = new Date();
+        const probationEndDate = new Date(startDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+        await prisma.employment.create({
+          data: {
+            employee_id: employee.id,
+            company_id: adiuCompany.id,
+            employment_type: "Full Time",
+            start_date: startDate,
+            probation_end_date: probationEndDate,
+            is_active: true,
+          },
+        });
+      }
+
+      // 4. Upsert Leave Balances (Annual & Mourning)
+      if (annualLeaveType && mourningLeaveType) {
+        const fiscalYear = 2026;
+        await prisma.leaveBalance.upsert({
+          where: {
+            employee_id_leave_type_id_fiscal_year: {
+              employee_id: employee.id,
+              leave_type_id: annualLeaveType.id,
+              fiscal_year: fiscalYear,
+            },
+          },
+          update: {},
+          create: {
+            employee_id: employee.id,
+            company_id: adiuCompany.id,
+            leave_type_id: annualLeaveType.id,
+            fiscal_year: fiscalYear,
+            total_entitlement: 16,
+            used_days: 0,
+            pending_days: 0,
+            remaining_days: 16,
+          },
+        });
+
+        await prisma.leaveBalance.upsert({
+          where: {
+            employee_id_leave_type_id_fiscal_year: {
+              employee_id: employee.id,
+              leave_type_id: mourningLeaveType.id,
+              fiscal_year: fiscalYear,
+            },
+          },
+          update: {},
+          create: {
+            employee_id: employee.id,
+            company_id: adiuCompany.id,
+            leave_type_id: mourningLeaveType.id,
+            fiscal_year: fiscalYear,
+            total_entitlement: 3,
+            used_days: 0,
+            pending_days: 0,
+            remaining_days: 3,
+          },
+        });
+      }
+    } catch (error) {
+      console.error(`❌ Failed to process employee ${emp.fullName} (${emp.id}):`, error);
+    }
+  }
+
+  console.log("Finished adding ADIU employees.");
   console.log("Seeding finished.");
 }
 
