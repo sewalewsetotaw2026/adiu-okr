@@ -56,17 +56,29 @@ async function getManagedEmployeeIds(
       employee: {
         select: { id: true, full_name: true },
       },
+      department: {
+        select: { name: true },
+      },
+      jobTitle: {
+        select: { title: true },
+      },
     },
   });
 
-  // Deduplicate by employee_id (Account ID or Employee ID string)
-  const map = new Map<string, { id: string; full_name: string }>();
+  // Deduplicate by employee_id to avoid multiple active employments causing duplicates
+  const uniqueEmployees = new Map();
   for (const emp of employments) {
-    if (!map.has(emp.employee_id)) {
-      map.set(emp.employee_id, emp.employee);
+    if (emp.employee && !uniqueEmployees.has(emp.employee_id)) {
+      uniqueEmployees.set(emp.employee_id, {
+        id: emp.employee.id,
+        full_name: emp.employee.full_name,
+        department_name: emp.department?.name || "No Department",
+        job_title: emp.jobTitle?.title || "No Job Title",
+      });
     }
   }
-  return Array.from(map.values());
+
+  return Array.from(uniqueEmployees.values());
 }
 
 // ─── Subordinate Job Titles ───────────────────────────────────────────────────
@@ -152,6 +164,10 @@ export async function getTeamExecutionSummary(
           },
           weeklyPlans: {
             select: {
+              week_number: true,
+              progress_percent: true,
+              target_value: true,
+              current_value: true,
               confidence_level: true,
               updated_at: true,
               tasks: {
@@ -171,6 +187,14 @@ export async function getTeamExecutionSummary(
             take: 1,
             select: { confidence_level: true, created_at: true },
           },
+        },
+      },
+      monthPlans: {
+        select: {
+          month_number: true,
+          progress_percent: true,
+          target_value: true,
+          current_value: true,
         },
       },
     },
@@ -236,10 +260,58 @@ export async function getTeamExecutionSummary(
       off_track: latestUpdates.filter((u) => u === "OFF_TRACK").length,
     };
 
+    const weeklyProgressAgg: Record<number, { sum: number, count: number }> = {};
+    const monthlyProgressAgg: Record<number, { sum: number, count: number }> = {};
+
+    empObjectives.forEach((o) => {
+      // Monthly aggregation
+      o.monthPlans.forEach((mp) => {
+        const mNum = mp.month_number;
+        let val = 0;
+        if (mp.progress_percent != null) {
+          val = Number(mp.progress_percent.toString());
+        } else {
+          const tgt = Number(mp.target_value?.toString() ?? "0");
+          const cur = Number(mp.current_value?.toString() ?? "0");
+          if (tgt > 0) val = (cur / tgt) * 100;
+        }
+        if (!monthlyProgressAgg[mNum]) monthlyProgressAgg[mNum] = { sum: 0, count: 0 };
+        monthlyProgressAgg[mNum].sum += val;
+        monthlyProgressAgg[mNum].count += 1;
+      });
+    });
+
+    allKRs.forEach((kr) => {
+      // Weekly aggregation
+      kr.weeklyPlans.forEach((wp: any) => {
+        const wNum = wp.week_number;
+        let val = 0;
+        if (wp.progress_percent != null) {
+          val = Number(wp.progress_percent.toString());
+        } else {
+          const tgt = Number(wp.target_value?.toString() ?? "0");
+          const cur = Number(wp.current_value?.toString() ?? "0");
+          if (tgt > 0) val = (cur / tgt) * 100;
+        }
+        if (!weeklyProgressAgg[wNum]) weeklyProgressAgg[wNum] = { sum: 0, count: 0 };
+        weeklyProgressAgg[wNum].sum += val;
+        weeklyProgressAgg[wNum].count += 1;
+      });
+    });
+
+    const weekly_progress = Object.fromEntries(
+      Object.entries(weeklyProgressAgg).map(([w, data]) => [w, data.count > 0 ? data.sum / data.count : 0])
+    );
+    const monthly_progress = Object.fromEntries(
+      Object.entries(monthlyProgressAgg).map(([m, data]) => [m, data.count > 0 ? data.sum / data.count : 0])
+    );
+
     return {
       id: employee.id,
       employee_id: employee.id,
       employee_name: employee.full_name,
+      department_name: (employee as any).department_name || "No Department",
+      job_title: (employee as any).job_title || "No Job Title",
       objective_title: empObjectives[0]?.title ?? "—",
       objectives_count: empObjectives.length,
       objectives_status: {
@@ -259,6 +331,10 @@ export async function getTeamExecutionSummary(
           ? empObjectives.reduce((s, o) => s + Number(o.progress_percent ?? 0), 0) /
           empObjectives.length
           : 0,
+      weekly_progress,
+      weeklyProgress: weekly_progress, // alias
+      monthly_progress,
+      monthlyProgress: monthly_progress, // alias
       progress_updates_count: totalProgressUpdates,
       confidence: confidenceCounts,
       is_blocked:
