@@ -220,6 +220,9 @@ model CompanyObjective {
   cycle_id         Int
   title            String             @db.VarChar(200)
   description      String?            @db.VarChar(1000)
+  target_value     Decimal?           @db.Decimal(18, 4)
+  current_value    Decimal?           @db.Decimal(18, 4)
+
   status_code      String             @db.VarChar(50)
   created_by       String             @db.VarChar(20)
   approved_by      String?            @db.VarChar(20)
@@ -227,12 +230,10 @@ model CompanyObjective {
   published_at     DateTime?
   is_archived      Boolean            @default(false)
   archived_at      DateTime?
+  progress_percent Decimal?           @db.Decimal(7, 2)
   created_at       DateTime           @default(now())
   updated_at       DateTime           @updatedAt
-  current_value    Decimal?           @db.Decimal(18, 4)
-  progress_percent Decimal?           @db.Decimal(7, 2)
   submission_id    Int?
-  target_value     Decimal?           @db.Decimal(18, 4)
   keyResults       CompanyKeyResult[]
   cycle            OkrCycle           @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
   submission       OkrSubmission?     @relation(fields: [submission_id], references: [id])
@@ -254,10 +255,14 @@ model CompanyKeyResult {
   metric_definition_id           Int
   unit_of_measure                String?             @db.VarChar(30)
   target_value                   Decimal?            @db.Decimal(18, 4)
+  current_value                  Decimal?            @db.Decimal(18, 4)
   weight_percent                 Decimal?            @db.Decimal(7, 2)
   contributes_to_objective_score Boolean             @default(true)
   contributes_to_objective_value Boolean             @default(true)
   is_mandatory_for_completion    Boolean             @default(false)
+  is_direct                      Boolean             @default(true)
+  normalized_weight              Decimal?            @db.Decimal(7, 4)
+  progress_percent               Decimal?            @db.Decimal(7, 2)
   status_code                    String              @db.VarChar(50)
   created_by                     String              @db.VarChar(20)
   approved_by                    String?             @db.VarChar(20)
@@ -265,11 +270,7 @@ model CompanyKeyResult {
   published_at                   DateTime?
   created_at                     DateTime            @default(now())
   updated_at                     DateTime            @updatedAt
-  current_value                  Decimal?            @db.Decimal(18, 4)
-  progress_percent               Decimal?            @db.Decimal(7, 2)
   submission_id                  Int?
-  is_direct                      Boolean             @default(true)
-  normalized_weight              Decimal?            @db.Decimal(7, 4)
   metricDefinition               OkrMetricDefinition @relation(fields: [metric_definition_id], references: [id])
   objective                      CompanyObjective    @relation(fields: [objective_id], references: [id], onDelete: Cascade)
   submission                     OkrSubmission?      @relation(fields: [submission_id], references: [id])
@@ -288,6 +289,8 @@ model CompanyKeyResult {
 model KrContributor {
   id                         Int                    @id @default(autoincrement())
   company_id                 Int
+  company_kr_id              Int?
+  employee_kr_id             Int?
   department_kr_id           Int?
   user_id                    String                 @db.VarChar(20)
   role_type                  OkrContributorRoleType
@@ -296,8 +299,6 @@ model KrContributor {
   assigned_by                String                 @db.VarChar(20)
   assigned_at                DateTime               @default(now())
   updated_at                 DateTime               @updatedAt
-  company_kr_id              Int?
-  employee_kr_id             Int?
   employeeObjectives         EmployeeObjective?
   companyKr                  CompanyKeyResult?      @relation(fields: [company_kr_id], references: [id], onDelete: Cascade)
   departmentKr               EmployeeKeyResult?     @relation("DepartmentKrContributors", fields: [department_kr_id], references: [id], onDelete: Cascade)
@@ -317,11 +318,16 @@ model EmployeeObjective {
   id                           Int                 @id @default(autoincrement())
   company_id                   Int
   cycle_id                     Int
+  department_id                Int?
   kr_contributor_id            Int                 @unique
   chosen_parent_kr_id          Int?
+  chosen_parent_employee_kr_id Int?
   user_id                      String              @db.VarChar(20)
   title                        String              @db.VarChar(200)
   description                  String?             @db.VarChar(1000)
+  target_value                 Decimal?            @db.Decimal(18, 4)
+  current_value                Decimal?            @db.Decimal(18, 4)
+
   status_code                  String              @db.VarChar(50)
   created_by                   String              @db.VarChar(20)
   approved_by                  String?             @db.VarChar(20)
@@ -329,14 +335,10 @@ model EmployeeObjective {
   published_at                 DateTime?
   is_archived                  Boolean             @default(false)
   archived_at                  DateTime?
+  progress_percent             Decimal?            @db.Decimal(7, 2)
   created_at                   DateTime            @default(now())
   updated_at                   DateTime            @updatedAt
-  chosen_parent_employee_kr_id Int?
-  current_value                Decimal?            @db.Decimal(18, 4)
-  department_id                Int?
-  progress_percent             Decimal?            @db.Decimal(7, 2)
   submission_id                Int?
-  target_value                 Decimal?            @db.Decimal(18, 4)
   keyResults                   EmployeeKeyResult[]
   monthPlans                   EmployeeMonthPlan[]
   parentEmployeeKr             EmployeeKeyResult?  @relation("EmployeeToEmployeeDelegation", fields: [chosen_parent_employee_kr_id], references: [id], onDelete: Cascade)
@@ -365,23 +367,23 @@ model EmployeeKeyResult {
   metric_definition_id           Int
   unit_of_measure                String?                 @db.VarChar(30)
   target_value                   Decimal?                @db.Decimal(18, 4)
+  current_value                  Decimal?                @db.Decimal(18, 4)
   weight_percent                 Decimal?                @db.Decimal(7, 2)
   contributes_to_objective_score Boolean                 @default(true)
   contributes_to_objective_value Boolean                 @default(true)
   is_mandatory_for_completion    Boolean                 @default(false)
+  is_direct                      Boolean                 @default(true)
   execution_mode                 OkrExecutionMode        @default(DIRECT_ADOPTION)
   status_code                    String                  @db.VarChar(50)
+  normalized_weight              Decimal?                @db.Decimal(7, 4)
   created_by                     String                  @db.VarChar(20)
   approved_by                    String?                 @db.VarChar(20)
   published_by                   String?                 @db.VarChar(20)
   published_at                   DateTime?
+  progress_percent               Decimal?                @db.Decimal(7, 2)
   created_at                     DateTime                @default(now())
   updated_at                     DateTime                @updatedAt
-  current_value                  Decimal?                @db.Decimal(18, 4)
-  progress_percent               Decimal?                @db.Decimal(7, 2)
   submission_id                  Int?
-  is_direct                      Boolean                 @default(true)
-  normalized_weight              Decimal?                @db.Decimal(7, 4)
   employeeObjective              EmployeeObjective       @relation(fields: [employee_objective_id], references: [id], onDelete: Cascade)
   metricDefinition               OkrMetricDefinition     @relation(fields: [metric_definition_id], references: [id])
   submission                     OkrSubmission?          @relation(fields: [submission_id], references: [id])
@@ -406,21 +408,22 @@ model EmployeeMonthPlan {
   id                    Int                     @id @default(autoincrement())
   company_id            Int
   month_number          Int
+  employee_objective_id Int
+  title                 String                  @db.VarChar(200)
   description           String?                 @db.VarChar(2000)
+  target_value          Decimal?                @db.Decimal(18, 4)
+  current_value         Decimal?                @db.Decimal(18, 4)
+
+  is_manager_plan       Boolean                 @default(false)
   status_code           String                  @db.VarChar(50)
   created_by            String                  @db.VarChar(20)
   approved_by           String?                 @db.VarChar(20)
   published_by          String?                 @db.VarChar(20)
   published_at          DateTime?
+  progress_percent      Decimal?                @db.Decimal(7, 2)
   created_at            DateTime                @default(now())
   updated_at            DateTime                @updatedAt
-  target_value          Decimal?                @db.Decimal(18, 4)
-  current_value         Decimal?                @db.Decimal(18, 4)
-  employee_objective_id Int
-  is_manager_plan       Boolean                 @default(false)
-  progress_percent      Decimal?                @db.Decimal(7, 2)
   submission_id         Int?
-  title                 String                  @db.VarChar(200)
   employeeObjective     EmployeeObjective       @relation(fields: [employee_objective_id], references: [id], onDelete: Cascade)
   submission            OkrSubmission?          @relation(fields: [submission_id], references: [id])
   items                 EmployeeMonthPlanItem[]
@@ -436,26 +439,27 @@ model EmployeeMonthPlan {
 }
 
 model EmployeeMonthPlanItem {
-  id                                 Int                     @id @default(autoincrement())
-  company_id                         Int
-  employee_month_plan_id             Int
-  employee_kr_id                     Int
-  metric_definition_id               Int?
-  parent_employee_month_plan_item_id Int?
-  title                              String                  @default("Untitled") @db.VarChar(200)
-  target_value                       Decimal                 @db.Decimal(18, 4)
-  current_value                      Decimal?                @db.Decimal(18, 4)
-  note                               String?                 @db.VarChar(1000)
-  created_at                         DateTime                @default(now())
-  updated_at                         DateTime                @updatedAt
-  is_direct                          Boolean                 @default(true)
-  employeeKr                         EmployeeKeyResult       @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
-  monthPlan                          EmployeeMonthPlan       @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
-  metricDefinition                   OkrMetricDefinition?    @relation(fields: [metric_definition_id], references: [id])
-  parentItem                         EmployeeMonthPlanItem?  @relation("MonthPlanItemParent", fields: [parent_employee_month_plan_item_id], references: [id])
-  childItems                         EmployeeMonthPlanItem[] @relation("MonthPlanItemParent")
-  weeklyPlans                        WeeklyPlan[]
+  id                                Int                     @id @default(autoincrement())
+  company_id                        Int
+  employee_month_plan_id            Int
+  employee_kr_id                    Int
+  metric_definition_id              Int?
+  parent_employee_month_plan_item_id Int?                   // Self-ref alignment link to manager's own plan item
+  title                             String                  @default("Untitled") @db.VarChar(200)
+  is_direct                         Boolean                 @default(true)
+  target_value                      Decimal                 @db.Decimal(18, 4)
+  current_value                     Decimal?                @db.Decimal(18, 4)
+  note                              String?                 @db.VarChar(1000)
+  created_at                        DateTime                @default(now())
+  updated_at                        DateTime                @updatedAt
+  employeeKr                        EmployeeKeyResult       @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
+  monthPlan                         EmployeeMonthPlan       @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
+  metricDefinition                  OkrMetricDefinition?    @relation(fields: [metric_definition_id], references: [id])
+  parentItem                        EmployeeMonthPlanItem?  @relation("MonthPlanItemParent", fields: [parent_employee_month_plan_item_id], references: [id], onDelete: SetNull)
+  childItems                        EmployeeMonthPlanItem[] @relation("MonthPlanItemParent")
+  weeklyPlans                       WeeklyPlan[]
 
+  // NOTE: @@unique([employee_month_plan_id, employee_kr_id]) REMOVED — multiple items per KR allowed
   @@index([company_id])
   @@index([employee_month_plan_id])
   @@index([employee_kr_id])
@@ -464,44 +468,50 @@ model EmployeeMonthPlanItem {
   @@map("employee_month_plan_item")
 }
 
+// ManagerMonthPlan, ManagerMonthPlanItem, ManagerWeeklyPlan models REMOVED.
+// Manager plans now live in EmployeeMonthPlan / WeeklyPlan (manager is just another employee).
+// Subordinate alignment uses self-referencing parent links on EmployeeMonthPlanItem and WeeklyPlan.
+
 model WeeklyPlan {
   id                          Int                    @id @default(autoincrement())
   company_id                  Int
   employee_kr_id              Int
   employee_month_plan_id      Int
   week_number                 Int
+  title                       String?                @db.VarChar(200)
+  metric_definition_id        Int?
+  target_value                Decimal?               @db.Decimal(18, 4)
+  current_value               Decimal?               @db.Decimal(18, 4)
+  is_direct                   Boolean                @default(true)
+  weight_percent              Decimal?               @db.Decimal(7, 2)
+
+  contributes_to_parent_score Boolean                @default(true)
+  contributes_to_parent_value Boolean                @default(true)
+  parent_weekly_plan_id       Int? // Self-ref alignment link to manager's own weekly plan
+  parent_weekly_task_id       Int? // Alignment link to a specific manager weekly task
+  employee_month_plan_item_id Int?
   status_code                 String                 @db.VarChar(50)
   confidence_level            OkrConfidenceLevel?
   blockers                    String?                @db.VarChar(2000)
   created_by                  String                 @db.VarChar(20)
+  approved_by                 String?                @db.VarChar(20)
+  published_by                String?                @db.VarChar(20)
+  published_at                DateTime?
   created_at                  DateTime               @default(now())
   updated_at                  DateTime               @updatedAt
-  metric_definition_id        Int?
-  target_value                Decimal?               @db.Decimal(18, 4)
-  current_value               Decimal?               @db.Decimal(18, 4)
-  contributes_to_parent_score Boolean                @default(true)
-  contributes_to_parent_value Boolean                @default(true)
-  approved_by                 String?                @db.VarChar(20)
-  employee_month_plan_item_id Int?
-  parent_weekly_plan_id       Int?
-  parent_weekly_task_id       Int?
   progress_percent            Decimal?               @db.Decimal(7, 2)
-  published_at                DateTime?
-  published_by                String?                @db.VarChar(20)
   submission_id               Int?
-  title                       String?                @db.VarChar(200)
-  weight_percent              Decimal?               @db.Decimal(7, 2)
-  is_direct                   Boolean                @default(true)
   employeeKr                  EmployeeKeyResult      @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
   monthPlan                   EmployeeMonthPlan      @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
   monthPlanItem               EmployeeMonthPlanItem? @relation(fields: [employee_month_plan_item_id], references: [id])
   metricDefinition            OkrMetricDefinition?   @relation(fields: [metric_definition_id], references: [id])
-  parentWeeklyPlan            WeeklyPlan?            @relation("WeeklyPlanParent", fields: [parent_weekly_plan_id], references: [id])
-  childWeeklyPlans            WeeklyPlan[]           @relation("WeeklyPlanParent")
-  parentWeeklyTask            WeeklyTask?            @relation("WeeklyTaskParent", fields: [parent_weekly_task_id], references: [id])
   submission                  OkrSubmission?         @relation(fields: [submission_id], references: [id])
+  parentWeeklyPlan            WeeklyPlan?            @relation("WeeklyPlanParent", fields: [parent_weekly_plan_id], references: [id], onDelete: SetNull)
+  parentWeeklyTask            WeeklyTask?            @relation("WeeklyTaskParent", fields: [parent_weekly_task_id], references: [id], onDelete: SetNull)
+  childWeeklyPlans            WeeklyPlan[]           @relation("WeeklyPlanParent")
   tasks                       WeeklyTask[]
 
+  // NOTE: @@unique([employee_kr_id, employee_month_plan_id, week_number]) REMOVED — multiple items per KR allowed
   @@index([employee_kr_id, employee_month_plan_id, week_number])
   @@index([company_id])
   @@index([employee_kr_id])
@@ -520,16 +530,16 @@ model WeeklyTask {
   company_id       Int
   weekly_plan_id   Int
   title            String       @db.VarChar(200)
+  is_direct        Boolean      @default(true)
   target_value     Decimal?     @db.Decimal(18, 4)
   current_value    Decimal?     @db.Decimal(18, 4)
+  progress_percent Decimal?     @db.Decimal(7, 2)
   status_code      String       @db.VarChar(50)
   created_at       DateTime     @default(now())
   updated_at       DateTime     @updatedAt
-  is_direct        Boolean      @default(true)
-  progress_percent Decimal?     @db.Decimal(7, 2)
   dailyPlans       DailyPlan[]
-  childWeeklyPlans WeeklyPlan[] @relation("WeeklyTaskParent")
   weeklyPlan       WeeklyPlan   @relation(fields: [weekly_plan_id], references: [id], onDelete: Cascade)
+  childWeeklyPlans WeeklyPlan[] @relation("WeeklyTaskParent")
 
   @@index([company_id])
   @@index([weekly_plan_id])
@@ -542,6 +552,17 @@ model Subtask {
   employee_kr_id              Int
   title                       String               @db.VarChar(200)
   description                 String?              @db.VarChar(1000)
+  metric_definition_id        Int?
+  is_direct                   Boolean              @default(true)
+  target_value                Decimal?             @db.Decimal(18, 4)
+  current_value               Decimal?             @db.Decimal(18, 4)
+  weight_percent              Decimal?             @db.Decimal(7, 2)
+  progress_percent            Decimal?             @db.Decimal(7, 2)
+
+  confidence_level            OkrConfidenceLevel?
+  contributes_to_parent_score Boolean              @default(true)
+
+  contributes_to_parent_value Boolean              @default(true)
   status_code                 String               @db.VarChar(50)
   target_month                Int?
   target_week                 Int?
@@ -550,15 +571,6 @@ model Subtask {
   created_by                  String               @db.VarChar(20)
   created_at                  DateTime             @default(now())
   updated_at                  DateTime             @updatedAt
-  metric_definition_id        Int?
-  target_value                Decimal?             @db.Decimal(18, 4)
-  current_value               Decimal?             @db.Decimal(18, 4)
-  progress_percent            Decimal?             @db.Decimal(7, 2)
-  confidence_level            OkrConfidenceLevel?
-  contributes_to_parent_score Boolean              @default(true)
-  contributes_to_parent_value Boolean              @default(true)
-  weight_percent              Decimal?             @db.Decimal(7, 2)
-  is_direct                   Boolean              @default(true)
   employeeKr                  EmployeeKeyResult    @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
   metricDefinition            OkrMetricDefinition? @relation(fields: [metric_definition_id], references: [id])
 
@@ -579,22 +591,24 @@ model DailyPlan {
   completion_day              OkrWeekDay?
   description                 String?              @db.VarChar(1000)
   metric_definition_id        Int?
+  is_direct                   Boolean              @default(true)
   target_value                Decimal?             @db.Decimal(18, 4)
   current_value               Decimal?             @db.Decimal(18, 4)
   weight_percent              Decimal?             @db.Decimal(7, 2)
   progress_percent            Decimal?             @db.Decimal(7, 2)
+
   confidence_level            OkrConfidenceLevel?
   contributes_to_parent_score Boolean              @default(true)
   contributes_to_parent_value Boolean              @default(true)
   approved_by                 String?              @db.VarChar(20)
   published_by                String?              @db.VarChar(20)
   published_at                DateTime?
+
   status_code                 String               @db.VarChar(50)
   completed_at                DateTime?
   created_by                  String               @db.VarChar(20)
   created_at                  DateTime             @default(now())
   updated_at                  DateTime             @updatedAt
-  is_direct                   Boolean              @default(true)
   metricDefinition            OkrMetricDefinition? @relation(fields: [metric_definition_id], references: [id])
   weeklyTask                  WeeklyTask           @relation(fields: [weekly_task_id], references: [id], onDelete: Cascade)
   progressUpdates             ProgressUpdate[]
@@ -612,6 +626,8 @@ model ProgressUpdate {
   employee_kr_id   Int
   week_number      Int?
   month_number     Int?
+  completion_day   OkrWeekDay?
+  daily_plan_id    Int?
   current_value    Decimal?            @db.Decimal(18, 4)
   confidence_level OkrConfidenceLevel?
   blockers         String?             @db.VarChar(2000)
@@ -620,8 +636,6 @@ model ProgressUpdate {
   updated_by       String              @db.VarChar(20)
   cycle_label      String?             @db.VarChar(20)
   created_at       DateTime            @default(now())
-  completion_day   OkrWeekDay?
-  daily_plan_id    Int?
   dailyPlan        DailyPlan?          @relation(fields: [daily_plan_id], references: [id])
   employeeKr       EmployeeKeyResult   @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
 
