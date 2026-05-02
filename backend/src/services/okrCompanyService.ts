@@ -323,6 +323,7 @@ interface CreateKRInput {
   weightPercent?: number;
   contributesToScore?: boolean;
   contributesToValue?: boolean;
+  isDirect?: boolean;
   isMandatory?: boolean;
   assignUserIds?: string[];
   assignDepartmentIds?: number[];
@@ -406,8 +407,8 @@ export async function createKeyResult(input: CreateKRInput) {
   }
 
   // Weight limit check
-  if (input.weightPercent && (input.contributesToScore ?? true)) {
-    await checkWeightLimit(input.objectiveId, "COMPANY", input.weightPercent);
+  if (input.weightPercent && (input.isDirect ?? input.contributesToScore ?? true)) {
+    await checkWeightLimit(input.objectiveId, "COMPANY", input.weightPercent, input.isDirect ?? input.contributesToScore ?? true);
   }
 
   // Prepare normalized user IDs if provided
@@ -438,8 +439,7 @@ export async function createKeyResult(input: CreateKRInput) {
         target_value: input.targetValue,
         current_value: Number("0"),
         weight_percent: input.weightPercent,
-        contributes_to_objective_score: input.contributesToScore ?? true,
-        contributes_to_objective_value: input.contributesToValue ?? true,
+        is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore ?? true,
         is_mandatory_for_completion: input.isMandatory ?? false,
         status_code: "draft",
         created_by: input.createdBy,
@@ -518,13 +518,14 @@ export async function updateKeyResult(
     // Weight limit check
     if (
       input.weightPercent &&
-      (input.contributesToScore ?? currentKr.contributes_to_objective_score)
+      (input.isDirect ?? input.contributesToScore ?? currentKr.is_direct)
     ) {
       // Note: weight checking logic needs to use tx if it makes queries
       await checkWeightLimit(
         currentKr.objective_id,
         "COMPANY",
         input.weightPercent,
+        input.isDirect ?? input.contributesToScore ?? currentKr.is_direct,
         id,
       );
     }
@@ -538,8 +539,7 @@ export async function updateKeyResult(
         unit_of_measure: input.unitOfMeasure,
         target_value: input.targetValue,
         weight_percent: input.weightPercent,
-        contributes_to_objective_score: input.contributesToScore,
-        contributes_to_objective_value: input.contributesToValue,
+        is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore,
         is_mandatory_for_completion: input.isMandatory,
       },
     });

@@ -307,20 +307,6 @@ async function main() {
   });
   console.log(`Ensured Kacha Company: ${kachaCompany.name}`);
 
-  // --- ADIU COMPANY SEEDING ---
-const adiuCompanyCode = "ADIU";
-const adiuCompany = await prisma.company.upsert({
-  where: { company_code: adiuCompanyCode },
-  update: { name: "ADIU Communications Service PLC" },
-  create: {
-    company_code: adiuCompanyCode,
-    name: "ADIU Communications Service PLC",
-    is_active: true,
-  },
-});
-
-console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
-
   // Ensure test company also gets roles/permissions for E2E suites
   const testCompany = await prisma.company.upsert({
     where: { company_code: "TEST01" },
@@ -435,7 +421,6 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
   console.log("Seeding tenant-specific data...");
   await seedTenantData(platformCompany.id, resourceMap);
   await seedTenantData(kachaCompany.id, resourceMap);
-  await seedTenantData(adiuCompany.id, resourceMap);  
   await seedTenantData(testCompany.id, resourceMap);
 
   // --- ADMIN USERS SEEDING ---
@@ -577,105 +562,7 @@ console.log(`Ensured ADIU Company: ${adiuCompany.name}`);
     }
   }
 
-// --- ADIU ADMIN ---
-const adiuRoles = await prisma.appRole.findMany({
-  where: { company_id: adiuCompany.id },
-});
-const adiuRoleMap = new Map(adiuRoles.map((r) => [r.name, r]));
 
-const adiuEmployee = await prisma.employee.upsert({
-  where: { id: "EMP-ADIU-ADMIN" },
-  update: {
-    full_name: "ADIU Admin",
-    company_id: adiuCompany.id,
-  },
-  create: {
-    id: "EMP-ADIU-ADMIN",
-    company_id: adiuCompany.id,
-    full_name: "ADIU Admin",
-    gender: "Male",
-  },
-});
-
-const adiuPasswordHash = await bcrypt.hash("password123", 12);
-const adiuAdminRole = adiuRoleMap.get("Admin");
-
-// Clean existing (safe)
-await prisma.appUser.deleteMany({
-  where: {
-    OR: [
-      { email: "admin@adiu.com" },
-      {
-        company_id: adiuCompany.id,
-        employee_id: adiuEmployee.id,
-      },
-    ],
-  },
-});
-
-await prisma.appUser.upsert({
-  where: { email: "admin@adiu.com" },
-  update: {
-    password_hash: adiuPasswordHash,
-    role_id: adiuAdminRole?.id ?? 0,
-    company_id: adiuCompany.id,
-    employee_id: adiuEmployee.id,
-  },
-  create: {
-    company_id: adiuCompany.id,
-    employee_id: adiuEmployee.id,
-    email: "admin@adiu.com",
-    password_hash: adiuPasswordHash,
-    role_id: adiuAdminRole?.id ?? 0,
-    is_active: true,
-    onboarding_status: OnboardingStatus.COMPLETED,
-  },
-});
-const adiuHRDepartment = await prisma.department.findFirst({
-  where: { company_id: adiuCompany.id, name: "Human Resource" },
-});
-
-const adiuHRManagerJobTitle = await prisma.jobTitle.findFirst({
-  where: { company_id: adiuCompany.id, title: "HR Manager" },
-});
-
-if (adiuHRDepartment && adiuHRManagerJobTitle) {
-  const existingEmployment = await prisma.employment.findFirst({
-    where: {
-      employee_id: adiuEmployee.id,
-      company_id: adiuCompany.id,
-      is_active: true,
-    },
-  });
-
-  if (existingEmployment) {
-    await prisma.employment.update({
-      where: { id: existingEmployment.id },
-      data: {
-        department_id: adiuHRDepartment.id,
-        job_title_id: adiuHRManagerJobTitle.id,
-      },
-    });
-  } else {
-    const startDate = new Date("2024-01-01");
-    const probationEndDate = new Date(
-      startDate.getTime() + 90 * 24 * 60 * 60 * 1000
-    );
-
-    await prisma.employment.create({
-      data: {
-        employee_id: adiuEmployee.id,
-        company_id: adiuCompany.id,
-        department_id: adiuHRDepartment.id,
-        job_title_id: adiuHRManagerJobTitle.id,
-        employment_type: "Full Time",
-        start_date: startDate,
-        probation_end_date: probationEndDate,
-        is_active: true,
-      },
-    });
-  }
-}
 
   console.log("Seeding finished.");
 }

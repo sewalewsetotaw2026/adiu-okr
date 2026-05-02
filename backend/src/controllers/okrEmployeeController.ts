@@ -284,6 +284,7 @@ export const createEmployeeKR = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
+      is_direct,
       is_mandatory,
       execution_mode,
       contributor_user_ids,
@@ -304,8 +305,7 @@ export const createEmployeeKR = async (
       targetValue: target_value,
       currentValue: current_value,
       weightPercent: weight_percent,
-      contributesToScore: contributes_to_score,
-      contributesToValue: contributes_to_value,
+      isDirect: is_direct ?? contributes_to_value ?? contributes_to_score,
       isMandatory: is_mandatory,
       executionMode: execution_mode,
       createdBy: req.user!.user_id,
@@ -338,6 +338,7 @@ export const updateEmployeeKR = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
+      is_direct,
       is_mandatory,
       contributor_user_ids,
     } = req.body;
@@ -350,8 +351,7 @@ export const updateEmployeeKR = async (
       targetValue: target_value,
       currentValue: current_value,
       weightPercent: weight_percent,
-      contributesToScore: contributes_to_score,
-      contributesToValue: contributes_to_value,
+      isDirect: is_direct ?? contributes_to_value ?? contributes_to_score,
       isMandatory: is_mandatory,
       contributorUserIds: contributor_user_ids,
     });
@@ -455,6 +455,7 @@ export const createEmployeeMonthPlan = async (
         currentValue: Number(i.current_value || 0),
         parentMonthPlanItemId: i.parent_employee_month_plan_item_id ? Number(i.parent_employee_month_plan_item_id) : undefined,
         note: i.note,
+        isDirect: i.is_direct !== false,
       })),
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
@@ -494,8 +495,7 @@ export const createEmployeeKRMonthPlan = async (
       description,
       target_value,
       weight_percent,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     if (!month_number) {
@@ -512,8 +512,7 @@ export const createEmployeeKRMonthPlan = async (
       targetValue: Number(target_value),
       currentValue: Number(req.body.current_value || 0),
       description,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       weightPercent: weight_percent,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
@@ -701,7 +700,10 @@ export const createWeeklyPlans = async (
         currentValue: Number(i.current_value || 0),
         metricDefinitionId: i.metric_definition_id ? Number(i.metric_definition_id) : undefined,
         blockers: i.blockers,
+        parentWeeklyPlanId: i.parent_weekly_plan_id ? Number(i.parent_weekly_plan_id) : undefined,
+        parentWeeklyTaskId: i.parent_weekly_task_id ? Number(i.parent_weekly_task_id) : undefined,
         tasks: i.tasks,
+        isDirect: i.is_direct !== false,
       })),
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
@@ -738,8 +740,7 @@ export const createWeeklyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
       title,
       tasks,
     } = req.body;
@@ -762,8 +763,7 @@ export const createWeeklyPlan = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       employeeMonthPlanItemId: req.body.employee_month_plan_item_id ? Number(req.body.employee_month_plan_item_id) : undefined,
       parentWeeklyPlanId: req.body.parent_weekly_plan_id ? Number(req.body.parent_weekly_plan_id) : undefined,
       createdBy: req.user!.user_id,
@@ -799,8 +799,7 @@ export const updateWeeklyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
       tasks,
     } = req.body;
 
@@ -812,8 +811,7 @@ export const updateWeeklyPlan = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       tasks,
     });
     res.status(200).json({ status: "success", data: plan });
@@ -878,8 +876,7 @@ export const createSubtask = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     if (
@@ -906,8 +903,7 @@ export const createSubtask = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       targetMonth: target_month,
       targetWeek: target_week,
       sequenceOrder: sequence_order,
@@ -935,8 +931,7 @@ export const updateSubtask = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
       target_month,
       target_week,
       sequence_order,
@@ -960,8 +955,7 @@ export const updateSubtask = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       targetMonth: target_month,
       targetWeek: target_week,
       sequenceOrder: sequence_order,
@@ -1024,8 +1018,7 @@ export const createDailyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     if (
@@ -1055,8 +1048,7 @@ export const createDailyPlan = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       createdBy: req.user!.user_id,
     });
     res.status(201).json({ status: "success", data: dailyPlan });
@@ -1108,6 +1100,7 @@ export const createDailyPlans = async (
         metricDefinitionId: i.metric_definition_id
           ? Number(i.metric_definition_id)
           : undefined,
+        isDirect: i.is_direct !== false,
       })),
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
@@ -1143,8 +1136,7 @@ export const updateDailyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     if (
@@ -1170,8 +1162,7 @@ export const updateDailyPlan = async (
         metricDefinitionId: metric_definition_id,
         targetValue: target_value,
         currentValue: current_value,
-        contributesToParentScore: contributes_to_parent_score,
-        contributesToParentValue: contributes_to_parent_value,
+        isDirect: is_direct,
       },
     );
     res.status(200).json({ status: "success", data: dailyPlan });

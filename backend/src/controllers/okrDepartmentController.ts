@@ -583,6 +583,7 @@ export const createDepartmentKR = async (
       contributor_user_id,
       contributor_user_ids,
       contributor_role_type,
+      is_direct,
       is_required_for_completion,
     } = req.body;
 
@@ -678,6 +679,7 @@ export const createDepartmentKR = async (
       weightPercent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
+      isDirect: is_direct,
       isMandatory: is_mandatory,
       contributorUserId: hasContributorUserId ? contributor_user_id : undefined,
       contributorUserIds: Array.isArray(contributor_user_ids)
@@ -733,6 +735,7 @@ export const updateDepartmentKR = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
+      is_direct,
       is_mandatory,
     } = req.body;
 
@@ -776,6 +779,7 @@ export const updateDepartmentKR = async (
       weightPercent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
+      isDirect: is_direct,
       isMandatory: is_mandatory,
     });
 
@@ -1029,8 +1033,7 @@ export const createMonthPlan = async (
       target_value,
       current_value,
       weight_percent,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
     console.log("the target value for the month plan", target_value);
 
@@ -1049,8 +1052,7 @@ export const createMonthPlan = async (
       targetValue: targetValue || undefined,
       currentValue: current_value,
       weightPercent: weightPercent || undefined,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
     });
@@ -1115,8 +1117,7 @@ export const createWeeklyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     const weekNumber = parsePositiveInt(week_number);
@@ -1168,8 +1169,7 @@ export const createWeeklyPlan = async (
       metricDefinitionId,
       targetValue,
       currentValue,
-      contributesToParentScore: contributes_to_parent_score,
-      contributesToParentValue: contributes_to_parent_value,
+      isDirect: is_direct,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
     });
@@ -1286,8 +1286,7 @@ export const updateDepartmentDailyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      contributes_to_parent_score,
-      contributes_to_parent_value,
+      is_direct,
     } = req.body;
 
     const metricDefinitionId =
@@ -1338,8 +1337,7 @@ export const updateDepartmentDailyPlan = async (
         metricDefinitionId,
         targetValue,
         currentValue,
-        contributesToParentScore: contributes_to_parent_score,
-        contributesToParentValue: contributes_to_parent_value,
+        isDirect: is_direct,
       },
     );
 

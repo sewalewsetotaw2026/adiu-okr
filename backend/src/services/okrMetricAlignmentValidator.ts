@@ -5,9 +5,10 @@ export async function validateMetricAlignment(
   companyId: number,
   parentMetricId?: number | null,
   childMetricId?: number | null,
-  contributesToValue: boolean = true
+  contributesToValue: boolean = true,
+  isDirect: boolean = true
 ) {
-  if (!contributesToValue) {
+  if (!contributesToValue || !isDirect) {
     return { valid: true };
   }
 

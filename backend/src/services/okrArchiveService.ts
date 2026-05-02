@@ -202,10 +202,10 @@ export async function generateArchiveReport(
     payload = {
       totalObjectives: objectives.length,
       totalKRs: objectives.reduce((s, o) => s + o.keyResults.length, 0),
-      avgScore: objectives.filter(o => o.final_score).length > 0
-        ? objectives.reduce((s, o) => s.add(o.final_score ?? new Decimal(0)), new Decimal(0)).div(objectives.length)
-        : 0,
-      objectives: objectives.map(o => ({ id: o.id, title: o.title, score: o.final_score, value: o.current_value })),
+      avgScore: objectives.filter(o => o.progress_percent).length > 0
+        ? objectives.reduce((s, o) => s.add(o.progress_percent ?? new Decimal(0)), new Decimal(0)).div(objectives.length)
+        : new Decimal(0),
+      objectives: objectives.map(o => ({ id: o.id, title: o.title, score: o.progress_percent, value: o.current_value })),
     };
   } else if (reportType === "department_performance") {
     const deptObjs = await prisma.employeeObjective.findMany({
@@ -225,7 +225,7 @@ export async function generateArchiveReport(
     payload = {
       departments: deptObjs.map((d: any) => ({
         departmentName: d.user?.employee?.employments[0]?.department?.name ?? "Unknown",
-        title: d.title, score: d.final_score, value: d.current_value,
+        title: d.title, score: d.progress_percent, value: d.current_value,
       })),
     };
   } else if (reportType === "contributor_performance") {
@@ -235,7 +235,7 @@ export async function generateArchiveReport(
         employeeKr: { employeeObjective: { cycle_id: cycleId } },
       },
       include: {
-        employeeObjectives: { select: { title: true, final_score: true, current_value: true } },
+        employeeObjectives: { select: { title: true, progress_percent: true, current_value: true } },
       },
     });
     payload = {
@@ -245,7 +245,7 @@ export async function generateArchiveReport(
         return {
           userId: c.user_id,
           role: c.role_type,
-          objectives: obj ? [{ title: obj.title, score: obj.final_score, value: obj.current_value }] : [],
+          objectives: obj ? [{ title: obj.title, score: obj.progress_percent, value: obj.current_value }] : [],
         };
       }),
     };
@@ -287,14 +287,15 @@ export async function generateArchiveInsight(
   if (!archive) throw new Error("Archive not found.");
 
   const cycleId = archive.cycle_id;
+  const limit = 10;
   let payload: any = {};
 
   if (insightType === "top_performers") {
     const empObjs = await prisma.employeeObjective.findMany({
       where: { company_id: companyId, cycle_id: cycleId },
-      orderBy: { final_score: "desc" },
-      take: 10,
-      select: { user_id: true, title: true, final_score: true, current_value: true },
+      orderBy: { progress_percent: "desc" },
+      take: limit,
+      select: { user_id: true, title: true, progress_percent: true, current_value: true },
     });
     payload = { topPerformers: empObjs };
   } else if (insightType === "bottlenecks") {
@@ -302,11 +303,11 @@ export async function generateArchiveInsight(
       where: {
         company_id: companyId,
         employeeObjective: { cycle_id: cycleId },
-        final_score: { lt: 50 },
+        progress_percent: { lt: 50 },
       },
-      take: 10,
-      orderBy: { final_score: "asc" },
-      select: { id: true, title: true, final_score: true },
+      take: limit,
+      orderBy: { progress_percent: "asc" },
+      select: { id: true, title: true, progress_percent: true },
     });
     payload = { bottlenecks: lowScoreKRs };
   } else if (insightType === "completion_rate") {
@@ -317,7 +318,7 @@ export async function generateArchiveInsight(
       where: {
         company_id: companyId,
         employeeObjective: { cycle_id: cycleId },
-        final_score: { gte: 100 },
+        progress_percent: { gte: 100 },
       },
     });
     payload = { totalKRs: allKRs, completedKRs, completionRate: allKRs > 0 ? (completedKRs / allKRs) * 100 : 0 };

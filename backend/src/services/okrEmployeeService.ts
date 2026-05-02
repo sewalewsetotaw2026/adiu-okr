@@ -566,8 +566,7 @@ interface CreateEmployeeKRInput {
   targetValue?: number;
   currentValue?: number;
   weightPercent?: number;
-  contributesToScore?: boolean;
-  contributesToValue?: boolean;
+  isDirect?: boolean;
   isMandatory?: boolean;
   executionMode: OkrExecutionMode;
   createdBy: string;
@@ -589,13 +588,13 @@ async function syncEmployeeObjectiveValueColumns(
     select: {
       target_value: true,
       current_value: true,
-      contributes_to_objective_value: true,
+      is_direct: true,
     },
   });
 
   const aggregate = krs.reduce(
     (acc, kr) => {
-      if (kr.contributes_to_objective_value === false) return acc;
+      if (kr.is_direct === false) return acc;
       acc.target = acc.target.add(new Decimal(kr.target_value || 0));
       const currentLike = kr.current_value ?? new Decimal(0);
       acc.current = acc.current.add(new Decimal(currentLike || 0));
@@ -791,7 +790,7 @@ export async function createEmployeeKR(input: CreateEmployeeKRInput) {
   await validateMetricRequirement(
     input.companyId,
     input.metricDefinitionId,
-    input.contributesToValue,
+    input.isDirect,
   );
 
   let metricId = input.metricDefinitionId;
@@ -836,11 +835,12 @@ export async function createEmployeeKR(input: CreateEmployeeKRInput) {
   }
 
   // Weight Limit Check
-  if (input.weightPercent && input.contributesToScore !== false) {
+  if (input.weightPercent && input.isDirect !== false) {
     await checkWeightLimit(
       input.employeeObjectiveId,
       "EMPLOYEE",
       input.weightPercent,
+      input.isDirect ?? true,
     );
   }
 
@@ -900,8 +900,7 @@ export async function createEmployeeKR(input: CreateEmployeeKRInput) {
         target_value: input.targetValue,
         current_value: input.currentValue,
         weight_percent: input.weightPercent,
-        contributes_to_objective_score: input.contributesToScore ?? true,
-        contributes_to_objective_value: input.contributesToValue ?? true,
+        is_direct: input.isDirect ?? true,
         is_mandatory_for_completion: input.isMandatory ?? false,
         execution_mode: input.executionMode,
         status_code: "draft",
@@ -988,27 +987,28 @@ export async function updateEmployeeKR(
     );
   }
 
-  if (input.metricDefinitionId || input.contributesToValue !== undefined) {
+  if (input.metricDefinitionId || input.isDirect !== undefined) {
     const metricToCheck =
       input.metricDefinitionId !== undefined
         ? input.metricDefinitionId
         : kr.metric_definition_id;
     const valueContrib =
-      input.contributesToValue !== undefined
-        ? input.contributesToValue
-        : kr.contributes_to_objective_value;
+      input.isDirect !== undefined
+        ? input.isDirect
+        : kr.is_direct;
     await validateMetricRequirement(companyId, metricToCheck, valueContrib);
   }
 
   // Weight Limit Check
   if (
     input.weightPercent &&
-    (input.contributesToScore ?? kr.contributes_to_objective_score)
+    (input.isDirect ?? kr.is_direct)
   ) {
     await checkWeightLimit(
       kr.employee_objective_id,
       "EMPLOYEE",
       input.weightPercent,
+      input.isDirect ?? kr.is_direct,
       id,
     );
   }
@@ -1057,8 +1057,7 @@ export async function updateEmployeeKR(
         target_value: input.targetValue,
         current_value: input.currentValue,
         weight_percent: input.weightPercent,
-        contributes_to_objective_score: input.contributesToScore,
-        contributes_to_objective_value: input.contributesToValue,
+        is_direct: input.isDirect,
         is_mandatory_for_completion: input.isMandatory,
       },
       include: { metricDefinition: true },
@@ -1205,6 +1204,7 @@ interface MonthPlanItemInput {
   currentValue: number;
   parentMonthPlanItemId?: number;
   note?: string;
+  isDirect?: boolean;
 }
 
 interface CreateEmpMonthPlanInput {
@@ -1330,6 +1330,7 @@ export async function createEmployeeMonthPlan(input: CreateEmpMonthPlanInput) {
         current_value: item.currentValue,
         parent_employee_month_plan_item_id: item.parentMonthPlanItemId || null,
         note: item.note,
+        is_direct: item.isDirect ?? true,
       })),
     });
 
@@ -1392,8 +1393,7 @@ export async function createOrUpdateKRMonthPlan(input: {
   targetValue: number;
   currentValue: number;
   description?: string;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
+  isDirect?: boolean;
   weightPercent?: number;
   createdBy: string;
   actorRole?: string;
@@ -1482,6 +1482,7 @@ export async function createOrUpdateKRMonthPlan(input: {
       data: {
         target_value: input.targetValue,
         current_value: input.currentValue,
+        is_direct: input.isDirect ?? true,
         note: input.description,
       },
     });
@@ -1493,6 +1494,7 @@ export async function createOrUpdateKRMonthPlan(input: {
         employee_kr_id: input.employeeKrId,
         target_value: input.targetValue,
         current_value: input.currentValue,
+        is_direct: input.isDirect ?? true,
         note: input.description,
       },
     });
@@ -1639,6 +1641,7 @@ export async function addMonthPlanItem(
       current_value: item.currentValue,
       parent_employee_month_plan_item_id: item.parentMonthPlanItemId || null,
       note: item.note,
+      is_direct: item.isDirect ?? true,
     },
     include: { employeeKr: { select: { id: true, title: true } } },
   });
@@ -1845,8 +1848,7 @@ interface CreateWeeklyPlanInput {
   targetValue?: number;
   currentValue?: number;
   weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
+  isDirect?: boolean;
   blockers?: string;
   title?: string;
   employeeMonthPlanItemId?: number;
@@ -1864,7 +1866,9 @@ interface WeeklyPlanItemInput {
   currentValue: number;
   metricDefinitionId?: number;
   blockers?: string;
+  parentWeeklyPlanId?: number;
   parentWeeklyTaskId?: number;
+  isDirect?: boolean;
   tasks?: WeeklyTaskInput[];
 }
 
@@ -2035,8 +2039,7 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
         target_value: totalTarget,
         current_value: totalCurrent,
         weight_percent: input.weightPercent,
-        contributes_to_parent_score: input.contributesToParentScore,
-        contributes_to_parent_value: input.contributesToParentValue,
+        is_direct: input.isDirect,
       } as any,
     });
 
@@ -2070,8 +2073,7 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
       target_value: totalTarget,
       current_value: totalCurrent,
       weight_percent: input.weightPercent,
-      contributes_to_parent_score: input.contributesToParentScore ?? true,
-      contributes_to_parent_value: input.contributesToParentValue ?? true,
+      is_direct: input.isDirect ?? true,
       status_code: "draft",
       confidence_level: measurement.confidenceLevel,
       blockers: input.blockers,
@@ -2118,8 +2120,7 @@ export async function updateWeeklyPlan(
     targetValue?: number;
     currentValue?: number;
     weightPercent?: number;
-    contributesToParentScore?: boolean;
-    contributesToParentValue?: boolean;
+    isDirect?: boolean;
     tasks?: WeeklyTaskInput[];
   },
 ) {
@@ -2192,8 +2193,7 @@ export async function updateWeeklyPlan(
       target_value: measurement.targetValue,
       current_value: measurement.currentValue,
       weight_percent: input.weightPercent,
-      contributes_to_parent_score: input.contributesToParentScore,
-      contributes_to_parent_value: input.contributesToParentValue,
+      is_direct: input.isDirect,
       tasks: input.tasks
         ? {
           deleteMany: {},
@@ -2285,8 +2285,10 @@ export async function createWeeklyPlans(input: CreateWeeklyPlansInput) {
       targetValue: item.targetValue,
       currentValue: item.currentValue,
       blockers: item.blockers || input.description,
+      parentWeeklyPlanId: item.parentWeeklyPlanId,
       parentWeeklyTaskId: item.parentWeeklyTaskId,
       tasks: item.tasks,
+      isDirect: item.isDirect,
       createdBy: input.createdBy,
       actorRole: input.actorRole,
     });
@@ -2307,8 +2309,7 @@ interface CreateSubtaskInput {
   targetValue?: number;
   currentValue?: number;
   weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
+  isDirect?: boolean;
   targetMonth?: number;
   targetWeek?: number;
   sequenceOrder?: number;
@@ -2352,8 +2353,7 @@ export async function createSubtask(input: CreateSubtaskInput) {
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore ?? true,
-      contributes_to_parent_value: input.contributesToParentValue ?? true,
+      is_direct: input.isDirect ?? true,
       status_code: "todo",
       target_month: input.targetMonth,
       target_week: input.targetWeek,
@@ -2434,8 +2434,7 @@ export async function updateSubtask(
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore,
-      contributes_to_parent_value: input.contributesToParentValue,
+      is_direct: input.isDirect,
       status_code: input.statusCode,
       target_month: input.targetMonth,
       target_week: input.targetWeek,
@@ -2500,8 +2499,7 @@ interface CreateDailyPlanInput {
   targetValue?: number;
   currentValue?: number;
   weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
+  isDirect?: boolean;
   createdBy: string;
 }
 
@@ -2526,6 +2524,7 @@ interface DailyPlanItemInput {
   targetValue: number;
   currentValue: number;
   metricDefinitionId?: number;
+  isDirect?: boolean;
 }
 
 interface CreateDailyPlansInput {
@@ -2611,8 +2610,7 @@ export async function createDailyPlan(input: CreateDailyPlanInput) {
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore ?? true,
-      contributes_to_parent_value: input.contributesToParentValue ?? true,
+      is_direct: input.isDirect ?? true,
       status_code: "published",
       created_by: input.createdBy,
     } as any,
@@ -2731,6 +2729,7 @@ export async function createDailyPlans(input: CreateDailyPlansInput) {
           metric_definition_id: item.metricDefinitionId,
           progress_percent: measurement.progressPercent,
           confidence_level: measurement.confidenceLevel as any,
+          is_direct: item.isDirect,
           updated_at: new Date(),
         } as any,
       });
@@ -2757,6 +2756,7 @@ export async function createDailyPlans(input: CreateDailyPlansInput) {
           current_value: measurement.currentValue,
           progress_percent: measurement.progressPercent,
           confidence_level: measurement.confidenceLevel as any,
+          is_direct: item.isDirect ?? true,
           status_code: "published",
           created_by: input.createdBy,
         } as any,
@@ -2816,6 +2816,7 @@ export async function updateDailyPlan(
     weightPercent?: number;
     contributesToParentScore?: boolean;
     contributesToParentValue?: boolean;
+    isDirect?: boolean;
   },
 ) {
   const dailyPlan = await prisma.dailyPlan.findFirst({
@@ -2882,8 +2883,7 @@ export async function updateDailyPlan(
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore,
-      contributes_to_parent_value: input.contributesToParentValue,
+      is_direct: input.isDirect,
       status_code: input.statusCode,
       completed_at: input.statusCode === "completed" ? new Date() : undefined,
     } as any,

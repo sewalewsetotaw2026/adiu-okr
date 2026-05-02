@@ -72,6 +72,98 @@ function weightedAvgOrSimpleAvg(
   return avgDecimals(valid.map((v) => v.score as Decimal));
 }
 
+/**
+ * Normalised weighted average within a group.
+ * Uses weight_percent if provided; otherwise falls back to target-proportional weights.
+ * Formula: Σ(score_i × w_i) / Σ(w_i)  where w_i is normalised within this group only.
+ */
+function normalizedWeightedAvg(
+  items: Array<{
+    score: Decimal | null;
+    weight: Decimal | null;
+    target: Decimal | null;
+  }>,
+): Decimal {
+  const valid = items.filter((i) => hasDecimal(i.score));
+  if (valid.length === 0) return new Decimal(0);
+
+  // Prefer explicit weight_percent
+  const hasWeights = valid.every(
+    (i) => hasDecimal(i.weight) && i.weight!.gt(0),
+  );
+
+  let effectiveWeights: Decimal[];
+
+  if (hasWeights) {
+    effectiveWeights = valid.map((i) => i.weight!);
+  } else {
+    // Target-proportional fallback
+    const totalTarget = valid.reduce(
+      (sum, i) => sum.add(toDecimal(i.target) ?? new Decimal(0)),
+      new Decimal(0),
+    );
+    if (totalTarget.gt(0)) {
+      effectiveWeights = valid.map((i) =>
+        toDecimal(i.target)?.div(totalTarget).mul(100) ?? new Decimal(0),
+      );
+    } else {
+      // Equal weight fallback
+      const eq = new Decimal(100).div(valid.length);
+      effectiveWeights = valid.map(() => eq);
+    }
+  }
+
+  const totalW = effectiveWeights.reduce((s, w) => s.add(w), new Decimal(0));
+  if (totalW.isZero()) return new Decimal(0);
+
+  const weightedSum = valid.reduce(
+    (sum, item, idx) => sum.add(item.score!.mul(effectiveWeights[idx])),
+    new Decimal(0),
+  );
+
+  return clampPercent(weightedSum.div(totalW));
+}
+
+/**
+ * Split a list of plan children into direct/indirect streams and compute
+ * normalised weighted scores + summed values + summed targets for each stream.
+ */
+function splitAndScore(
+  items: Array<{
+    is_direct?: boolean | null;
+    score: Decimal | null;
+    value: Decimal | null;
+    target: Decimal | null;
+    weight: Decimal | null;
+  }>,
+): {
+  directScore: Decimal;
+  directValue: Decimal;
+  directTarget: Decimal;
+  indirectScore: Decimal;
+  indirectValue: Decimal;
+  indirectTarget: Decimal;
+} {
+  const direct = items.filter((i) => i.is_direct !== false);
+  const indirect = items.filter((i) => i.is_direct === false);
+
+  // Explicit Decimal accumulator ensures the return is always Decimal, never null
+  const sumDecimals = (arr: Array<Decimal | null>): Decimal =>
+    arr.reduce<Decimal>(
+      (s: Decimal, v: Decimal | null) => s.add(v ?? new Decimal(0)),
+      new Decimal(0),
+    );
+
+  return {
+    directScore: normalizedWeightedAvg(direct),
+    directValue: sumDecimals(direct.map((i) => i.value)),
+    directTarget: sumDecimals(direct.map((i) => i.target)),
+    indirectScore: normalizedWeightedAvg(indirect),
+    indirectValue: sumDecimals(indirect.map((i) => i.value)),
+    indirectTarget: sumDecimals(indirect.map((i) => i.target)),
+  };
+}
+
 async function calculateConfidenceLevel(
   companyId: number,
   score: Decimal | null,
@@ -100,7 +192,7 @@ async function calculateConfidenceLevel(
 }
 
 function computeNodeScoreValue(node: any, metric: any) {
-  const finalScore = toDecimal(node?.final_score);
+  const finalScore = toDecimal(node?.progress_percent);
   const progressPercent = toDecimal(node?.progress_percent);
   const targetValue = toDecimal(node?.target_value);
   const currentValue = toDecimal(node?.current_value);
@@ -194,94 +286,118 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
   for (const week of kr.weeklyPlans ?? []) {
     const base = computeNodeScoreValue(week, week.metricDefinition ?? metric);
 
-    const directTasksScores: Decimal[] = [];
-    const directTasksValues: Decimal[] = [];
-
+    // ── Daily Plans → Tasks ────────────────────────────────────────────────
     for (const task of week.tasks ?? []) {
       const results = computeNodeScoreValue(
         task,
         task.metricDefinition ?? week.metricDefinition ?? metric,
       );
 
-      const directDailyScores: Decimal[] = [];
-      const directDailyValues: Decimal[] = [];
-
-      for (const dailyPlan of task.dailyPlans ?? []) {
+      const dailyItems = (task.dailyPlans ?? []).map((dp: any) => {
         const m = computeNodeScoreValue(
-          dailyPlan,
-          dailyPlan.metricDefinition ??
-            task.metricDefinition ??
-            week.metricDefinition ??
-            metric,
+          dp,
+          dp.metricDefinition ?? task.metricDefinition ?? week.metricDefinition ?? metric,
         );
+        return {
+          is_direct: dp.is_direct !== false,
+          score: m.score,
+          value: m.value,
+          target: toDecimal(dp.target_value),
+          weight: toDecimal(dp.weight_percent),
+        };
+      });
 
-        if (
-          dailyPlan.contributes_to_parent_score !== false &&
-          hasDecimal(m.score)
-        ) {
-          directDailyScores.push(m.score);
-        }
-        if (
-          dailyPlan.contributes_to_parent_value !== false &&
-          hasDecimal(m.value)
-        ) {
-          directDailyValues.push(m.value);
-        }
-      }
+      const dailySplit = splitAndScore(dailyItems);
 
-      // Task score is either its direct value or avg of dailies
-      const taskScore =
-        directDailyScores.length > 0
-          ? avgDecimals(directDailyScores)
-          : results.score;
-      const taskValue =
-        directDailyValues.length > 0
-          ? directDailyValues.reduce((s, v) => s.add(v), new Decimal(0))
-          : results.value;
+      // Task's own score/value come from direct dailies if available, else task itself
+      const taskScore = dailySplit.directTarget.gt(0) ? dailySplit.directScore : results.score;
+      const taskValue = dailySplit.directTarget.gt(0) ? dailySplit.directValue : results.value;
 
-      if (task.contributes_to_parent_score !== false && hasDecimal(taskScore)) {
-        directTasksScores.push(taskScore);
-      }
-      if (task.contributes_to_parent_value !== false && hasDecimal(taskValue)) {
-        directTasksValues.push(taskValue);
-      }
-
-      // NEW: Persist task value back to DB
+      // Persist task-level rollup including indirect
       await tx.weeklyTask.update({
         where: { id: task.id },
         data: {
           current_value: taskValue,
-          final_score: taskScore,
+          progress_percent: taskScore,
         },
       });
+
+      // Expose aggregated values for the next level
+      (task as any)._directScore = taskScore;
+      (task as any)._directValue = taskValue;
+      (task as any)._directTarget = toDecimal(task.target_value);
+      (task as any)._indirectScore = dailySplit.indirectScore;
+      (task as any)._indirectValue = dailySplit.indirectValue;
+      (task as any)._indirectTarget = dailySplit.indirectTarget;
     }
 
+    // ── Tasks → Weekly Plan ───────────────────────────────────────────────
+    const taskItems = (week.tasks ?? []).map((t: any) => ({
+      is_direct: t.is_direct !== false,
+      score: (t as any)._directScore ?? computeNodeScoreValue(t, week.metricDefinition ?? metric).score,
+      value: (t as any)._directValue ?? computeNodeScoreValue(t, week.metricDefinition ?? metric).value,
+      target: toDecimal(t.target_value),
+      weight: toDecimal(t.weight_percent ?? null),
+    }));
+
+    const weekSplit = taskItems.length > 0
+      ? splitAndScore(taskItems)
+      : { directScore: base.score ?? new Decimal(0), directValue: base.value ?? new Decimal(0), directTarget: toDecimal(week.target_value) ?? new Decimal(0), indirectScore: new Decimal(0), indirectValue: new Decimal(0), indirectTarget: new Decimal(0) };
+
+    // Collect indirect contributions from indirect tasks
+    const indirectTaskItems = (week.tasks ?? [])
+      .filter((t: any) => t.is_direct === false)
+      .map((t: any) => ({
+        is_direct: false as const,
+        score: (t as any)._directScore ?? null,
+        value: (t as any)._directValue ?? null,
+        target: toDecimal(t.target_value),
+        weight: toDecimal(t.weight_percent ?? null),
+      }));
+    // Merge: indirect stream = indirect tasks' direct scores + any nested indirect within those
+    const finalIndirectScore = indirectTaskItems.length > 0
+      ? normalizedWeightedAvg(indirectTaskItems.map((i: { score: Decimal | null; weight: Decimal | null; target: Decimal | null }) => ({ score: i.score, weight: i.weight, target: i.target })))
+      : weekSplit.indirectScore;
+    const finalIndirectValue = (week.tasks ?? []).filter((t: any) => t.is_direct === false)
+      .reduce((s: Decimal, t: any) => s.add((t as any)._directValue ?? new Decimal(0)), new Decimal(0));
+    const finalIndirectTarget = (week.tasks ?? []).filter((t: any) => t.is_direct === false)
+      .reduce((s: Decimal, t: any) => s.add(toDecimal(t.target_value) ?? new Decimal(0)), new Decimal(0));
+
+    // Also bubble up indirect captured within direct tasks (nested indirect daily plans)
+    const nestedIndirectScore = (week.tasks ?? [])
+      .filter((t: any) => t.is_direct !== false && (t as any)._indirectValue?.gt(0))
+      .map((t: any) => (t as any)._indirectScore as Decimal)
+      .filter(hasDecimal);
+    const nestedIndirectValue = (week.tasks ?? [])
+      .filter((t: any) => t.is_direct !== false)
+      .reduce((s: Decimal, t: any) => s.add((t as any)._indirectValue ?? new Decimal(0)), new Decimal(0));
+    const nestedIndirectTarget = (week.tasks ?? [])
+      .filter((t: any) => t.is_direct !== false)
+      .reduce((s: Decimal, t: any) => s.add((t as any)._indirectTarget ?? new Decimal(0)), new Decimal(0));
+
+    const combinedIndirectScore = nestedIndirectScore.length > 0
+      ? avgDecimals(nestedIndirectScore)
+      : finalIndirectScore.gt(0) ? finalIndirectScore : new Decimal(0);
+    const combinedIndirectValue = nestedIndirectValue.add(finalIndirectValue);
+    const combinedIndirectTarget = nestedIndirectTarget.add(finalIndirectTarget);
+
     const totalTarget = (week.tasks || []).reduce(
-      (sum: Decimal, t: any) =>
-        sum.add(toDecimal(t.target_value) ?? new Decimal(0)),
+      (sum: Decimal, t: any) => sum.add(toDecimal(t.target_value) ?? new Decimal(0)),
       new Decimal(0),
     );
 
     weeklyAggregates.push({
       ...week,
-      aggregateScore:
-        directTasksScores.length > 0
-          ? avgDecimals(directTasksScores)
-          : base.score,
-      aggregateValue:
-        directTasksValues.length > 0
-          ? directTasksValues.reduce(
-              (sum: Decimal, v: Decimal) => sum.add(v),
-              new Decimal(0),
-            )
-          : base.value,
-      aggregateTarget: totalTarget.gt(0)
-        ? totalTarget
-        : toDecimal(week.target_value),
+      aggregateScore: weekSplit.directScore.gt(0) ? weekSplit.directScore : (base.score ?? new Decimal(0)),
+      aggregateValue: weekSplit.directTarget.gt(0) ? weekSplit.directValue : (base.value ?? new Decimal(0)),
+      aggregateTarget: totalTarget.gt(0) ? totalTarget : (toDecimal(week.target_value) ?? new Decimal(0)),
+      indirectScore: combinedIndirectScore.gt(0) ? combinedIndirectScore : null,
+      indirectValue: combinedIndirectValue.gt(0) ? combinedIndirectValue : null,
+      indirectTarget: combinedIndirectTarget.gt(0) ? combinedIndirectTarget : null,
     });
   }
 
-  // NEW: Persist weekly aggregates back to the WeeklyPlan records so the UI stays in sync
+  // Persist weekly aggregates back to WeeklyPlan records
   for (const week of weeklyAggregates) {
     const weekScore = week.aggregateScore ?? new Decimal(0);
     const weekValue = week.aggregateValue;
@@ -289,7 +405,7 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
     await tx.weeklyPlan.update({
       where: { id: week.id },
       data: {
-        final_score: weekScore,
+        progress_percent: weekScore,
         current_value: weekValue,
         target_value: week.aggregateTarget,
         status_code: weekScore.gte(100)
@@ -323,285 +439,160 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
       return false;
     });
 
-    const weekScores = linkedWeeks
-      .filter(
-        (w: any) =>
-          w.contributes_to_parent_score !== false &&
-          hasDecimal(w.aggregateScore),
-      )
-      .map((w: any) => w.aggregateScore as Decimal);
+    // ── Weekly Plans → Monthly Plan Item ─────────────────────────────────
+    const weekItems = linkedWeeks.map((w: any) => ({
+      is_direct: w.is_direct !== false,
+      score: w.aggregateScore ?? null,
+      value: w.aggregateValue ?? null,
+      target: w.aggregateTarget ?? toDecimal(w.target_value),
+      weight: toDecimal(w.weight_percent),
+    }));
 
-    const weekValues = linkedWeeks
-      .filter(
-        (w: any) =>
-          w.contributes_to_parent_value !== false &&
-          hasDecimal(w.aggregateValue),
-      )
-      .map((w: any) => w.aggregateValue as Decimal);
+    const weekSplit = weekItems.length > 0 ? splitAndScore(weekItems) : null;
 
-    const weekIndirectScores = [
-      ...linkedWeeks
-        .filter(
-          (w: any) =>
-            w.contributes_to_parent_score === false &&
-            hasDecimal(w.aggregateScore),
-        )
-        .map((w: any) => w.aggregateScore as Decimal),
-      ...linkedWeeks
-        .filter((w: any) => hasDecimal(w.indirectScore))
-        .map((w: any) => w.indirectScore as Decimal),
-    ];
+    // Bubble indirect scores from nested weekly indirect streams
+    const nestedIndirectScores = linkedWeeks
+      .filter((w: any) => hasDecimal(w.indirectScore))
+      .map((w: any) => ({ score: w.indirectScore as Decimal, target: w.indirectTarget ? toDecimal(w.indirectTarget) : null, weight: null as Decimal | null }));
+    const nestedIndirectValues = linkedWeeks.reduce(
+      (s: Decimal, w: any) => s.add(toDecimal(w.indirectValue) ?? new Decimal(0)),
+      new Decimal(0),
+    );
+    const nestedIndirectTargets = linkedWeeks.reduce(
+      (s: Decimal, w: any) => s.add(toDecimal(w.indirectTarget) ?? new Decimal(0)),
+      new Decimal(0),
+    );
 
-    const weekIndirectValues = [
-      ...linkedWeeks
-        .filter(
-          (w: any) =>
-            w.contributes_to_parent_value === false &&
-            hasDecimal(w.aggregateValue),
-        )
-        .map((w: any) => w.aggregateValue as Decimal),
-      ...linkedWeeks
-        .filter((w: any) => hasDecimal(w.indirectValue))
-        .map((w: any) => w.indirectValue as Decimal),
-    ];
+    const indirectScoreForItem = weekSplit && weekSplit.indirectScore.gt(0)
+      ? weekSplit.indirectScore
+      : nestedIndirectScores.length > 0
+        ? normalizedWeightedAvg(nestedIndirectScores)
+        : new Decimal(0);
+    const indirectValueForItem = (weekSplit?.indirectValue ?? new Decimal(0)).add(nestedIndirectValues);
+    const indirectTargetForItem = (weekSplit?.indirectTarget ?? new Decimal(0)).add(nestedIndirectTargets);
 
     return {
       ...item,
       monthPlanId: month.id,
-      aggregateScore:
-        linkedWeeks.length > 0
-          ? weightedAvgOrSimpleAvg(
-              linkedWeeks.map((w: any) => ({
-                score:
-                  w.contributes_to_parent_score !== false
-                    ? w.aggregateScore
-                    : null,
-                weight: w.weight_percent ? toDecimal(w.weight_percent) : null,
-              })),
-            )
-          : base.score,
-      aggregateValue:
-        weekValues.length > 0
-          ? weekValues.reduce(
-              (sum: Decimal, v: Decimal) => sum.add(v),
-              new Decimal(0),
-            )
-          : base.value,
-      indirectScore: avgOrNull(weekIndirectScores),
-      indirectValue: sumOrNull(weekIndirectValues),
+      aggregateScore: weekSplit && weekSplit.directTarget.gt(0)
+        ? weekSplit.directScore
+        : base.score,
+      aggregateValue: weekSplit && weekSplit.directTarget.gt(0)
+        ? weekSplit.directValue
+        : base.value,
+      aggregateTarget: weekSplit?.directTarget.gt(0)
+        ? weekSplit.directTarget
+        : (toDecimal(item.target_value) ?? new Decimal(0)),
+      indirectScore: indirectScoreForItem.gt(0) ? indirectScoreForItem : null,
+      indirectValue: indirectValueForItem.gt(0) ? indirectValueForItem : null,
+      indirectTarget: indirectTargetForItem.gt(0) ? indirectTargetForItem : null,
     };
   });
 
-  // 3) KR score/value from month → weekly → subtask → progress fallback
-  // Use the highest level that has usable aggregate output, not just existing rows.
-  const monthScoreCandidates = monthlyAggregates
-    .filter(
-      (m: any) =>
-        m.contributes_to_parent_score !== false && hasDecimal(m.aggregateScore),
-    )
-    .map((m: any) => m.aggregateScore as Decimal);
-  const monthValueCandidates = monthlyAggregates
-    .filter(
-      (m: any) =>
-        m.contributes_to_parent_value !== false && hasDecimal(m.aggregateValue),
-    )
-    .map((m: any) => m.aggregateValue as Decimal);
+  // ── Monthly Items → KR score ───────────────────────────────────────────
+  const monthItemsForKr = monthlyAggregates.map((m: any) => ({
+    is_direct: m.is_direct !== false,
+    score: m.aggregateScore ?? null,
+    value: m.aggregateValue ?? null,
+    target: m.aggregateTarget ?? toDecimal(m.target_value),
+    weight: toDecimal(m.weight_percent),
+  }));
 
-  const monthIndirectScoreCandidates = [
-    ...monthlyAggregates
-      .filter(
-        (m: any) =>
-          m.contributes_to_parent_score === false &&
-          hasDecimal(m.aggregateScore),
-      )
-      .map((m: any) => m.aggregateScore as Decimal),
-    ...monthlyAggregates
-      .filter((m: any) => hasDecimal(m.indirectScore))
-      .map((m: any) => m.indirectScore as Decimal),
-  ];
+  const monthSplit = monthItemsForKr.length > 0 ? splitAndScore(monthItemsForKr) : null;
 
-  const monthIndirectValueCandidates = [
-    ...monthlyAggregates
-      .filter(
-        (m: any) =>
-          m.contributes_to_parent_value === false &&
-          hasDecimal(m.aggregateValue),
-      )
-      .map((m: any) => m.aggregateValue as Decimal),
-    ...monthlyAggregates
-      .filter((m: any) => hasDecimal(m.indirectValue))
-      .map((m: any) => m.indirectValue as Decimal),
-  ];
+  // Bubble nested indirect from monthly items
+  const monthNestedIndirectScore = monthlyAggregates
+    .filter((m: any) => hasDecimal(m.indirectScore))
+    .map((m: any) => ({ score: m.indirectScore as Decimal, target: m.indirectTarget ? toDecimal(m.indirectTarget) : null, weight: null as Decimal | null }));
+  const monthNestedIndirectValue = monthlyAggregates.reduce(
+    (s: Decimal, m: any) => s.add(toDecimal(m.indirectValue) ?? new Decimal(0)), new Decimal(0),
+  );
+  const monthNestedIndirectTarget = monthlyAggregates.reduce(
+    (s: Decimal, m: any) => s.add(toDecimal(m.indirectTarget) ?? new Decimal(0)), new Decimal(0),
+  );
 
-  const hasMonthAggregateData =
-    monthScoreCandidates.length > 0 ||
-    monthValueCandidates.length > 0 ||
-    monthIndirectScoreCandidates.length > 0 ||
-    monthIndirectValueCandidates.length > 0;
+  const hasMonthAggregateData = monthSplit !== null && (monthSplit.directTarget.gt(0) || monthSplit.indirectTarget.gt(0));
 
-  if (hasMonthAggregateData) {
-    score =
-      monthScoreCandidates.length > 0
-        ? weightedAvgOrSimpleAvg(
-            monthlyAggregates.map((m: any) => ({
-              score:
-                m.contributes_to_parent_score !== false
-                  ? m.aggregateScore
-                  : null,
-              weight: m.weight_percent ? toDecimal(m.weight_percent) : null,
-            })),
-          )
+  if (hasMonthAggregateData && monthSplit) {
+    score = monthSplit.directScore.gt(0) ? monthSplit.directScore : null;
+    value = monthSplit.directTarget.gt(0) ? monthSplit.directValue : null;
+    indirectScore = monthSplit.indirectScore.gt(0)
+      ? monthSplit.indirectScore
+      : monthNestedIndirectScore.length > 0
+        ? normalizedWeightedAvg(monthNestedIndirectScore)
         : null;
-    value =
-      monthValueCandidates.length > 0
-        ? monthValueCandidates.reduce(
-            (sum: Decimal, v: Decimal) => sum.add(v),
-            new Decimal(0),
-          )
-        : null;
-
-    indirectScore = avgOrNull(monthIndirectScoreCandidates);
-    indirectValue = sumOrNull(monthIndirectValueCandidates);
+    indirectValue = monthSplit.indirectValue.add(monthNestedIndirectValue).gt(0)
+      ? monthSplit.indirectValue.add(monthNestedIndirectValue)
+      : null;
+    indirectValue = indirectValue
+      ? indirectValue.add(monthNestedIndirectValue.gt(0) ? new Decimal(0) : new Decimal(0))
+      : null;
   } else {
     const weekScoreCandidates = weeklyAggregates
       .filter(
         (w: any) =>
-          w.contributes_to_parent_score !== false &&
+          w.is_direct !== false &&
           hasDecimal(w.aggregateScore),
       )
       .map((w: any) => w.aggregateScore as Decimal);
     const weekValueCandidates = weeklyAggregates
       .filter(
         (w: any) =>
-          w.contributes_to_parent_value !== false &&
+          w.is_direct !== false &&
           hasDecimal(w.aggregateValue),
       )
       .map((w: any) => w.aggregateValue as Decimal);
 
-    const weekIndirectScoreCandidates = [
-      ...weeklyAggregates
-        .filter(
-          (w: any) =>
-            w.contributes_to_parent_score === false &&
-            hasDecimal(w.aggregateScore),
-        )
-        .map((w: any) => w.aggregateScore as Decimal),
-      ...weeklyAggregates
-        .filter((w: any) => hasDecimal(w.indirectScore))
-        .map((w: any) => w.indirectScore as Decimal),
-    ];
+    // ── Week-only fallback (no monthly items) ──────────────────────────────
+    const weekItemsFallback = weeklyAggregates.map((w: any) => ({
+      is_direct: w.is_direct !== false,
+      score: w.aggregateScore ?? null,
+      value: w.aggregateValue ?? null,
+      target: w.aggregateTarget ?? toDecimal(w.target_value),
+      weight: toDecimal(w.weight_percent),
+    }));
 
-    const weekIndirectValueCandidates = [
-      ...weeklyAggregates
-        .filter(
-          (w: any) =>
-            w.contributes_to_parent_value === false &&
-            hasDecimal(w.aggregateValue),
-        )
-        .map((w: any) => w.aggregateValue as Decimal),
-      ...weeklyAggregates
-        .filter((w: any) => hasDecimal(w.indirectValue))
-        .map((w: any) => w.indirectValue as Decimal),
-    ];
+    const weekFallbackSplit = weekItemsFallback.length > 0 ? splitAndScore(weekItemsFallback) : null;
 
-    const hasWeekAggregateData =
-      weekScoreCandidates.length > 0 ||
-      weekValueCandidates.length > 0 ||
-      weekIndirectScoreCandidates.length > 0 ||
-      weekIndirectValueCandidates.length > 0;
+    const weekFallbackNestedIndirectScore = weeklyAggregates
+      .filter((w: any) => hasDecimal(w.indirectScore))
+      .map((w: any) => ({ score: w.indirectScore as Decimal, target: toDecimal(w.indirectTarget), weight: null as Decimal | null }));
+    const weekFallbackNestedIndirectValue = weeklyAggregates.reduce(
+      (s: Decimal, w: any) => s.add(toDecimal(w.indirectValue) ?? new Decimal(0)), new Decimal(0),
+    );
 
-    if (hasWeekAggregateData) {
-      score =
-        weekScoreCandidates.length > 0
-          ? weightedAvgOrSimpleAvg(
-              weeklyAggregates.map((w: any) => ({
-                score:
-                  w.contributes_to_parent_score !== false
-                    ? w.aggregateScore
-                    : null,
-                weight: w.weight_percent ? toDecimal(w.weight_percent) : null,
-              })),
-            )
+    const hasWeekAggregateData = weekFallbackSplit !== null &&
+      (weekFallbackSplit.directTarget.gt(0) || weekFallbackSplit.indirectTarget.gt(0));
+
+    if (hasWeekAggregateData && weekFallbackSplit) {
+      score = weekFallbackSplit.directScore.gt(0) ? weekFallbackSplit.directScore : null;
+      value = weekFallbackSplit.directTarget.gt(0) ? weekFallbackSplit.directValue : null;
+      indirectScore = weekFallbackSplit.indirectScore.gt(0)
+        ? weekFallbackSplit.indirectScore
+        : weekFallbackNestedIndirectScore.length > 0
+          ? normalizedWeightedAvg(weekFallbackNestedIndirectScore)
           : null;
-      value =
-        weekValueCandidates.length > 0
-          ? weekValueCandidates.reduce(
-              (sum: Decimal, v: Decimal) => sum.add(v),
-              new Decimal(0),
-            )
-          : null;
-
-      indirectScore = avgOrNull(weekIndirectScoreCandidates);
-      indirectValue = sumOrNull(weekIndirectValueCandidates);
+      indirectValue = weekFallbackSplit.indirectValue.add(weekFallbackNestedIndirectValue).gt(0)
+        ? weekFallbackSplit.indirectValue.add(weekFallbackNestedIndirectValue)
+        : null;
     } else if (kr.subtasks.length > 0) {
-      const subtaskResults = kr.subtasks.map((task: any) => ({
-        task,
-        result: computeNodeScoreValue(task, task.metricDefinition ?? metric),
-      }));
+      const subtaskItems = kr.subtasks.map((task: any) => {
+        const result = computeNodeScoreValue(task, task.metricDefinition ?? metric);
+        return {
+          is_direct: task.is_direct !== false,
+          score: result.score,
+          value: result.value,
+          target: toDecimal(task.target_value),
+          weight: toDecimal(task.weight_percent),
+        };
+      });
 
-      const subtaskScoreCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            x.task.contributes_to_parent_score !== false &&
-            hasDecimal(x.result.score),
-        )
-        .map((x: any) => x.result.score as Decimal);
-
-      const subtaskValueCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            x.task.contributes_to_parent_value !== false &&
-            hasDecimal(x.result.value),
-        )
-        .map((x: any) => x.result.value as Decimal);
-
-      const subtaskIndirectScoreCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            x.task.contributes_to_parent_score === false &&
-            hasDecimal(x.result.score),
-        )
-        .map((x: any) => x.result.score as Decimal);
-
-      const subtaskIndirectValueCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            x.task.contributes_to_parent_value === false &&
-            hasDecimal(x.result.value),
-        )
-        .map((x: any) => x.result.value as Decimal);
-
-      const hasSubtaskAggregateData =
-        subtaskScoreCandidates.length > 0 ||
-        subtaskValueCandidates.length > 0 ||
-        subtaskIndirectScoreCandidates.length > 0 ||
-        subtaskIndirectValueCandidates.length > 0;
-
-      if (hasSubtaskAggregateData) {
-        score =
-          subtaskScoreCandidates.length > 0
-            ? weightedAvgOrSimpleAvg(
-                subtaskResults.map((x: any) => ({
-                  score:
-                    x.task.contributes_to_parent_score !== false
-                      ? x.result.score
-                      : null,
-                  weight: x.task.weight_percent
-                    ? toDecimal(x.task.weight_percent)
-                    : null,
-                })),
-              )
-            : null;
-        value =
-          subtaskValueCandidates.length > 0
-            ? subtaskValueCandidates.reduce(
-                (sum: Decimal, v: Decimal) => sum.add(v),
-                new Decimal(0),
-              )
-            : null;
-
-        indirectScore = avgOrNull(subtaskIndirectScoreCandidates);
-        indirectValue = sumOrNull(subtaskIndirectValueCandidates);
+      const subtaskSplit = splitAndScore(subtaskItems);
+      if (subtaskSplit.directTarget.gt(0) || subtaskSplit.directScore.gt(0)) {
+        score = subtaskSplit.directScore.gt(0) ? subtaskSplit.directScore : null;
+        value = subtaskSplit.directTarget.gt(0) ? subtaskSplit.directValue : null;
+        indirectScore = subtaskSplit.indirectScore.gt(0) ? subtaskSplit.indirectScore : null;
+        indirectValue = subtaskSplit.indirectValue.gt(0) ? subtaskSplit.indirectValue : null;
       }
     }
   }
@@ -639,10 +630,8 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
   await tx.employeeKeyResult.update({
     where: { id: employeeKrId },
     data: {
-      final_score: score,
+      progress_percent: score,
       current_value: value,
-      indirect_score: indirectScore,
-      indirect_value: indirectValue,
     },
   });
 
@@ -664,7 +653,7 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
     await tx.weeklyPlan.update({
       where: { id: week.id },
       data: {
-        final_score: week.aggregateScore,
+        progress_percent: week.aggregateScore,
         current_value: week.aggregateValue,
         confidence_level: wConf,
       },
@@ -684,7 +673,7 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
 
 /**
  * Roll up all Employee KRs into their parent Employee Objective.
- * Uses weighted average of KR scores where contributes_to_objective_score=true.
+ * Uses weighted average of KR scores where is_direct=true.
  */
 /**
  * Refined version that propagates upward.
@@ -752,91 +741,31 @@ async function _rollupEmployeeObjectiveInternal(
     include: { metricDefinition: true },
   });
 
-  // Weighted average for score
-  let totalWeight = new Decimal(0);
-  let weightedScoreSum = new Decimal(0);
+  // Weighted average for score — direct KRs only, normalised within direct group
+  let totalDirectWeight = new Decimal(0);
+  let weightedDirectScoreSum = new Decimal(0);
   let totalValue = new Decimal(0);
   let totalTarget = new Decimal(0);
-  const indirectScoreCandidates: Decimal[] = [];
-  let indirectValue = new Decimal(0);
+  // Indirect: collect with weights for normalised avg
   let allMandatoryComplete = true;
 
   for (const kr of updatedKRs) {
-    const weight = kr.weight_percent ?? new Decimal(0);
-    const score = kr.final_score ?? new Decimal(0);
+    const weight = toDecimal(kr.normalized_weight) ?? new Decimal(0);
+    const score = toDecimal(kr.progress_percent) ?? new Decimal(0);
 
-    if (
-      kr.contributes_to_objective_score &&
-      kr.metricDefinition?.supports_weighted_score
-    ) {
-      totalWeight = totalWeight.add(weight);
-      weightedScoreSum = weightedScoreSum.add(score.mul(weight));
-    }
-
-    if (
-      kr.contributes_to_objective_value &&
-      kr.metricDefinition?.supports_value_rollup
-    ) {
-      // Exclude non-financial supporting KRs from financial value total
+    if (kr.is_direct !== false && kr.metricDefinition?.supports_value_rollup) {
       if (isParentFinancial) {
-        if (kr.metricDefinition.is_financial) {
-          totalValue = totalValue.add(getRollupValue(kr));
-        }
+        if (kr.metricDefinition.is_financial) totalValue = totalValue.add(getRollupValue(kr));
       } else {
         totalValue = totalValue.add(getRollupValue(kr));
       }
-
-      totalTarget = totalTarget.add(
-        toDecimal(kr.target_value) ?? new Decimal(0),
-      );
+      totalTarget = totalTarget.add(toDecimal(kr.target_value) ?? new Decimal(0));
     }
 
-    if (
-      kr.contributes_to_objective_score === false &&
-      hasDecimal(kr.final_score)
-    ) {
-      indirectScoreCandidates.push(kr.final_score);
-    }
-
-    if (hasDecimal((kr as any).indirect_score)) {
-      indirectScoreCandidates.push((kr as any).indirect_score as Decimal);
-    }
-
-    if (kr.metricDefinition?.supports_value_rollup) {
-      const shouldIncludeValue =
-        !isParentFinancial || kr.metricDefinition.is_financial;
-
-      if (shouldIncludeValue) {
-        if (
-          kr.contributes_to_objective_value === false &&
-          hasDecimal(toDecimal(kr.current_value))
-        ) {
-          indirectValue = indirectValue.add(getRollupValue(kr));
-        }
-
-        if (hasDecimal((kr as any).indirect_value)) {
-          indirectValue = indirectValue.add(
-            (kr as any).indirect_value as Decimal,
-          );
-        }
-      }
-    }
-
-    if (
-      kr.is_mandatory_for_completion &&
-      (!kr.final_score || kr.final_score.lt(100))
-    ) {
+    if (kr.is_mandatory_for_completion && (!kr.progress_percent || toDecimal(kr.progress_percent)!.lt(100))) {
       allMandatoryComplete = false;
     }
   }
-
-  const finalScore = totalWeight.gt(0)
-    ? weightedScoreSum.div(totalWeight)
-    : new Decimal(0);
-  const indirectScore =
-    indirectScoreCandidates.length > 0
-      ? avgDecimals(indirectScoreCandidates)
-      : new Decimal(0);
 
   const existingTarget = toDecimal(objective.target_value) ?? new Decimal(0);
   const progressPercent = existingTarget.gt(0)
@@ -846,11 +775,8 @@ async function _rollupEmployeeObjectiveInternal(
   await tx.employeeObjective.update({
     where: { id: objectiveId },
     data: {
-      final_score: finalScore,
       current_value: totalValue,
       progress_percent: progressPercent,
-      indirect_score: indirectScore,
-      indirect_value: indirectValue,
     },
   });
 
@@ -910,23 +836,44 @@ async function _rollupEmployeeObjectiveInternal(
       }
     }
 
-    const itemScores = plan.items.map((i: any) => {
-      if (i.target_value && new Decimal(i.target_value).gt(0)) {
-        const current = i.current_value
-          ? new Decimal(i.current_value)
-          : new Decimal(0);
-        const target = new Decimal(i.target_value);
-        return clampPercent(current.div(target).mul(100));
-      }
-      return new Decimal(0);
-    });
+    const directItems = plan.items.filter((i: any) => i.is_direct !== false);
+    const indirectItems = plan.items.filter((i: any) => i.is_direct === false);
 
-    const planScore = avgDecimals(itemScores);
-    const planValue = plan.items.reduce(
+    const directItemNodes = directItems.map((i: any) => ({
+      is_direct: true as const,
+      score: i.target_value && new Decimal(i.target_value).gt(0)
+        ? clampPercent(new Decimal(i.current_value || 0).div(new Decimal(i.target_value)).mul(100))
+        : null,
+      value: toDecimal(i.current_value),
+      target: toDecimal(i.target_value),
+      weight: toDecimal(i.weight_percent ?? null),
+    }));
+    const indirectItemNodes = indirectItems.map((i: any) => ({
+      is_direct: false as const,
+      score: i.target_value && new Decimal(i.target_value).gt(0)
+        ? clampPercent(new Decimal(i.current_value || 0).div(new Decimal(i.target_value)).mul(100))
+        : null,
+      value: toDecimal(i.current_value),
+      target: toDecimal(i.target_value),
+      weight: toDecimal(i.weight_percent ?? null),
+    }));
+
+    const planScore = normalizedWeightedAvg(directItemNodes);
+    const planIndirectScore = normalizedWeightedAvg(indirectItemNodes);
+
+    const planValue = directItems.reduce(
       (sum: Decimal, i: any) => sum.add(new Decimal(i.current_value || 0)),
       new Decimal(0),
     );
-    const planTarget = plan.items.reduce(
+    const planIndirectValue = indirectItems.reduce(
+      (sum: Decimal, i: any) => sum.add(new Decimal(i.current_value || 0)),
+      new Decimal(0),
+    );
+    const planTarget = directItems.reduce(
+      (sum: Decimal, i: any) => sum.add(new Decimal(i.target_value || 0)),
+      new Decimal(0),
+    );
+    const planIndirectTarget = indirectItems.reduce(
       (sum: Decimal, i: any) => sum.add(new Decimal(i.target_value || 0)),
       new Decimal(0),
     );
@@ -937,7 +884,6 @@ async function _rollupEmployeeObjectiveInternal(
     await tx.employeeMonthPlan.update({
       where: { id: plan.id },
       data: {
-        final_score: planScore,
         current_value: planValue,
         progress_percent: planProgress,
       },
@@ -946,10 +892,8 @@ async function _rollupEmployeeObjectiveInternal(
 
   return {
     objectiveId,
-    finalScore,
+    progressPercent,
     finalValue: totalValue,
-    indirectScore,
-    indirectValue,
     allMandatoryComplete,
   };
 }
@@ -972,9 +916,8 @@ export async function rollupEmployeeKR(
           employeeObjectives: {
             select: {
               id: true,
-              final_score: true,
-              indirect_score: true,
-              indirect_value: true,
+              is_direct: true,
+              progress_percent: true,
             },
           },
         },
@@ -1003,10 +946,9 @@ export async function rollupEmployeeKR(
         include: {
           employeeObjectives: {
             select: {
-              final_score: true,
+              is_direct: true,
+              progress_percent: true,
               current_value: true,
-              indirect_score: true,
-              indirect_value: true,
             },
           },
         },
@@ -1022,44 +964,31 @@ export async function rollupEmployeeKR(
 
   for (const contributor of refreshed!.contributors) {
     for (const empObj of contributor.employeeObjectives) {
-      if (empObj.final_score) allScores.push(empObj.final_score);
-      totalValue = totalValue.add(getRollupValue(empObj));
-      if (hasDecimal((empObj as any).indirect_score)) {
-        indirectScores.push((empObj as any).indirect_score as Decimal);
-      }
-      if (hasDecimal((empObj as any).indirect_value)) {
-        indirectValue = indirectValue.add(
-          (empObj as any).indirect_value as Decimal,
-        );
+      if ((empObj as any).is_direct !== false) {
+        if (empObj.progress_percent) allScores.push(empObj.progress_percent);
+        totalValue = totalValue.add(getRollupValue(empObj));
       }
     }
   }
 
   let avgScore = new Decimal(0);
-  let avgIndirectScore = new Decimal(0);
 
   if (allScores.length > 0) {
     avgScore = allScores
       .reduce((sum, s) => sum.add(s), new Decimal(0))
       .div(allScores.length);
-    avgIndirectScore =
-      indirectScores.length > 0 ? avgDecimals(indirectScores) : new Decimal(0);
   } else {
     // Fallback to own plans/subtasks if no contributors
     const results = await computeEmployeeKRScore(employeeKrId, tx);
     avgScore = results.score;
     totalValue = results.value ?? new Decimal(0);
-    avgIndirectScore = results.indirectScore;
-    indirectValue = results.indirectValue;
   }
 
   await tx.employeeKeyResult.update({
     where: { id: employeeKrId },
     data: {
-      final_score: avgScore,
+      progress_percent: avgScore,
       current_value: totalValue,
-      indirect_score: avgIndirectScore,
-      indirect_value: indirectValue,
     },
   });
 
@@ -1178,514 +1107,9 @@ export async function rollupEmployeeKR(
     employeeKrId,
     avgScore,
     totalValue,
-    indirectScore: avgIndirectScore,
-    indirectValue,
   };
 }
 
-/**
- * Roll up contributor Employee Objectives into their parent Department KR.
- */
-export async function rollupDepartmentKR(
-  departmentKrId: number,
-  tx: any = prisma,
-) {
-  const deptKr = await tx.departmentKeyResult.findUnique({
-    where: { id: departmentKrId },
-    include: {
-      contributors: {
-        include: {
-          employeeObjectives: {
-            select: {
-              id: true,
-              final_score: true,
-              indirect_score: true,
-              indirect_value: true,
-            },
-          },
-        },
-      },
-      metricDefinition: true,
-    },
-  });
-  if (!deptKr) throw new Error("Department KR not found.");
-
-  // Roll up each contributor's employee objectives first
-  for (const contributor of deptKr.contributors) {
-    for (const empObj of contributor.employeeObjectives) {
-      // Avoid recursive bounce-back into this parent KR while precomputing contributors.
-      await rollupEmployeeObjective(empObj.id, tx, true);
-    }
-  }
-
-  // Re-fetch after rollup
-  const refreshed = await tx.departmentKeyResult.findUnique({
-    where: { id: departmentKrId },
-    include: {
-      contributors: {
-        where: { status_code: "active" },
-        include: {
-          employeeObjectives: {
-            select: {
-              final_score: true,
-              current_value: true,
-              indirect_score: true,
-              indirect_value: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  // Average of contributor scores
-  const allScores: Decimal[] = [];
-  let totalValue = new Decimal(0);
-  const indirectScores: Decimal[] = [];
-  let indirectValue = new Decimal(0);
-
-  for (const contributor of refreshed!.contributors) {
-    for (const empObj of contributor.employeeObjectives) {
-      if (empObj.final_score) allScores.push(empObj.final_score);
-      totalValue = totalValue.add(getRollupValue(empObj));
-      if (hasDecimal((empObj as any).indirect_score)) {
-        indirectScores.push((empObj as any).indirect_score as Decimal);
-      }
-      if (hasDecimal((empObj as any).indirect_value)) {
-        indirectValue = indirectValue.add(
-          (empObj as any).indirect_value as Decimal,
-        );
-      }
-    }
-  }
-
-  let avgScore: Decimal | null =
-    allScores.length > 0
-      ? allScores
-          .reduce((sum, s) => sum.add(s), new Decimal(0))
-          .div(allScores.length)
-      : new Decimal(0);
-  let avgIndirectScore: Decimal | null =
-    indirectScores.length > 0 ? avgDecimals(indirectScores) : new Decimal(0);
-
-  // Fallback to department monthly/weekly measurable plans when no contributor objectives exist
-  if (allScores.length === 0 && totalValue.eq(0)) {
-    const planBased = await tx.departmentKeyResult.findUnique({
-      where: { id: departmentKrId },
-      include: {
-        monthPlans: { include: { metricDefinition: true } },
-        weeklyPlans: {
-          include: {
-            metricDefinition: true,
-            dailyPlans: {
-              include: { metricDefinition: true },
-            },
-          },
-        },
-        metricDefinition: true,
-      },
-    });
-
-    if (planBased) {
-      const weeklyAggregates = planBased.weeklyPlans.map((week: any) => {
-        const base = computeNodeScoreValue(
-          week,
-          week.metricDefinition ?? planBased.metricDefinition,
-        );
-
-        const directDailyScores: Decimal[] = [];
-        const directDailyValues: Decimal[] = [];
-        const indirectDailyScores: Decimal[] = [];
-        const indirectDailyValues: Decimal[] = [];
-
-        for (const dailyPlan of week.dailyPlans ?? []) {
-          const d = computeNodeScoreValue(
-            dailyPlan,
-            dailyPlan.metricDefinition ??
-              week.metricDefinition ??
-              planBased.metricDefinition,
-          );
-
-          if (
-            dailyPlan.contributes_to_parent_score !== false &&
-            hasDecimal(d.score)
-          ) {
-            directDailyScores.push(d.score);
-          }
-          if (
-            dailyPlan.contributes_to_parent_score === false &&
-            hasDecimal(d.score)
-          ) {
-            indirectDailyScores.push(d.score);
-          }
-
-          if (
-            dailyPlan.contributes_to_parent_value !== false &&
-            hasDecimal(d.value)
-          ) {
-            directDailyValues.push(d.value);
-          }
-          if (
-            dailyPlan.contributes_to_parent_value === false &&
-            hasDecimal(d.value)
-          ) {
-            indirectDailyValues.push(d.value);
-          }
-        }
-
-        return {
-          ...week,
-          aggregateScore:
-            week.dailyPlans.length > 0
-              ? weightedAvgOrSimpleAvg(
-                  week.dailyPlans.map((d: any) => {
-                    const results = computeNodeScoreValue(
-                      d,
-                      d.metricDefinition ??
-                        week.metricDefinition ??
-                        planBased.metricDefinition,
-                    );
-                    return {
-                      score:
-                        d.contributes_to_parent_score !== false
-                          ? results.score
-                          : null,
-                      weight: d.weight_percent
-                        ? toDecimal(d.weight_percent)
-                        : null,
-                    };
-                  }),
-                )
-              : base.score,
-          aggregateValue:
-            directDailyValues.length > 0
-              ? directDailyValues.reduce(
-                  (sum: Decimal, v: Decimal) => sum.add(v),
-                  new Decimal(0),
-                )
-              : base.value,
-          indirectScore: avgOrNull(indirectDailyScores),
-          indirectValue: sumOrNull(indirectDailyValues),
-        };
-      });
-
-      const monthScores = planBased.monthPlans
-        .filter((m: any) => m.contributes_to_parent_score !== false)
-        .map(
-          (m: any) =>
-            computeNodeScoreValue(
-              m,
-              m.metricDefinition ?? planBased.metricDefinition,
-            ).score,
-        )
-        .filter((s: any) => Boolean(s)) as Decimal[];
-
-      const monthValueItems = planBased.monthPlans
-        .filter((m: any) => m.contributes_to_parent_value !== false)
-        .map(
-          (m: any) =>
-            computeNodeScoreValue(
-              m,
-              m.metricDefinition ?? planBased.metricDefinition,
-            ).value,
-        )
-        .filter((v: any) => Boolean(v)) as Decimal[];
-
-      const monthIndirectScores = planBased.monthPlans
-        .filter((m: any) => m.contributes_to_parent_score === false)
-        .map(
-          (m: any) =>
-            computeNodeScoreValue(
-              m,
-              m.metricDefinition ?? planBased.metricDefinition,
-            ).score,
-        )
-        .filter((s: any) => Boolean(s)) as Decimal[];
-
-      const monthIndirectValues = planBased.monthPlans
-        .filter((m: any) => m.contributes_to_parent_value === false)
-        .map(
-          (m: any) =>
-            computeNodeScoreValue(
-              m,
-              m.metricDefinition ?? planBased.metricDefinition,
-            ).value,
-        )
-        .filter((v: any) => Boolean(v)) as Decimal[];
-
-      const hasMonthAggregateData =
-        monthScores.length > 0 ||
-        monthValueItems.length > 0 ||
-        monthIndirectScores.length > 0 ||
-        monthIndirectValues.length > 0;
-
-      if (hasMonthAggregateData) {
-        const computedScore =
-          monthScores.length > 0
-            ? weightedAvgOrSimpleAvg(
-                planBased.monthPlans.map((m: any) => ({
-                  score:
-                    m.contributes_to_parent_score !== false
-                      ? computeNodeScoreValue(
-                          m,
-                          m.metricDefinition ?? planBased.metricDefinition,
-                        ).score
-                      : null,
-                  weight: m.weight_percent ? toDecimal(m.weight_percent) : null,
-                })),
-              )
-            : new Decimal(0);
-        avgScore = computedScore ?? new Decimal(0);
-        totalValue = monthValueItems.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-        avgIndirectScore =
-          monthIndirectScores.length > 0
-            ? avgDecimals(monthIndirectScores)
-            : new Decimal(0);
-        indirectValue = monthIndirectValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-      } else {
-        const weekScores = weeklyAggregates
-          .filter((w: any) => w.contributes_to_parent_score !== false)
-          .map((w: any) => w.aggregateScore)
-          .filter((s: any) => Boolean(s)) as Decimal[];
-        if (weekScores.length > 0) {
-          const computedWeekScore = weightedAvgOrSimpleAvg(
-            weeklyAggregates.map((w: any) => ({
-              score:
-                w.contributes_to_parent_score !== false
-                  ? w.aggregateScore
-                  : null,
-              weight: w.weight_percent ? toDecimal(w.weight_percent) : null,
-            })),
-          );
-          avgScore = computedWeekScore ?? new Decimal(0);
-        }
-
-        const weekValues = weeklyAggregates
-          .filter((w: any) => w.contributes_to_parent_value !== false)
-          .map((w: any) => w.aggregateValue)
-          .filter((v: any) => Boolean(v)) as Decimal[];
-        totalValue = weekValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-
-        const weekIndirectScores = [
-          ...(weeklyAggregates
-            .filter((w: any) => w.contributes_to_parent_score === false)
-            .map((w: any) => w.aggregateScore)
-            .filter((s: any) => Boolean(s)) as Decimal[]),
-          ...(weeklyAggregates
-            .map((w: any) => w.indirectScore)
-            .filter((s: any) => Boolean(s)) as Decimal[]),
-        ];
-
-        const weekIndirectValues = [
-          ...(weeklyAggregates
-            .filter((w: any) => w.contributes_to_parent_value === false)
-            .map((w: any) => w.aggregateValue)
-            .filter((v: any) => Boolean(v)) as Decimal[]),
-          ...(weeklyAggregates
-            .map((w: any) => w.indirectValue)
-            .filter((v: any) => Boolean(v)) as Decimal[]),
-        ];
-
-        avgIndirectScore =
-          weekIndirectScores.length > 0
-            ? avgDecimals(weekIndirectScores)
-            : new Decimal(0);
-        indirectValue = weekIndirectValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-
-        // Sync confidence for sub-layers
-        for (const month of planBased.monthPlans) {
-          const mResults = computeNodeScoreValue(
-            month,
-            month.metricDefinition ?? planBased.metricDefinition,
-          );
-          const mConf = await calculateConfidenceLevel(
-            planBased.company_id,
-            mResults.score,
-          );
-          await tx.departmentMonthPlan.update({
-            where: { id: month.id },
-            data: { final_score: mResults.score, confidence_level: mConf },
-          });
-        }
-        for (const week of weeklyAggregates) {
-          const wConf = await calculateConfidenceLevel(
-            planBased.company_id,
-            week.aggregateScore,
-          );
-          await tx.departmentWeeklyPlan.update({
-            where: { id: week.id },
-            data: { final_score: week.aggregateScore, confidence_level: wConf },
-          });
-        }
-      }
-    }
-  }
-
-  await tx.departmentKeyResult.update({
-    where: { id: departmentKrId },
-    data: {
-      final_score: avgScore,
-      current_value: totalValue,
-      indirect_score: avgIndirectScore,
-      indirect_value: indirectValue,
-    },
-  });
-
-  const kr = await tx.departmentKeyResult.findUnique({
-    where: { id: departmentKrId },
-    select: { department_objective_id: true },
-  });
-  if (kr?.department_objective_id) {
-    await rollupDepartmentObjective(kr.department_objective_id, tx);
-  }
-
-  return {
-    departmentKrId,
-    avgScore,
-    totalValue,
-    indirectScore: avgIndirectScore,
-    indirectValue,
-  };
-}
-
-/**
- * Roll up Department KRs into their parent Department Objective.
- */
-export async function rollupDepartmentObjective(
-  deptObjectiveId: number,
-  tx: any = prisma,
-) {
-  const objective = await tx.departmentObjective.findUnique({
-    where: { id: deptObjectiveId },
-    include: {
-      keyResults: { include: { metricDefinition: true } },
-      companyKr: { include: { metricDefinition: true } },
-    },
-  });
-  if (!objective) throw new Error("Department objective not found.");
-  const isParentFinancial =
-    objective.companyKr?.metricDefinition?.is_financial === true;
-
-  // Roll up each dept KR first
-  for (const kr of objective.keyResults) {
-    await rollupDepartmentKR(kr.id, tx);
-  }
-
-  // Re-fetch
-  const updatedKRs = await tx.departmentKeyResult.findMany({
-    where: { department_objective_id: deptObjectiveId },
-    include: { metricDefinition: true },
-  });
-
-  let totalWeight = new Decimal(0);
-  let weightedScoreSum = new Decimal(0);
-  let totalValue = new Decimal(0);
-  const indirectScoreCandidates: Decimal[] = [];
-  let indirectValue = new Decimal(0);
-
-  for (const kr of updatedKRs) {
-    const weight = kr.weight_percent ?? new Decimal(0);
-    const score = kr.final_score ?? new Decimal(0);
-
-    if (
-      kr.contributes_to_objective_score &&
-      kr.metricDefinition?.supports_weighted_score
-    ) {
-      totalWeight = totalWeight.add(weight);
-      weightedScoreSum = weightedScoreSum.add(score.mul(weight));
-    }
-
-    if (
-      kr.contributes_to_objective_value &&
-      kr.metricDefinition?.supports_value_rollup
-    ) {
-      if (isParentFinancial) {
-        if (kr.metricDefinition.is_financial) {
-          totalValue = totalValue.add(getRollupValue(kr));
-        }
-      } else {
-        totalValue = totalValue.add(getRollupValue(kr));
-      }
-    }
-
-    if (
-      kr.contributes_to_objective_score === false &&
-      hasDecimal(kr.final_score)
-    ) {
-      indirectScoreCandidates.push(kr.final_score);
-    }
-
-    if (hasDecimal((kr as any).indirect_score)) {
-      indirectScoreCandidates.push((kr as any).indirect_score as Decimal);
-    }
-
-    if (kr.metricDefinition?.supports_value_rollup) {
-      const shouldIncludeValue =
-        !isParentFinancial || kr.metricDefinition.is_financial;
-
-      if (shouldIncludeValue) {
-        if (
-          kr.contributes_to_objective_value === false &&
-          hasDecimal(toDecimal(kr.current_value))
-        ) {
-          indirectValue = indirectValue.add(getRollupValue(kr));
-        }
-
-        if (hasDecimal((kr as any).indirect_value)) {
-          indirectValue = indirectValue.add(
-            (kr as any).indirect_value as Decimal,
-          );
-        }
-      }
-    }
-  }
-
-  const finalScore = totalWeight.gt(0)
-    ? weightedScoreSum.div(totalWeight)
-    : new Decimal(0);
-  const indirectScore =
-    indirectScoreCandidates.length > 0
-      ? avgDecimals(indirectScoreCandidates)
-      : new Decimal(0);
-
-  await tx.departmentObjective.update({
-    where: { id: deptObjectiveId },
-    data: {
-      final_score: finalScore,
-      current_value: totalValue,
-      indirect_score: indirectScore,
-      indirect_value: indirectValue,
-    },
-  });
-
-  const obj = await tx.departmentObjective.findUnique({
-    where: { id: deptObjectiveId },
-    select: { company_kr_id: true },
-  });
-  if (obj?.company_kr_id) {
-    await rollupCompanyKR(obj.company_kr_id, tx);
-  }
-
-  return {
-    deptObjectiveId,
-    finalScore,
-    finalValue: totalValue,
-    indirectScore,
-    indirectValue,
-  };
-}
 
 /**
  * Roll up Department Objectives into their parent Company KR.
@@ -1715,43 +1139,29 @@ export async function rollupCompanyKR(
   const refreshedDeptObjs = await tx.employeeObjective.findMany({
     where: { chosen_parent_kr_id: companyKrId },
     select: {
-      final_score: true,
+      is_direct: true,
+      progress_percent: true,
       current_value: true,
-      indirect_score: true,
-      indirect_value: true,
     },
   });
 
-  const scores = refreshedDeptObjs
-    .filter((o: any) => o.final_score)
-    .map((o: any) => o.final_score!);
+  let totalValue = new Decimal(0);
+  const scores: Decimal[] = [];
+  for (const o of refreshedDeptObjs) {
+    if ((o as any).is_direct !== false) {
+      if (o.progress_percent) scores.push(o.progress_percent);
+      totalValue = totalValue.add(getRollupValue(o));
+    }
+  }
+
   const avgScore =
     scores.length > 0
       ? scores
-          .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
-          .div(scores.length)
+        .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
+        .div(scores.length)
       : new Decimal(0);
-  const totalValue = refreshedDeptObjs.reduce(
-    (sum: Decimal, o: any) => sum.add(getRollupValue(o)),
-    new Decimal(0),
-  );
-  const totalTarget = refreshedDeptObjs.reduce(
-    (sum: Decimal, o: any) =>
-      sum.add(toDecimal(o.target_value) ?? new Decimal(0)),
-    new Decimal(0),
-  );
 
-  const indirectScores = refreshedDeptObjs
-    .filter((o: any) => hasDecimal(o.indirect_score))
-    .map((o: any) => o.indirect_score as Decimal);
 
-  const avgIndirectScore =
-    indirectScores.length > 0 ? avgDecimals(indirectScores) : new Decimal(0);
-
-  const totalIndirectValue = refreshedDeptObjs.reduce(
-    (sum: Decimal, o: any) => sum.add(o.indirect_value ?? new Decimal(0)),
-    new Decimal(0),
-  );
 
   const existingTarget = toDecimal(companyKr.target_value) ?? new Decimal(0);
   const progressPercent = existingTarget.gt(0)
@@ -1761,11 +1171,8 @@ export async function rollupCompanyKR(
   await tx.companyKeyResult.update({
     where: { id: companyKrId },
     data: {
-      final_score: avgScore,
-      current_value: totalValue,
       progress_percent: progressPercent,
-      indirect_score: avgIndirectScore,
-      indirect_value: totalIndirectValue,
+      current_value: totalValue,
     },
   });
 
@@ -1781,8 +1188,6 @@ export async function rollupCompanyKR(
     companyKrId,
     avgScore,
     totalValue,
-    indirectScore: avgIndirectScore,
-    indirectValue: totalIndirectValue,
   };
 }
 
@@ -1822,69 +1227,15 @@ export async function rollupCompanyObjective(
     include: { metricDefinition: true },
   });
 
-  let totalWeight = new Decimal(0);
-  let weightedScoreSum = new Decimal(0);
   let totalValue = new Decimal(0);
   let totalTarget = new Decimal(0);
-  const indirectScoreCandidates: Decimal[] = [];
-  let indirectValue = new Decimal(0);
 
   for (const kr of updatedKRs) {
-    const weight = kr.weight_percent ?? new Decimal(0);
-    const score = kr.final_score ?? new Decimal(0);
-
-    if (
-      kr.contributes_to_objective_score &&
-      kr.metricDefinition?.supports_weighted_score
-    ) {
-      totalWeight = totalWeight.add(weight);
-      weightedScoreSum = weightedScoreSum.add(score.mul(weight));
-    }
-
-    if (
-      kr.contributes_to_objective_value &&
-      kr.metricDefinition?.supports_value_rollup
-    ) {
+    if (kr.is_direct !== false && kr.metricDefinition?.supports_value_rollup) {
       totalValue = totalValue.add(getRollupValue(kr));
-      totalTarget = totalTarget.add(
-        toDecimal(kr.target_value) ?? new Decimal(0),
-      );
-    }
-
-    if (
-      kr.contributes_to_objective_score === false &&
-      hasDecimal(kr.final_score)
-    ) {
-      indirectScoreCandidates.push(kr.final_score);
-    }
-
-    if (hasDecimal((kr as any).indirect_score)) {
-      indirectScoreCandidates.push((kr as any).indirect_score as Decimal);
-    }
-
-    if (kr.metricDefinition?.supports_value_rollup) {
-      if (
-        kr.contributes_to_objective_value === false &&
-        hasDecimal(toDecimal(kr.current_value))
-      ) {
-        indirectValue = indirectValue.add(getRollupValue(kr));
-      }
-
-      if (hasDecimal((kr as any).indirect_value)) {
-        indirectValue = indirectValue.add(
-          (kr as any).indirect_value as Decimal,
-        );
-      }
+      totalTarget = totalTarget.add(toDecimal(kr.target_value) ?? new Decimal(0));
     }
   }
-
-  const finalScore = totalWeight.gt(0)
-    ? weightedScoreSum.div(totalWeight)
-    : new Decimal(0);
-  const indirectScore =
-    indirectScoreCandidates.length > 0
-      ? avgDecimals(indirectScoreCandidates)
-      : new Decimal(0);
 
   const existingTarget = toDecimal(objective.target_value) ?? new Decimal(0);
   const progressPercent = existingTarget.gt(0)
@@ -1894,77 +1245,19 @@ export async function rollupCompanyObjective(
   await tx.companyObjective.update({
     where: { id: companyObjectiveId },
     data: {
-      final_score: finalScore,
       current_value: totalValue,
       progress_percent: progressPercent,
-      indirect_score: indirectScore,
-      indirect_value: indirectValue,
     },
   });
 
   return {
     companyObjectiveId,
-    finalScore,
+    progressPercent,
     finalValue: totalValue,
-    indirectScore,
-    indirectValue,
   };
 }
 
-/**
- * Cascade rollup from a Department KR all the way up to Company Objective.
- */
-export async function rollupFromDepartmentKr(
-  departmentKrId: number,
-  tx: any = prisma,
-) {
-  const departmentKrResult = await rollupDepartmentKR(departmentKrId, tx);
 
-  const departmentKr = await tx.departmentKeyResult.findUnique({
-    where: { id: departmentKrId },
-    select: { department_objective_id: true },
-  });
-  if (!departmentKr) throw new Error("Department KR not found for cascade.");
-
-  const departmentObjectiveResult = await rollupDepartmentObjective(
-    departmentKr.department_objective_id,
-    tx,
-  );
-
-  const departmentObjective = await tx.departmentObjective.findUnique({
-    where: { id: departmentKr.department_objective_id },
-    select: { company_kr_id: true },
-  });
-  if (!departmentObjective)
-    throw new Error("Department objective not found for cascade.");
-
-  const companyKrResult = await rollupCompanyKR(
-    departmentObjective.company_kr_id,
-    tx,
-  );
-
-  const companyKr = await tx.companyKeyResult.findUnique({
-    where: { id: departmentObjective.company_kr_id },
-    select: { objective_id: true },
-  });
-  if (!companyKr) throw new Error("Company KR not found for cascade.");
-
-  const companyObjectiveResult = await rollupCompanyObjective(
-    companyKr.objective_id,
-    tx,
-  );
-
-  return {
-    departmentKrId,
-    departmentObjectiveId: departmentKr.department_objective_id,
-    companyKrId: departmentObjective.company_kr_id,
-    companyObjectiveId: companyKr.objective_id,
-    departmentKr: departmentKrResult,
-    departmentObjective: departmentObjectiveResult,
-    companyKr: companyKrResult,
-    companyObjective: companyObjectiveResult,
-  };
-}
 
 /**
  * Cascade rollup from an Employee Objective up to Company Objective.
@@ -2065,15 +1358,15 @@ export async function cascadeCurrentValueFromEmployeeObjective(
         select: {
           current_value: true,
           target_value: true,
-          contributes_to_objective_value: true,
+          is_direct: true,
         },
       });
       const companyObjCurrent = siblingKrs.reduce((sum: Decimal, kr: any) => {
-        if (kr.contributes_to_objective_value === false) return sum;
+        if (kr.is_direct === false) return sum;
         return sum.add(toDecimal(kr.current_value) ?? new Decimal(0));
       }, new Decimal(0));
       const companyObjTarget = siblingKrs.reduce((sum: Decimal, kr: any) => {
-        if (kr.contributes_to_objective_value === false) return sum;
+        if (kr.is_direct === false) return sum;
         return sum.add(toDecimal(kr.target_value) ?? new Decimal(0));
       }, new Decimal(0));
 
@@ -2210,15 +1503,15 @@ export async function cascadeCurrentValueFromEmployeeObjective(
         select: {
           current_value: true,
           target_value: true,
-          contributes_to_objective_value: true,
+          is_direct: true,
         },
       });
       const parentObjCurrent = parentObjKrs.reduce((sum: Decimal, kr: any) => {
-        if (kr.contributes_to_objective_value === false) return sum;
+        if (kr.is_direct === false) return sum;
         return sum.add(toDecimal(kr.current_value) ?? new Decimal(0));
       }, new Decimal(0));
       const parentObjTarget = parentObjKrs.reduce((sum: Decimal, kr: any) => {
-        if (kr.contributes_to_objective_value === false) return sum;
+        if (kr.is_direct === false) return sum;
         return sum.add(toDecimal(kr.target_value) ?? new Decimal(0));
       }, new Decimal(0));
 
@@ -2547,16 +1840,16 @@ export async function syncCurrentValueCascadeFromWeeklyPlan(
     select: {
       current_value: true,
       target_value: true,
-      contributes_to_objective_value: true,
+      is_direct: true,
     },
   });
 
   const objectiveCurrent = objectiveKrs.reduce((sum: Decimal, kr: any) => {
-    if (kr.contributes_to_objective_value === false) return sum;
+    if (kr.is_direct === false) return sum;
     return sum.add(toDecimal(kr.current_value) ?? new Decimal(0));
   }, new Decimal(0));
   const objectiveTarget = objectiveKrs.reduce((sum: Decimal, kr: any) => {
-    if (kr.contributes_to_objective_value === false) return sum;
+    if (kr.is_direct === false) return sum;
     return sum.add(toDecimal(kr.target_value) ?? new Decimal(0));
   }, new Decimal(0));
 
@@ -2658,11 +1951,11 @@ export async function getCompletionStatus(
     });
     const mandatoryKRs = krs.filter((kr) => kr.is_mandatory_for_completion);
     const allMandatoryDone = mandatoryKRs.every(
-      (kr) => kr.final_score && kr.final_score.gte(100),
+      (kr) => kr.progress_percent && kr.progress_percent.gte(100),
     );
     const totalKRs = krs.length;
     const completedKRs = krs.filter(
-      (kr) => kr.final_score && kr.final_score.gte(100),
+      (kr) => kr.progress_percent && kr.progress_percent.gte(100),
     ).length;
 
     return {
@@ -2672,7 +1965,7 @@ export async function getCompletionStatus(
       completedKRs,
       mandatoryKRs: mandatoryKRs.length,
       mandatoryCompleted: mandatoryKRs.filter(
-        (kr) => kr.final_score && kr.final_score.gte(100),
+        (kr) => kr.progress_percent && kr.progress_percent.gte(100),
       ).length,
       allMandatoryDone,
       completionRate: totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0,
@@ -2686,11 +1979,11 @@ export async function getCompletionStatus(
     });
     const mandatoryKRs = krs.filter((kr) => kr.is_mandatory_for_completion);
     const allMandatoryDone = mandatoryKRs.every(
-      (kr) => kr.final_score && kr.final_score.gte(100),
+      (kr) => kr.progress_percent && kr.progress_percent.gte(100),
     );
     const totalKRs = krs.length;
     const completedKRs = krs.filter(
-      (kr) => kr.final_score && kr.final_score.gte(100),
+      (kr) => kr.progress_percent && kr.progress_percent.gte(100),
     ).length;
 
     return {
@@ -2700,7 +1993,7 @@ export async function getCompletionStatus(
       completedKRs,
       mandatoryKRs: mandatoryKRs.length,
       mandatoryCompleted: mandatoryKRs.filter(
-        (kr) => kr.final_score && kr.final_score.gte(100),
+        (kr) => kr.progress_percent && kr.progress_percent.gte(100),
       ).length,
       allMandatoryDone,
       completionRate: totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0,
@@ -2714,11 +2007,11 @@ export async function getCompletionStatus(
   });
   const mandatoryKRs = krs.filter((kr) => kr.is_mandatory_for_completion);
   const allMandatoryDone = mandatoryKRs.every(
-    (kr) => kr.final_score && kr.final_score.gte(100),
+    (kr) => kr.progress_percent && kr.progress_percent.gte(100),
   );
   const totalKRs = krs.length;
   const completedKRs = krs.filter(
-    (kr) => kr.final_score && kr.final_score.gte(100),
+    (kr) => kr.progress_percent && kr.progress_percent.gte(100),
   ).length;
 
   return {
@@ -2728,7 +2021,7 @@ export async function getCompletionStatus(
     completedKRs,
     mandatoryKRs: mandatoryKRs.length,
     mandatoryCompleted: mandatoryKRs.filter(
-      (kr) => kr.final_score && kr.final_score.gte(100),
+      (kr) => kr.progress_percent && kr.progress_percent.gte(100),
     ).length,
     allMandatoryDone,
     completionRate: totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0,
@@ -2765,11 +2058,11 @@ export async function getFinancialBreakdown(
   const financialAvgScore =
     financial.length > 0
       ? financial
-          .reduce(
-            (sum, kr) => sum.add(kr.final_score ?? new Decimal(0)),
-            new Decimal(0),
-          )
-          .div(financial.length)
+        .reduce(
+          (sum, kr) => sum.add(kr.progress_percent ?? new Decimal(0)),
+          new Decimal(0),
+        )
+        .div(financial.length)
       : new Decimal(0);
 
   return {
@@ -2781,7 +2074,7 @@ export async function getFinancialBreakdown(
         id: kr.id,
         title: kr.title,
         objectiveTitle: kr.objective.title,
-        score: kr.final_score,
+        score: kr.progress_percent,
         value: kr.current_value,
         unit: kr.unit_of_measure,
         target: kr.target_value,
@@ -2793,7 +2086,7 @@ export async function getFinancialBreakdown(
         id: kr.id,
         title: kr.title,
         objectiveTitle: kr.objective.title,
-        score: kr.final_score,
+        score: kr.progress_percent,
         value: kr.current_value,
       })),
     },

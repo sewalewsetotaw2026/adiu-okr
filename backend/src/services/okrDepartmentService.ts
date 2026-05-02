@@ -24,12 +24,12 @@ import {
 import { resolveConfigValue } from "./okrConfigResolverService";
 import { validateWeightsBeforePublish } from "./okrWeightValidationService";
 import { processApprovalAction } from "./okrManagerService";
-import { rollupFromDepartmentKr } from "src/services/okrRollupService";
+import { rollupEmployeeKR } from "src/services/okrRollupService";
 import { computeMeasurementSnapshot } from "src/services/okrMeasurementService";
 
 async function tryRollupDepartmentKr(employeeKrId: number, reason: string) {
   try {
-    await rollupFromDepartmentKr(employeeKrId);
+    await rollupEmployeeKR(employeeKrId);
   } catch (error) {
     console.warn(`Auto-rollup after ${reason} failed:`, error);
   }
@@ -81,8 +81,7 @@ export async function listDepartmentObjectives(
         select: {
           id: true,
           title: true,
-          contributes_to_objective_score: true,
-          contributes_to_objective_value: true,
+          is_direct: true,
           is_mandatory_for_completion: true,
           objective: { select: { id: true, title: true, status_code: true } },
         },
@@ -503,6 +502,7 @@ interface CreateDeptKRInput {
   weightPercent?: number;
   contributesToScore?: boolean;
   contributesToValue?: boolean;
+  isDirect?: boolean;
   isMandatory?: boolean;
   contributorUserId?: string;
   contributorUserIds?: string[];
@@ -566,7 +566,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
   await validateMetricRequirement(
     input.companyId,
     input.metricDefinitionId,
-    input.contributesToValue,
+    input.isDirect ?? input.contributesToValue,
   );
 
   let metricId = input.metricDefinitionId;
@@ -651,7 +651,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
       input.companyId,
       parentKr?.metric_definition_id,
       metricId,
-      input.contributesToValue ?? true,
+      input.isDirect ?? input.contributesToValue ?? true,
     );
   }
 
@@ -678,6 +678,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
       input.employeeObjectiveId,
       "DEPARTMENT",
       normalizedWeightPercent,
+      input.isDirect ?? input.contributesToScore ?? true,
     );
   }
 
@@ -692,8 +693,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
         unit_of_measure: input.unitOfMeasure,
         target_value: input.targetValue,
         weight_percent: normalizedWeightPercent,
-        contributes_to_objective_score: input.contributesToScore ?? true,
-        contributes_to_objective_value: input.contributesToValue ?? true,
+        is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore ?? true,
         is_mandatory_for_completion: input.isMandatory ?? false,
         status_code: "draft",
         created_by: input.createdBy,
@@ -813,26 +813,29 @@ export async function updateDepartmentKR(
     );
   }
 
-  if (input.metricDefinitionId || input.contributesToValue !== undefined) {
+  if (input.metricDefinitionId || input.isDirect !== undefined || input.contributesToValue !== undefined) {
     const metricToCheck =
       input.metricDefinitionId !== undefined
         ? input.metricDefinitionId
         : kr.metric_definition_id;
     const valueContrib =
-      input.contributesToValue !== undefined
-        ? input.contributesToValue
-        : kr.contributes_to_objective_value;
+      input.isDirect !== undefined
+        ? input.isDirect
+        : input.contributesToValue !== undefined
+          ? input.contributesToValue
+          : kr.is_direct;
     await validateMetricRequirement(companyId, metricToCheck, valueContrib);
   }
 
   if (
     normalizedWeightPercent !== undefined &&
-    (input.contributesToScore ?? kr.contributes_to_objective_score)
+    (input.isDirect ?? input.contributesToScore ?? kr.is_direct)
   ) {
     await checkWeightLimit(
       kr.employee_objective_id,
       "DEPARTMENT",
       normalizedWeightPercent,
+      input.isDirect ?? input.contributesToScore ?? kr.is_direct,
       id,
     );
   }
@@ -846,8 +849,7 @@ export async function updateDepartmentKR(
       unit_of_measure: input.unitOfMeasure,
       target_value: input.targetValue,
       weight_percent: normalizedWeightPercent,
-      contributes_to_objective_score: input.contributesToScore,
-      contributes_to_objective_value: input.contributesToValue,
+      is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore,
       is_mandatory_for_completion: input.isMandatory,
     },
     include: { metricDefinition: true },
@@ -913,6 +915,7 @@ interface CreateMonthPlanInput {
   weightPercent?: number;
   contributesToParentScore?: boolean;
   contributesToParentValue?: boolean;
+  isDirect?: boolean;
   createdBy: string;
   actorRole?: string;
 }
@@ -1057,6 +1060,7 @@ export interface CreateWeeklyPlanInput {
   weightPercent?: number;
   contributesToParentScore?: boolean;
   contributesToParentValue?: boolean;
+  isDirect?: boolean;
   createdBy: string;
   actorRole?: string;
 }
@@ -1131,8 +1135,7 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
         current_value: measurement.currentValue,
         weight_percent: input.weightPercent,
         confidence_level: measurement.confidenceLevel as any,
-        contributes_to_parent_score: input.contributesToParentScore,
-        contributes_to_parent_value: input.contributesToParentValue,
+        is_direct: input.isDirect ?? true,
       } as any,
     });
     await logActivity({
@@ -1161,8 +1164,7 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
         current_value: measurement.currentValue,
         weight_percent: input.weightPercent,
         confidence_level: measurement.confidenceLevel as any,
-        contributes_to_parent_score: input.contributesToParentScore ?? true,
-        contributes_to_parent_value: input.contributesToParentValue ?? true,
+        is_direct: input.isDirect ?? true,
         status_code: "draft",
         created_by: input.createdBy,
       } as any,
@@ -1224,6 +1226,7 @@ export interface CreateDepartmentDailyPlanInput {
   weightPercent?: number;
   contributesToParentScore?: boolean;
   contributesToParentValue?: boolean;
+  isDirect?: boolean;
   createdBy: string;
   actorRole?: string;
 }
@@ -1292,8 +1295,7 @@ export async function createDepartmentDailyPlan(
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore ?? true,
-      contributes_to_parent_value: input.contributesToParentValue ?? true,
+      is_direct: input.isDirect ?? true,
       status_code: "pending",
       created_by: input.createdBy,
     } as any,
@@ -1342,6 +1344,7 @@ export async function updateDepartmentDailyPlan(
     weightPercent?: number;
     contributesToParentScore?: boolean;
     contributesToParentValue?: boolean;
+    isDirect?: boolean;
   },
 ) {
   const dailyPlan = await prisma.dailyPlan.findFirst({
@@ -1403,8 +1406,7 @@ export async function updateDepartmentDailyPlan(
       weight_percent: input.weightPercent,
       progress_percent: measurement.progressPercent,
       confidence_level: measurement.confidenceLevel as any,
-      contributes_to_parent_score: input.contributesToParentScore,
-      contributes_to_parent_value: input.contributesToParentValue,
+      is_direct: input.isDirect,
       completed_at: input.statusCode === "completed" ? new Date() : undefined,
     } as any,
   });

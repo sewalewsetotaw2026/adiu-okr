@@ -256,7 +256,7 @@ export async function getTeamExecutionSummary(
       active_krs: activeKRs,
       progress:
         empObjectives.length > 0
-          ? empObjectives.reduce((s, o) => s + Number(o.final_score ?? 0), 0) /
+          ? empObjectives.reduce((s, o) => s + Number(o.progress_percent ?? 0), 0) /
           empObjectives.length
           : 0,
       progress_updates_count: totalProgressUpdates,

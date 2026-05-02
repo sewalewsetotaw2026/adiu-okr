@@ -80,30 +80,13 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
         ).toDecimalPlaces(2)
       : new Decimal(0);
 
-  const indirectScores = objectives
-    .filter((o: any) => o.indirect_score)
-    .map((o: any) => o.indirect_score as Decimal);
-  const avgIndirectScore =
-    indirectScores.length > 0
-      ? indirectScores
-          .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
-          .div(indirectScores.length)
-      : new Decimal(0);
-
   const totalValue = objectives.reduce(
     (sum, o) => sum.add(o.current_value ?? new Decimal(0)),
     new Decimal(0),
   );
-  const totalIndirectValue = objectives.reduce(
-    (sum: Decimal, o: any) =>
-      sum.add(
-        o.indirect_value ? new Decimal(o.indirect_value) : new Decimal(0),
-      ),
-    new Decimal(0),
-  );
 
   const completedObjectives = objectives.filter(
-    (o) => o.final_score && o.final_score.gte(100),
+    (o) => o.progress_percent && o.progress_percent.gte(100),
   ).length;
 
   const deptObjectiveCount = await prisma.employeeObjective.count({
@@ -192,8 +175,6 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
       completedCompanyObjectives: completedObjectives,
       avgCompanyScore: avgScore,
       totalCompanyValue: totalValue,
-      avgCompanyIndirectScore: avgIndirectScore,
-      totalCompanyIndirectValue: totalIndirectValue,
       totalDepartmentObjectives: deptObjectiveCount,
     },
     confidenceDistribution,
@@ -207,8 +188,6 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
       })(),
       value: o.current_value,
       target_value: o.target_value,
-      indirectScore: (o as any).indirect_score,
-      indirectValue: (o as any).indirect_value,
       status: o.status_code,
       krCount: o.keyResults.length,
       departmentCount: o.keyResults.reduce(
@@ -230,7 +209,7 @@ export async function getDepartmentComparison(
     where: { company_id: companyId, cycle_id: cycleId },
     select: {
       id: true,
-      final_score: true,
+      progress_percent: true,
       target_value: true,
       current_value: true,
       user: {
@@ -247,7 +226,7 @@ export async function getDepartmentComparison(
       },
       keyResults: {
         select: {
-          final_score: true,
+          progress_percent: true,
           current_value: true,
           is_mandatory_for_completion: true,
         },
@@ -293,27 +272,9 @@ export async function getDepartmentComparison(
         sum.add(kr.current_value ? new Decimal(kr.current_value) : new Decimal(0)),
       new Decimal(0),
     );
-    const objectiveIndirectScores = dept.objectives
-      .filter((o: any) => o.indirect_score)
-      .map((o: any) => new Decimal(o.indirect_score));
-    const avgIndirectScore =
-      objectiveIndirectScores.length > 0
-        ? objectiveIndirectScores
-            .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
-            .div(objectiveIndirectScores.length)
-        : new Decimal(0);
-
-    const totalIndirectValue = allKRs.reduce(
-      (sum: Decimal, kr: any) =>
-        sum.add(
-          kr.indirect_value ? new Decimal(kr.indirect_value) : new Decimal(0),
-        ),
-      new Decimal(0),
-    );
-
     const totalKRs = allKRs.length;
     const completedKRs = allKRs.filter(
-      (kr: any) => kr.final_score && new Decimal(kr.final_score).gte(100),
+      (kr: any) => kr.progress_percent && new Decimal(kr.progress_percent).gte(100),
     ).length;
     const completionRate = totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0;
 
@@ -325,8 +286,6 @@ export async function getDepartmentComparison(
       completedKRs,
       avgScore,
       totalValue,
-      avgIndirectScore,
-      totalIndirectValue,
       completionRate,
     };
   });
@@ -375,18 +334,14 @@ export async function getCompanyOkrGallery(companyId: number, cycleId: number) {
       id: obj.id,
       title: obj.title,
       description: obj.description,
-      score: obj.final_score,
+      score: obj.progress_percent,
       value: obj.current_value,
-      indirectScore: (obj as any).indirect_score,
-      indirectValue: (obj as any).indirect_value,
       status: obj.status_code,
       keyResults: obj.keyResults.map((kr: any) => ({
         id: kr.id,
         title: kr.title,
-        score: kr.final_score,
+        score: kr.progress_percent,
         value: kr.current_value,
-        indirectScore: kr.indirect_score,
-        indirectValue: kr.indirect_value,
         target: kr.target_value,
         unit: kr.unit_of_measure,
         metricName: kr.metricDefinition?.name,
@@ -395,7 +350,7 @@ export async function getCompanyOkrGallery(companyId: number, cycleId: number) {
         departmentObjectives: (kr.employeeObjectives || []).map((d: any) => ({
           id: d.id,
           title: d.title,
-          score: d.final_score,
+          score: d.progress_percent,
           value: d.current_value,
           status: d.status_code,
           departmentId: d.user?.employee?.employments[0]?.department_id,
@@ -499,7 +454,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: u.id,
       employeeKrId: u.employeeKr?.id,
       employeeKrTitle: u.employeeKr?.title,
-      score: u.employeeKr?.final_score,
+      score: u.employeeKr?.progress_percent,
       target: u.employeeKr?.target_value,
       confidenceLevel: u.confidence_level,
       blockers: u.blockers,
@@ -525,7 +480,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: w.id,
       employeeKrId: w.employeeKr?.id,
       employeeKrTitle: w.employeeKr?.title,
-      score: w.employeeKr?.final_score,
+      score: w.employeeKr?.progress_percent,
       target: w.target_value,
       confidenceLevel: w.confidence_level,
       blockers: w.blockers,
@@ -538,7 +493,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: s.id,
       employeeKrId: s.employeeKr?.id,
       employeeKrTitle: s.employeeKr?.title,
-      score: s.employeeKr?.final_score,
+      score: s.employeeKr?.progress_percent,
       target: s.target_value,
       confidenceLevel: s.confidence_level,
       blockers: null,
@@ -551,7 +506,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: m.id,
       employeeKrId: m.weeklyTask?.weeklyPlan?.employeeKr?.id,
       employeeKrTitle: m.weeklyTask?.weeklyPlan?.employeeKr?.title,
-      score: m.weeklyTask?.weeklyPlan?.employeeKr?.final_score,
+      score: m.weeklyTask?.weeklyPlan?.employeeKr?.progress_percent,
       target: m.target_value,
       confidenceLevel: m.confidence_level,
       blockers: null,
@@ -588,8 +543,8 @@ export async function generateSnapshot(
   });
 
   const companyScores = companyObjectives
-    .filter((o) => o.final_score)
-    .map((o) => o.final_score!);
+    .filter((o) => o.progress_percent)
+    .map((o) => o.progress_percent!);
   const companyAvg =
     companyScores.length > 0
       ? companyScores
@@ -632,8 +587,8 @@ export async function generateSnapshot(
       },
     });
     const deptScores = deptObjs
-      .filter((o) => o.final_score)
-      .map((o) => o.final_score!);
+      .filter((o) => o.progress_percent)
+      .map((o) => o.progress_percent!);
     const deptAvg =
       deptScores.length > 0
         ? deptScores

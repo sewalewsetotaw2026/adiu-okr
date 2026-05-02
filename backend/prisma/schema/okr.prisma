@@ -222,9 +222,7 @@ model CompanyObjective {
   description      String?            @db.VarChar(1000)
   target_value     Decimal?           @db.Decimal(18, 4)
   current_value    Decimal?           @db.Decimal(18, 4)
-  final_score      Decimal?           @db.Decimal(7, 2)
-  indirect_score   Decimal?           @db.Decimal(7, 2)
-  indirect_value   Decimal?           @db.Decimal(18, 4)
+
   status_code      String             @db.VarChar(50)
   created_by       String             @db.VarChar(20)
   approved_by      String?            @db.VarChar(20)
@@ -262,15 +260,14 @@ model CompanyKeyResult {
   contributes_to_objective_score Boolean             @default(true)
   contributes_to_objective_value Boolean             @default(true)
   is_mandatory_for_completion    Boolean             @default(false)
-  final_score                    Decimal?            @db.Decimal(7, 2)
-  indirect_score                 Decimal?            @db.Decimal(7, 2)
-  indirect_value                 Decimal?            @db.Decimal(18, 4)
+  is_direct                      Boolean             @default(true)
+  normalized_weight              Decimal?            @db.Decimal(7, 4)
+  progress_percent               Decimal?            @db.Decimal(7, 2)
   status_code                    String              @db.VarChar(50)
   created_by                     String              @db.VarChar(20)
   approved_by                    String?             @db.VarChar(20)
   published_by                   String?             @db.VarChar(20)
   published_at                   DateTime?
-  progress_percent               Decimal?            @db.Decimal(7, 2)
   created_at                     DateTime            @default(now())
   updated_at                     DateTime            @updatedAt
   submission_id                  Int?
@@ -330,9 +327,7 @@ model EmployeeObjective {
   description                  String?             @db.VarChar(1000)
   target_value                 Decimal?            @db.Decimal(18, 4)
   current_value                Decimal?            @db.Decimal(18, 4)
-  final_score                  Decimal?            @db.Decimal(7, 2)
-  indirect_score               Decimal?            @db.Decimal(7, 2)
-  indirect_value               Decimal?            @db.Decimal(18, 4)
+
   status_code                  String              @db.VarChar(50)
   created_by                   String              @db.VarChar(20)
   approved_by                  String?             @db.VarChar(20)
@@ -377,11 +372,10 @@ model EmployeeKeyResult {
   contributes_to_objective_score Boolean                 @default(true)
   contributes_to_objective_value Boolean                 @default(true)
   is_mandatory_for_completion    Boolean                 @default(false)
+  is_direct                      Boolean                 @default(true)
   execution_mode                 OkrExecutionMode        @default(DIRECT_ADOPTION)
   status_code                    String                  @db.VarChar(50)
-  final_score                    Decimal?                @db.Decimal(7, 2)
-  indirect_score                 Decimal?                @db.Decimal(7, 2)
-  indirect_value                 Decimal?                @db.Decimal(18, 4)
+  normalized_weight              Decimal?                @db.Decimal(7, 4)
   created_by                     String                  @db.VarChar(20)
   approved_by                    String?                 @db.VarChar(20)
   published_by                   String?                 @db.VarChar(20)
@@ -419,9 +413,7 @@ model EmployeeMonthPlan {
   description           String?                 @db.VarChar(2000)
   target_value          Decimal?                @db.Decimal(18, 4)
   current_value         Decimal?                @db.Decimal(18, 4)
-  final_score           Decimal?                @db.Decimal(7, 2)
-  indirect_score        Decimal?                @db.Decimal(7, 2)
-  indirect_value        Decimal?                @db.Decimal(18, 4)
+
   is_manager_plan       Boolean                 @default(false)
   status_code           String                  @db.VarChar(50)
   created_by            String                  @db.VarChar(20)
@@ -454,6 +446,7 @@ model EmployeeMonthPlanItem {
   metric_definition_id              Int?
   parent_employee_month_plan_item_id Int?                   // Self-ref alignment link to manager's own plan item
   title                             String                  @default("Untitled") @db.VarChar(200)
+  is_direct                         Boolean                 @default(true)
   target_value                      Decimal                 @db.Decimal(18, 4)
   current_value                     Decimal?                @db.Decimal(18, 4)
   note                              String?                 @db.VarChar(1000)
@@ -480,43 +473,42 @@ model EmployeeMonthPlanItem {
 // Subordinate alignment uses self-referencing parent links on EmployeeMonthPlanItem and WeeklyPlan.
 
 model WeeklyPlan {
-  id                          Int                  @id @default(autoincrement())
+  id                          Int                    @id @default(autoincrement())
   company_id                  Int
   employee_kr_id              Int
   employee_month_plan_id      Int
   week_number                 Int
-  title                       String?              @db.VarChar(200)
+  title                       String?                @db.VarChar(200)
   metric_definition_id        Int?
-  target_value                Decimal?             @db.Decimal(18, 4)
-  current_value               Decimal?             @db.Decimal(18, 4)
-  weight_percent              Decimal?             @db.Decimal(7, 2)
-  final_score                 Decimal?             @db.Decimal(7, 2)
-  indirect_score              Decimal?             @db.Decimal(7, 2)
-  indirect_value              Decimal?             @db.Decimal(18, 4)
-  contributes_to_parent_score Boolean              @default(true)
-  contributes_to_parent_value Boolean              @default(true)
-  parent_weekly_plan_id       Int?                 // Self-ref alignment link to manager's own weekly plan
-  parent_weekly_task_id       Int?                 // Alignment link to a specific manager weekly task
+  target_value                Decimal?               @db.Decimal(18, 4)
+  current_value               Decimal?               @db.Decimal(18, 4)
+  is_direct                   Boolean                @default(true)
+  weight_percent              Decimal?               @db.Decimal(7, 2)
+
+  contributes_to_parent_score Boolean                @default(true)
+  contributes_to_parent_value Boolean                @default(true)
+  parent_weekly_plan_id       Int? // Self-ref alignment link to manager's own weekly plan
+  parent_weekly_task_id       Int? // Alignment link to a specific manager weekly task
   employee_month_plan_item_id Int?
-  status_code                 String               @db.VarChar(50)
+  status_code                 String                 @db.VarChar(50)
   confidence_level            OkrConfidenceLevel?
-  blockers                    String?              @db.VarChar(2000)
-  created_by                  String               @db.VarChar(20)
-  approved_by                 String?              @db.VarChar(20)
-  published_by                String?              @db.VarChar(20)
+  blockers                    String?                @db.VarChar(2000)
+  created_by                  String                 @db.VarChar(20)
+  approved_by                 String?                @db.VarChar(20)
+  published_by                String?                @db.VarChar(20)
   published_at                DateTime?
-  created_at                  DateTime             @default(now())
-  updated_at                  DateTime             @updatedAt
-  progress_percent            Decimal?             @db.Decimal(7, 2)
+  created_at                  DateTime               @default(now())
+  updated_at                  DateTime               @updatedAt
+  progress_percent            Decimal?               @db.Decimal(7, 2)
   submission_id               Int?
-  employeeKr                  EmployeeKeyResult    @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
-  monthPlan                   EmployeeMonthPlan    @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
+  employeeKr                  EmployeeKeyResult      @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
+  monthPlan                   EmployeeMonthPlan      @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
   monthPlanItem               EmployeeMonthPlanItem? @relation(fields: [employee_month_plan_item_id], references: [id])
-  metricDefinition            OkrMetricDefinition? @relation(fields: [metric_definition_id], references: [id])
-  submission                  OkrSubmission?       @relation(fields: [submission_id], references: [id])
-  parentWeeklyPlan            WeeklyPlan?          @relation("WeeklyPlanParent", fields: [parent_weekly_plan_id], references: [id], onDelete: SetNull)
-  parentWeeklyTask            WeeklyTask?          @relation("WeeklyTaskParent", fields: [parent_weekly_task_id], references: [id], onDelete: SetNull)
-  childWeeklyPlans            WeeklyPlan[]         @relation("WeeklyPlanParent")
+  metricDefinition            OkrMetricDefinition?   @relation(fields: [metric_definition_id], references: [id])
+  submission                  OkrSubmission?         @relation(fields: [submission_id], references: [id])
+  parentWeeklyPlan            WeeklyPlan?            @relation("WeeklyPlanParent", fields: [parent_weekly_plan_id], references: [id], onDelete: SetNull)
+  parentWeeklyTask            WeeklyTask?            @relation("WeeklyTaskParent", fields: [parent_weekly_task_id], references: [id], onDelete: SetNull)
+  childWeeklyPlans            WeeklyPlan[]           @relation("WeeklyPlanParent")
   tasks                       WeeklyTask[]
 
   // NOTE: @@unique([employee_kr_id, employee_month_plan_id, week_number]) REMOVED — multiple items per KR allowed
@@ -534,18 +526,20 @@ model WeeklyPlan {
 }
 
 model WeeklyTask {
-  id                 Int          @id @default(autoincrement())
-  company_id         Int
-  weekly_plan_id     Int
-  title              String       @db.VarChar(200)
-  target_value       Decimal?     @db.Decimal(18, 4)
-  current_value      Decimal?     @db.Decimal(18, 4)
-  status_code        String       @db.VarChar(50)
-  created_at         DateTime     @default(now())
-  updated_at         DateTime     @updatedAt
-  dailyPlans         DailyPlan[]
-  weeklyPlan         WeeklyPlan   @relation(fields: [weekly_plan_id], references: [id], onDelete: Cascade)
-  childWeeklyPlans   WeeklyPlan[] @relation("WeeklyTaskParent")
+  id               Int          @id @default(autoincrement())
+  company_id       Int
+  weekly_plan_id   Int
+  title            String       @db.VarChar(200)
+  is_direct        Boolean      @default(true)
+  target_value     Decimal?     @db.Decimal(18, 4)
+  current_value    Decimal?     @db.Decimal(18, 4)
+  progress_percent Decimal?     @db.Decimal(7, 2)
+  status_code      String       @db.VarChar(50)
+  created_at       DateTime     @default(now())
+  updated_at       DateTime     @updatedAt
+  dailyPlans       DailyPlan[]
+  weeklyPlan       WeeklyPlan   @relation(fields: [weekly_plan_id], references: [id], onDelete: Cascade)
+  childWeeklyPlans WeeklyPlan[] @relation("WeeklyTaskParent")
 
   @@index([company_id])
   @@index([weekly_plan_id])
@@ -559,15 +553,15 @@ model Subtask {
   title                       String               @db.VarChar(200)
   description                 String?              @db.VarChar(1000)
   metric_definition_id        Int?
+  is_direct                   Boolean              @default(true)
   target_value                Decimal?             @db.Decimal(18, 4)
   current_value               Decimal?             @db.Decimal(18, 4)
   weight_percent              Decimal?             @db.Decimal(7, 2)
   progress_percent            Decimal?             @db.Decimal(7, 2)
-  final_score                 Decimal?             @db.Decimal(7, 2)
+
   confidence_level            OkrConfidenceLevel?
   contributes_to_parent_score Boolean              @default(true)
-  indirect_score              Decimal?             @db.Decimal(7, 2)
-  indirect_value              Decimal?             @db.Decimal(18, 4)
+
   contributes_to_parent_value Boolean              @default(true)
   status_code                 String               @db.VarChar(50)
   target_month                Int?
@@ -597,19 +591,19 @@ model DailyPlan {
   completion_day              OkrWeekDay?
   description                 String?              @db.VarChar(1000)
   metric_definition_id        Int?
+  is_direct                   Boolean              @default(true)
   target_value                Decimal?             @db.Decimal(18, 4)
   current_value               Decimal?             @db.Decimal(18, 4)
   weight_percent              Decimal?             @db.Decimal(7, 2)
   progress_percent            Decimal?             @db.Decimal(7, 2)
-  final_score                 Decimal?             @db.Decimal(7, 2)
+
   confidence_level            OkrConfidenceLevel?
   contributes_to_parent_score Boolean              @default(true)
   contributes_to_parent_value Boolean              @default(true)
   approved_by                 String?              @db.VarChar(20)
   published_by                String?              @db.VarChar(20)
   published_at                DateTime?
-  indirect_score              Decimal?             @db.Decimal(7, 2)
-  indirect_value              Decimal?             @db.Decimal(18, 4)
+
   status_code                 String               @db.VarChar(50)
   completed_at                DateTime?
   created_by                  String               @db.VarChar(20)
