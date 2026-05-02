@@ -11,6 +11,7 @@ type WeeklyPlanItem = {
   blockers: string;
   tasks: Array<{ title: string; targetValue: number; currentValue: number }>;
   managerWeeklyPlanId?: number | "";
+  isDirect: boolean;
 };
 
 type Props = {
@@ -241,6 +242,22 @@ export default function WeeklyPlanModal({
                           className="min-h-[48px] w-full resize-y rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
                           placeholder="Specific Blockers For This KR..."
                         />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`is_direct_${item.id}`}
+                          checked={item.isDirect !== false}
+                          onChange={(e) => onChangeItem(item.id, "isDirect", e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        />
+                        <label
+                          htmlFor={`is_direct_${item.id}`}
+                          className="text-[11px] font-semibold text-k-medium-grey"
+                        >
+                          Directly contribute to parent Monthly Item
+                        </label>
                       </div>
 
                       <div className="pt-2">

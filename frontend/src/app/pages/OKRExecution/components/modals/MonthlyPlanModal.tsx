@@ -9,6 +9,7 @@ type MonthlyPlanItem = {
   initial: number | "";
   metricId: number | "";
   managerMonthPlanItemId: number | "";
+  isDirect: boolean;
 };
 
 type Props = {
@@ -294,6 +295,23 @@ export default function MonthlyPlanModal({
                               placeholder="0"
                             />
                           </div>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <input
+                            type="checkbox"
+                            id={`is_direct_${item.id}`}
+                            checked={item.isDirect !== false}
+                            onChange={(e) =>
+                              onChangeItem(item.id, "isDirect", e.target.checked)
+                            }
+                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                          />
+                          <label
+                            htmlFor={`is_direct_${item.id}`}
+                            className="text-[11px] font-semibold text-k-medium-grey"
+                          >
+                            Directly contribute to parent KR
+                          </label>
                         </div>
                       </div>
                     </div>

@@ -46,7 +46,7 @@ export default function EmployeeSidebar() {
   const managerOkrItems = [
     {
       path: routeConstants.okrManagerDepartmentPlanning,
-      label: "Department execution",
+      label: "Department Execution",
       icon: MdMonitorHeart,
       visible: !!user?.is_department_head || user?.role?.name === "Admin",
     },
@@ -58,13 +58,13 @@ export default function EmployeeSidebar() {
     },
     {
       path: routeConstants.okrTeamExecutionMonitor,
-      label: "Team monitor",
+      label: "Team Monitor",
       icon: MdMonitorHeart,
       visible: true,
     },
     {
       path: routeConstants.okrPlanningCompliance,
-      label: "Planning compliance",
+      label: "Planning Compliance",
       icon: MdFactCheck,
       visible: true,
     },
@@ -157,11 +157,13 @@ export default function EmployeeSidebar() {
   const okrNavItems = [
     {
       path: routeConstants.okrMyExecution,
-      label: "My execution",
+      label: "My Execution",
       icon: MdFlag,
       visible: true,
     },
-    ...((isManager || user?.is_department_head || isAdmin) ? managerOkrItems : []),
+    ...(isManager || user?.is_department_head || isAdmin
+      ? managerOkrItems
+      : []),
   ].filter((item) => item.visible !== false);
 
   if (isManager) {
@@ -196,9 +198,10 @@ export default function EmployeeSidebar() {
         className={`
           h-screen bg-white shadow-xl border-r border-gray-100 flex flex-col transition-all duration-300 z-40
           fixed top-0 left-0
-          ${isMobileOpen
-            ? "translate-x-0 w-72"
-            : "-translate-x-full lg:translate-x-0"
+          ${
+            isMobileOpen
+              ? "translate-x-0 w-72"
+              : "-translate-x-full lg:translate-x-0"
           }
           ${isOpen ? "lg:w-72" : "lg:w-24"}
         `}
@@ -215,8 +218,9 @@ export default function EmployeeSidebar() {
           <img
             src={user?.company?.logo_url || "/kacha-logo.jpg"}
             alt={`${user?.company?.company_code || "Kacha"} Logo`}
-            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${isOpen || isMobileOpen ? "max-h-16" : "max-h-10"
-              }`}
+            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${
+              isOpen || isMobileOpen ? "max-h-16" : "max-h-10"
+            }`}
           />
 
           {/* Toggle button - hidden on mobile */}
@@ -240,9 +244,10 @@ export default function EmployeeSidebar() {
               className={`
                 group flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors
                 ${isOpen || isMobileOpen ? "" : "justify-center"}
-                ${isActive(item.path)
-                  ? "bg-primary text-white"
-                  : "text-gray-500 hover:bg-primary-light hover:text-primary"
+                ${
+                  isActive(item.path)
+                    ? "bg-primary text-white"
+                    : "text-gray-500 hover:bg-primary-light hover:text-primary"
                 }
               `}
               onClick={closeMobile}

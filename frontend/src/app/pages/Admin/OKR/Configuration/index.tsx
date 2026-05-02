@@ -1851,8 +1851,8 @@ export default function OKRConfigurationPage() {
       </section>
 
       <aside className="xl:col-span-4 space-y-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm">
-          {/*<div className="flex items-center justify-between mb-3">
+        {/*<section className="rounded-3xl bg-white p-6 shadow-sm">*/}
+        {/*<div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900">
               Status Matrix Preview
             </h3>
@@ -1864,7 +1864,7 @@ export default function OKRConfigurationPage() {
               Manage
             </button>
           </div>*/}
-          <div className="space-y-2">
+        {/*<div className="space-y-2">
             {statusPreview.length === 0 ? (
               <p className="text-sm text-gray-500">
                 Start by adding simple steps like Draft, In Progress, and
@@ -1890,10 +1890,10 @@ export default function OKRConfigurationPage() {
                 </div>
               ))
             )}
-          </div>
-        </section>
+          </div>*/}
+        {/*</section>*/}
 
-        <section className="rounded-3xl bg-primary p-6 text-white shadow-sm">
+        {/*<section className="rounded-3xl bg-primary p-6 text-white shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Active Metrics</h3>
             <button
@@ -1948,7 +1948,7 @@ export default function OKRConfigurationPage() {
               </span>
             )}
           </div>
-        </section>
+        </section>*/}
       </aside>
     </div>
   );

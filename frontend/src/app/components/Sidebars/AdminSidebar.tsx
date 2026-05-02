@@ -45,23 +45,60 @@ export default function AdminSidebar() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   const okrLinks = [
-    { to: routeConstants.okr, label: "Overview", icon: MdDashboard, exact: true },
-    { to: routeConstants.okrCycles, label: "Company cycle", icon: MdCalendarToday },
-    { to: routeConstants.okrObjectives, label: "Company objectives", icon: MdTrackChanges },
-    { to: routeConstants.okrDepartmentPlanning, label: "Department OKR", icon: MdGroup },
-    { to: routeConstants.okrDepartmentApprovalQueue, label: "Approvals", icon: MdPublishedWithChanges },
+    {
+      to: routeConstants.okr,
+      label: "Overview",
+      icon: MdDashboard,
+      exact: true,
+    },
+    {
+      to: routeConstants.okrCycles,
+      label: "Company Cycle",
+      icon: MdCalendarToday,
+    },
+    {
+      to: routeConstants.okrObjectives,
+      label: "Company Objectives",
+      icon: MdTrackChanges,
+    },
+    {
+      to: routeConstants.okrDepartmentPlanning,
+      label: "Department OKR",
+      icon: MdGroup,
+    },
+    {
+      to: routeConstants.okrDepartmentApprovalQueue,
+      label: "Approvals",
+      icon: MdPublishedWithChanges,
+    },
     {
       to: routeConstants.okrCeoStrategicDashboard,
       label: "CEO Dashboard",
       icon: MdInsights,
     },
-    { to: routeConstants.okrDepartmentComparison, label: "Compare", icon: MdCompareArrows },
-    { to: routeConstants.okrCompanyGallery, label: "Gallery", icon: MdCollectionsBookmark },
+    {
+      to: routeConstants.okrDepartmentComparison,
+      label: "Compare",
+      icon: MdCompareArrows,
+    },
+    {
+      to: routeConstants.okrCompanyGallery,
+      label: "Gallery",
+      icon: MdCollectionsBookmark,
+    },
     { to: routeConstants.okrConfiguration, label: "Config", icon: MdSettings },
     { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
-    { to: routeConstants.okrArchiveManagement, label: "Archive", icon: MdArchive },
-    { to: routeConstants.okrPlanningCompliance, label: "Planning compliance", icon: MdPublishedWithChanges },
-    { to: routeConstants.okrMyExecution, label: "My OKRs", icon: MdPerson },
+    {
+      to: routeConstants.okrArchiveManagement,
+      label: "Archive",
+      icon: MdArchive,
+    },
+    {
+      to: routeConstants.okrPlanningCompliance,
+      label: "Planning Compliance",
+      icon: MdPublishedWithChanges,
+    },
+    // { to: routeConstants.okrMyExecution, label: "My OKRs", icon: MdPerson },
   ];
 
   const isOkrSectionActive =
@@ -144,7 +181,7 @@ export default function AdminSidebar() {
         label: "Leave Recall",
         icon: MdOutlineHistory,
         visible: !isManager,
-      }
+      },
     );
   }
 
@@ -169,7 +206,7 @@ export default function AdminSidebar() {
       label: "Settings",
       icon: MdSettings,
       visible: hasPermission("SETTINGS"),
-    }
+    },
   );
 
   const filteredNavItems = navItems.filter((item) => item.visible !== false);
@@ -179,7 +216,9 @@ export default function AdminSidebar() {
   const leavesIndex = normalNavItems.findIndex(
     (item) => item.path === "/admin/leaves",
   );
-  const roleIndex = normalNavItems.findIndex((item) => item.path === "/admin/roles");
+  const roleIndex = normalNavItems.findIndex(
+    (item) => item.path === "/admin/roles",
+  );
 
   const okrInsertIndex = (() => {
     if (leavesIndex >= 0) return leavesIndex + 1;
@@ -189,10 +228,13 @@ export default function AdminSidebar() {
 
   const navItemsWithOkrPlaceholder = [
     ...normalNavItems.slice(0, okrInsertIndex),
-    { path: "__OKR_COLLAPSIBLE__", label: "OKR placeholder", icon: MdTrackChanges },
+    {
+      path: "__OKR_COLLAPSIBLE__",
+      label: "OKR placeholder",
+      icon: MdTrackChanges,
+    },
     ...normalNavItems.slice(okrInsertIndex),
   ];
-
 
   return (
     <>
@@ -209,9 +251,10 @@ export default function AdminSidebar() {
         className={`
           h-screen bg-white shadow-xl border-r border-gray-100 flex flex-col transition-all duration-300 z-40
           fixed top-0 left-0
-          ${isMobileOpen
-            ? "translate-x-0 w-72"
-            : "-translate-x-full lg:translate-x-0"
+          ${
+            isMobileOpen
+              ? "translate-x-0 w-72"
+              : "-translate-x-full lg:translate-x-0"
           }
           ${isOpen ? "lg:w-72" : "lg:w-24"}
         `}
@@ -228,8 +271,9 @@ export default function AdminSidebar() {
           <img
             src={user?.company?.logo_url || "/kacha-logo.jpg"}
             alt={`${user?.company?.company_code || "Kacha"} Logo`}
-            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${isOpen || isMobileOpen ? "max-h-14" : "max-h-10"
-              }`}
+            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${
+              isOpen || isMobileOpen ? "max-h-14" : "max-h-10"
+            }`}
           />
 
           {/* Toggle button - hidden on mobile */}

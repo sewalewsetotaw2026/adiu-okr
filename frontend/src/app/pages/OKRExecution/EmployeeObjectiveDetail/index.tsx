@@ -71,7 +71,7 @@ type KrRow = {
   description?: string;
   execution_mode?: string;
   status_code?: string;
-  final_score?: string | number | null;
+  progress_percent?: string | number | null;
   final_value?: string | number | null;
   current_value?: string | number | null;
   metric_definition_id?: number;
@@ -79,8 +79,10 @@ type KrRow = {
   target_value?: string | number | null;
   unit_of_measure?: string | null;
   weight_percent?: string | number | null;
+  normalized_weight?: string | number | null;
   approvalLogs?: Array<{ action: string; comments: string | null }>;
   contributors?: any[];
+  is_direct?: boolean | null;
 };
 
 const SUBTASK_STATUSES = [
@@ -114,16 +116,18 @@ function formatStatusLabel(status: string): string {
 function ProgressBar({
   percent,
   className = "",
+  color = "bg-primary",
 }: {
   percent: number;
   className?: string;
+  color?: string;
 }) {
   const p = Math.min(100, Math.max(0, percent || 0));
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className="h-full bg-primary transition-all duration-500"
+          className={`h-full ${color} transition-all duration-500`}
           style={{ width: `${p}%` }}
         />
       </div>
@@ -144,6 +148,9 @@ export default function EmployeeObjectiveDetailPage() {
   const [objectiveStatus, setObjectiveStatus] = useState("");
   const [objectiveFinalScore, setObjectiveFinalScore] = useState<string>("—");
   const [objectiveFinalValue, setObjectiveFinalValue] = useState<string>("—");
+  const [objectiveIndirectScore, setObjectiveIndirectScore] = useState<string>("—");
+  const [objectiveIndirectValue, setObjectiveIndirectValue] = useState<string>("—");
+  const [objectiveIndirectTarget, setObjectiveIndirectTarget] = useState<number>(0);
   const [objectiveCurrentValue, setObjectiveCurrentValue] = useState<number>(0);
   const [objectiveTargetValue, setObjectiveTargetValue] = useState<number>(0);
   const [objective, setObjective] = useState<any>(null);
@@ -196,6 +203,7 @@ export default function EmployeeObjectiveDetailPage() {
     [],
   );
   const [krLockedEmployeeIds, setKrLockedEmployeeIds] = useState<string[]>([]);
+  const [krIsDirect, setKrIsDirect] = useState(true);
 
   const [monthModal, setMonthModal] = useState(false);
   const [mSelectedKrId, setMSelectedKrId] = useState<number | "">("");
@@ -223,11 +231,11 @@ export default function EmployeeObjectiveDetailPage() {
   const [dpSelectedWeeklyPlanIds, setDpSelectedWeeklyPlanIds] = useState<
     number[]
   >([]);
-  const [dpSelectedTaskId, setDpSelectedTaskId] = useState<number | "">("");
+  const [dpSelectedTaskIds, setDpSelectedTaskIds] = useState<number[]>([]);
   const [dpKrTargets, setDpKrTargets] = useState<
     Record<
       number,
-      { target: number | ""; initial: number | ""; metricId: number | "" }
+      { target: number | ""; initial: number | ""; metricId: number | ""; isDirect: boolean }
     >
   >({});
   const [dpTitle, setDpTitle] = useState("");
@@ -421,7 +429,7 @@ export default function EmployeeObjectiveDetailPage() {
       setObjectiveTitle(d?.title ?? `Objective ${objectiveId}`);
       setObjectiveStatus(String(d?.status_code ?? d?.status ?? ""));
       setObjectiveFinalScore(
-        d?.final_score != null ? String(d.final_score) : "—",
+        d?.progress_percent != null ? String(d.progress_percent) : "—",
       );
       setObjectiveFinalValue(
         d?.current_value != null
@@ -430,13 +438,15 @@ export default function EmployeeObjectiveDetailPage() {
             ? String(d.final_value)
             : "—",
       );
-      setObjectiveCurrentValue(Number(d?.current_value ?? d?.final_value ?? 0));
-      setObjectiveTargetValue(Number(d?.target_value ?? 0));
+      setObjectiveCurrentValue(
+        Number(d?.current_value ?? d?.currentValue ?? d?.final_value ?? d?.finalValue ?? 0)
+      );
+      setObjectiveTargetValue(Number(d?.target_value ?? d?.targetValue ?? 0));
       const cy = d?.cycle;
       setCycleLabel(
         cy?.quarter_label ??
-          cy?.name ??
-          (cy?.id != null ? `Cycle ${cy.id}` : ""),
+        cy?.name ??
+        (cy?.id != null ? `Cycle ${cy.id}` : ""),
       );
       const pkr =
         d?.parentDepartmentKr ??
@@ -475,16 +485,17 @@ export default function EmployeeObjectiveDetailPage() {
         description: k.description,
         execution_mode: k.execution_mode,
         status_code: k.status_code,
-        current_value: k.current_value,
-        final_score: k.final_score,
-        final_value: k.final_value,
+        current_value: k.current_value ?? k.currentValue,
+        progress_percent: k.progress_percent ?? k.progressPercent,
+        final_value: k.final_value ?? k.finalValue,
+        is_direct: k.is_direct ?? k.isDirect,
         metric_definition_id:
           k.metric_definition_id != null
             ? Number(k.metric_definition_id)
             : k.metricDefinition?.id,
-        target_value: k.target_value,
-        unit_of_measure: k.unit_of_measure,
-        weight_percent: k.weight_percent,
+        target_value: k.target_value ?? k.targetValue,
+        unit_of_measure: k.unit_of_measure ?? k.unitOfMeasure,
+        weight_percent: k.weight_percent ?? k.weightPercent,
         approvalLogs: k.approvalLogs,
         metricDefinition: k.metricDefinition,
         contributors: k.contributors,
@@ -789,7 +800,7 @@ export default function EmployeeObjectiveDetailPage() {
     const w = weeklyPlans.find((p: any) => p.id === wId);
     if (!w) return;
     setDpSelectedWeeklyPlanIds([wId]);
-    setDpSelectedTaskId(w.tasks?.[0]?.id || "");
+    if (w.tasks?.[0]?.id) setDpSelectedTaskIds([w.tasks[0].id]);
     setDpMonthPlanId(Number(w.employee_month_plan_id));
     setDpWeekNumber(Number(w.week_number));
     const firstTask = w.tasks?.[0];
@@ -802,6 +813,7 @@ export default function EmployeeObjectiveDetailPage() {
             : "",
         initial: w.current_value ? Number(w.current_value) : "",
         metricId: w.metric_definition_id ? Number(w.metric_definition_id) : "",
+        isDirect: true,
       },
     });
   };
@@ -817,6 +829,7 @@ export default function EmployeeObjectiveDetailPage() {
     setKrWeight(50);
     setKrAssignedEmployeeIds([]);
     setKrLockedEmployeeIds([]);
+    setKrIsDirect(true);
     setKrModal(true);
   };
 
@@ -858,6 +871,7 @@ export default function EmployeeObjectiveDetailPage() {
         .filter((c: any) => !!c.employeeObjectives)
         .map((c: any) => String(c.user_id)),
     );
+    setKrIsDirect((row as any).is_direct !== false);
     setKrModal(true);
   };
 
@@ -879,6 +893,7 @@ export default function EmployeeObjectiveDetailPage() {
           target_value: target,
           unit_of_measure: krUnit.trim() || "%",
           weight_percent: krWeight,
+          is_direct: krIsDirect,
           contributor_user_ids: krAssignedEmployeeIds,
         },
         isSecureRoute: true,
@@ -909,6 +924,7 @@ export default function EmployeeObjectiveDetailPage() {
             : {}),
           weight_percent: krWeight,
           ...(krUnit.trim() ? { unit_of_measure: krUnit.trim() } : {}),
+          is_direct: krIsDirect,
           contributor_user_ids: krAssignedEmployeeIds,
         },
         isSecureRoute: true,
@@ -1141,6 +1157,7 @@ export default function EmployeeObjectiveDetailPage() {
           metric_definition_id: item.metricId
             ? Number(item.metricId)
             : undefined,
+          is_direct: item.isDirect !== false,
         }));
 
       if (mEditId != null) {
@@ -1209,14 +1226,23 @@ export default function EmployeeObjectiveDetailPage() {
             (o) => String(o.id) === String(item.krId),
           );
 
+          const alignmentOpt = alignmentWeeklyOptions.find(
+            (opt) => Number(opt.id) === Number(item.managerWeeklyPlanId),
+          );
+
           return {
             employee_kr_id: monthItem?.employeeKrId || item.krId,
             employee_month_plan_item_id: monthItem?.id
               ? Number(monthItem.id)
               : undefined,
-            parent_weekly_plan_id: item.managerWeeklyPlanId
-              ? Number(item.managerWeeklyPlanId)
-              : undefined,
+            parent_weekly_plan_id:
+              item.managerWeeklyPlanId && !alignmentOpt?.weeklyPlanId
+                ? Number(item.managerWeeklyPlanId)
+                : undefined,
+            parent_weekly_task_id:
+              item.managerWeeklyPlanId && alignmentOpt?.weeklyPlanId
+                ? Number(item.managerWeeklyPlanId)
+                : undefined,
             target_value: calculatedTarget,
             current_value: calculatedInitial,
             metric_definition_id: item.metricId
@@ -1225,9 +1251,10 @@ export default function EmployeeObjectiveDetailPage() {
             blockers: item.blockers || "",
             tasks: tasks.map((t: any) => ({
               title: t.title || "Task",
-              target_value: Number(t.targetValue || 0),
-              current_value: Number(t.currentValue || 0),
+              targetValue: Number(t.targetValue || 0),
+              currentValue: Number(t.currentValue || 0),
             })),
+            is_direct: item.isDirect !== false,
           };
         });
 
@@ -1302,33 +1329,28 @@ export default function EmployeeObjectiveDetailPage() {
         ToastService.success("Daily plan updated.");
       } else {
         // Batch creation
-        if (dpSelectedWeeklyPlanIds.length === 0) {
-          ToastService.error("Please select at least one key result.");
+        if (dpSelectedTaskIds.length === 0) {
+          ToastService.error("Please select at least one task.");
           setSubmitting(false);
           return;
         }
 
-        const items = dpSelectedWeeklyPlanIds.map((id) => {
-          const vals = dpKrTargets[id] || {
+        const items = dpSelectedTaskIds.map((taskId) => {
+          const vals = dpKrTargets[taskId] || {
             target: "",
             initial: "",
             metricId: "",
+            isDirect: true,
           };
-          // Find the weekly plan to get its first task ID (as a fallback/default)
-          const wp = weeklyPlans.find((w: any) => Number(w.id) === id);
-          const task =
-            wp?.tasks?.find((t: any) => t.id === dpSelectedTaskId) ||
-            wp?.tasks?.[0];
-          const taskId = task?.id || dpSelectedTaskId || id;
-          const taskTarget = task?.target_value || 0;
-
+          
           return {
             weekly_task_id: taskId,
-            target_value: Number(vals.target || taskTarget),
+            target_value: Number(vals.target || 0),
             current_value: Number(vals.initial || 0),
             metric_definition_id: vals.metricId
               ? Number(vals.metricId)
               : undefined,
+            is_direct: vals.isDirect !== false,
           };
         });
 
@@ -1339,7 +1361,6 @@ export default function EmployeeObjectiveDetailPage() {
             completion_day: dpCompletionDay,
             title: dpTitle.trim(),
             description: dpDesc.trim() || undefined,
-            weekly_task_ref: dpWeeklyTaskRef.trim() || undefined,
             items,
           },
           isSecureRoute: true,
@@ -1351,7 +1372,7 @@ export default function EmployeeObjectiveDetailPage() {
       setDpMonthPlanId(null);
       setDpWeekNumber(null);
       setDpSelectedWeeklyPlanIds([]);
-      setDpSelectedTaskId("");
+      setDpSelectedTaskIds([]);
       setDpKrTargets({});
       setDpTitle("");
       setDpDesc("");
@@ -1620,16 +1641,16 @@ export default function EmployeeObjectiveDetailPage() {
               {["draft", "changes_requested"].includes(
                 objectiveStatus?.toLowerCase() || "draft",
               ) && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={MdSend}
-                  loading={publishBusy}
-                  onClick={() => void handleSubmitObjective()}
-                >
-                  Submit Objective
-                </Button>
-              )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={MdSend}
+                    loading={publishBusy}
+                    onClick={() => void handleSubmitObjective()}
+                  >
+                    Submit Objective
+                  </Button>
+                )}
               {objectiveStatus?.toLowerCase() === "approved" && (
                 <Button
                   variant="white"
@@ -1650,11 +1671,10 @@ export default function EmployeeObjectiveDetailPage() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`cursor-pointer inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 ${
-                  tab === t.id
+                className={`cursor-pointer inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-200 ${tab === t.id
                     ? "bg-primary text-white shadow-sm"
                     : "bg-white text-k-medium-grey ring-1 ring-gray-200 hover:bg-k-light-grey hover:text-k-dark-grey"
-                }`}
+                  }`}
               >
                 <t.icon className="text-lg" />
                 {t.label}
@@ -1673,26 +1693,59 @@ export default function EmployeeObjectiveDetailPage() {
                     </p>
                   </div>
                   <div className="rounded-xl border border-gray-100 bg-slate-50/60 px-4 py-3">
-                    <p className="text-xs font-medium text-gray-500">Status</p>
-                    <p className="text-gray-900 font-semibold mb-2">
-                      {objectiveStatus || "—"}
-                    </p>
-                    <ProgressBar
-                      percent={
-                        objectiveTargetValue > 0
-                          ? (objectiveCurrentValue / objectiveTargetValue) * 100
-                          : 0
-                      }
-                      className="w-full h-1.5"
-                    />
+                    <div className="flex flex-col gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold text-primary mb-1 uppercase tracking-wider">Direct Progress</p>
+                        <ProgressBar
+                          percent={
+                            objectiveTargetValue > 0
+                              ? (objectiveCurrentValue / objectiveTargetValue) * 100
+                              : 0
+                          }
+                          className="w-full h-1.5"
+                        />
+                      </div>
+                      {objectiveIndirectScore !== "—" && Number(objectiveIndirectScore) > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Indirect Contribution</p>
+                            {objectiveIndirectTarget > 0 && (
+                              <span className="text-[10px] text-indigo-400 tabular-nums">
+                                {Number(objectiveIndirectValue) > 0 ? Number(objectiveIndirectValue).toLocaleString() : 0}
+                                {" / "}{objectiveIndirectTarget.toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <ProgressBar
+                            percent={Number(objectiveIndirectScore)}
+                            className="w-full h-1.5"
+                            color="bg-indigo-500"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div className="rounded-xl border border-gray-100 bg-slate-50/60 px-4 py-3">
                     <p className="text-xs font-medium text-gray-500">
                       Value Rollup
                     </p>
-                    <p className="text-gray-900 font-semibold tabular-nums">
-                      {objectiveFinalValue}
-                    </p>
+                    <div className="space-y-1">
+                      <p className="text-gray-900 font-semibold tabular-nums">
+                        {objectiveFinalValue} <span className="text-[10px] font-normal text-gray-500">(Direct)</span>
+                        {objectiveTargetValue > 0 && (
+                          <span className="text-[10px] font-normal text-gray-400 ml-1">/ {objectiveTargetValue.toLocaleString()}</span>
+                        )}
+                      </p>
+                      {objectiveIndirectValue !== "—" && Number(objectiveIndirectValue) > 0 && (
+                        <p className="text-indigo-600 font-semibold tabular-nums text-xs">
+                          {objectiveIndirectValue}
+                          {objectiveIndirectTarget > 0 && (
+                            <span className="text-[10px] font-normal text-indigo-400 ml-1">/ {objectiveIndirectTarget.toLocaleString()}</span>
+                          )}
+                          <span className="text-[10px] font-normal text-indigo-400 ml-1">(Indirect)</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-4 pt-2">
@@ -1751,35 +1804,35 @@ export default function EmployeeObjectiveDetailPage() {
                         .find((k) => k.id === selectedKrId)
                         ?.status_code?.toLowerCase() || "draft",
                     ) && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={MdSend}
-                        disabled={!selectedKrId}
-                        loading={publishBusy}
-                        onClick={() =>
-                          selectedKrId && void handleSubmitKr(selectedKrId)
-                        }
-                      >
-                        Submit Selected KR
-                      </Button>
-                    )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={MdSend}
+                          disabled={!selectedKrId}
+                          loading={publishBusy}
+                          onClick={() =>
+                            selectedKrId && void handleSubmitKr(selectedKrId)
+                          }
+                        >
+                          Submit Selected KR
+                        </Button>
+                      )}
                     {krs
                       .find((k) => k.id === selectedKrId)
                       ?.status_code?.toLowerCase() === "approved" && (
-                      <Button
-                        variant="white"
-                        size="sm"
-                        icon={MdPublish}
-                        disabled={!selectedKrId}
-                        loading={publishBusy}
-                        onClick={() =>
-                          selectedKrId && void handlePublishKr(selectedKrId)
-                        }
-                      >
-                        Publish Selected KR
-                      </Button>
-                    )}
+                        <Button
+                          variant="white"
+                          size="sm"
+                          icon={MdPublish}
+                          disabled={!selectedKrId}
+                          loading={publishBusy}
+                          onClick={() =>
+                            selectedKrId && void handlePublishKr(selectedKrId)
+                          }
+                        >
+                          Publish Selected KR
+                        </Button>
+                      )}
 
                     <Button
                       variant="primary"
@@ -1888,7 +1941,7 @@ export default function EmployeeObjectiveDetailPage() {
 
                               {(k as any).approvalLogs?.[0]?.action ===
                                 "CHANGES_REQUESTED" ||
-                              (k as any).approvalLogs?.[0]?.action ===
+                                (k as any).approvalLogs?.[0]?.action ===
                                 "REJECTED" ? (
                                 <div className="mt-2 rounded-lg bg-red-50 p-3 text-xs text-red-700 ring-1 ring-red-100 italic">
                                   <span className="font-bold tracking-widest text-[9px] block mb-1">
@@ -1950,26 +2003,23 @@ export default function EmployeeObjectiveDetailPage() {
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center pt-5 border-t border-gray-50">
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-end text-xs font-bold tracking-tighter">
-                                <span className="text-gray-400">
-                                  Total Progress
-                                </span>
-                                <span className="text-gray-900">
-                                  {current}{" "}
-                                  <span className="text-gray-300 mx-1">/</span>{" "}
-                                  {target}
-                                </span>
+                              <div className="flex flex-col gap-4">
+                                <div className="space-y-2 flex-1">
+                                  <div className="flex justify-between items-end text-xs font-bold tracking-tighter">
+                                    <span className="text-gray-400 uppercase tracking-widest text-[10px]">
+                                      Direct Progress
+                                    </span>
+                                    <span className="text-primary">
+                                      {pct}%
+                                    </span>
+                                  </div>
+                                  <ProgressBar
+                                    percent={pct}
+                                    className="h-2 shadow-inner rounded-full"
+                                  />
+                                </div>
+
                               </div>
-                              <ProgressBar
-                                percent={pct}
-                                className="h-2.5 shadow-inner rounded-full"
-                              />
-                              <p className="text-[10px] text-gray-500 font-semibold tracking-widest">
-                                Achievement:{" "}
-                                <span className="text-primary">{pct}%</span>
-                              </p>
-                            </div>
 
                             <div className="flex flex-wrap items-center gap-8 md:justify-end">
                               <div className="text-center md:text-right">
@@ -1980,7 +2030,16 @@ export default function EmployeeObjectiveDetailPage() {
                                   {k.weight_percent}%
                                 </p>
                               </div>
+                              <div className="text-center md:text-right">
+                                <p className="text-[10px] font-bold text-gray-400 tracking-widest mb-1">
+                                  Type
+                                </p>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${k.is_direct !== false ? "bg-primary/10 text-primary" : "bg-indigo-50 text-indigo-600"}`}>
+                                  {k.is_direct !== false ? "Direct" : "Indirect"}
+                                </span>
+                              </div>
                             </div>
+
                           </div>
                         </li>
                       );
@@ -2041,11 +2100,14 @@ export default function EmployeeObjectiveDetailPage() {
                 ) : (
                   <ul className="space-y-2 text-sm">
                     {monthPlans.map((p: any) => {
+                      const itemTargetSum = (p.items || []).reduce((s: number, it: any) => s + Number(it.target_value || it.targetValue || 0), 0);
+                      const itemCurrentSum = (p.items || []).reduce((s: number, it: any) => s + Number(it.current_value || it.currentValue || 0), 0);
+
                       const target = Number(
-                        p.target_value ?? p.targetValue ?? 0,
+                        p.target_value || p.targetValue || itemTargetSum || 0,
                       );
                       const current = Number(
-                        p.current_value ?? p.currentValue ?? p.final_value ?? 0,
+                        p.current_value || p.currentValue || p.final_value || itemCurrentSum || 0,
                       );
                       const pct =
                         target > 0
@@ -2061,9 +2123,16 @@ export default function EmployeeObjectiveDetailPage() {
                           className="rounded-xl border border-gray-100 bg-white p-4 transition-all hover:shadow-md"
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-gray-400 tracking-widest">
-                              Month {p.month_number ?? p.monthNumber ?? "?"}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-gray-400 tracking-widest">
+                                Month {p.month_number ?? p.monthNumber ?? "?"}
+                              </span>
+                              {p.is_direct === false && (
+                                <span className="text-[9px] font-bold bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                  Indirect Plan
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2">
                               {status === "draft" && (
                                 <Button
@@ -2154,7 +2223,11 @@ export default function EmployeeObjectiveDetailPage() {
                                 Monthly Progress: {current} / {target}
                               </span>
                             </div>
-                            <ProgressBar percent={pct} className="mb-2" />
+                            <div className="flex flex-col gap-2">
+                              <div>
+                                <ProgressBar percent={pct} />
+                              </div>
+                            </div>
                             {p.alignment && (
                               <div
                                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mb-2 ${p.alignment.isAligned ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}
@@ -2188,11 +2261,11 @@ export default function EmployeeObjectiveDetailPage() {
                                     const itPct =
                                       itTarget > 0
                                         ? Number(
-                                            (
-                                              (itCurrent / itTarget) *
-                                              100
-                                            ).toFixed(2),
-                                          )
+                                          (
+                                            (itCurrent / itTarget) *
+                                            100
+                                          ).toFixed(2),
+                                        )
                                         : 0;
 
                                     return (
@@ -2320,11 +2393,14 @@ export default function EmployeeObjectiveDetailPage() {
                 ) : (
                   <ul className="space-y-3 text-sm">
                     {weeklyPlans.map((w: any) => {
+                      const taskTargetSum = (w.tasks || []).reduce((s: number, t: any) => s + Number(t.target_value || t.targetValue || 0), 0);
+                      const taskCurrentSum = (w.tasks || []).reduce((s: number, t: any) => s + Number(t.current_value || t.currentValue || 0), 0);
+                      
                       const target = Number(
-                        w.target_value ?? w.targetValue ?? 0,
+                        w.target_value || w.targetValue || taskTargetSum || 0,
                       );
                       const current = Number(
-                        w.current_value ?? w.currentValue ?? 0,
+                        w.current_value || w.currentValue || taskCurrentSum || 0,
                       );
                       const pct =
                         target > 0
@@ -2341,9 +2417,16 @@ export default function EmployeeObjectiveDetailPage() {
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-3">
-                              <span className="text-xs font-bold text-k-medium-grey tracking-widest">
-                                Week {w.week_number ?? w.weekNumber ?? "?"}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-k-medium-grey tracking-widest">
+                                  Week {w.week_number ?? w.weekNumber ?? "?"}
+                                </span>
+                                {w.is_direct === false && (
+                                  <span className="text-[9px] font-bold bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                    Indirect Plan
+                                  </span>
+                                )}
+                              </div>
                               <OkrStatusBadge
                                 label={formatStatusLabel(status || "Draft")}
                                 tone={resolveStatusTone(status)}
@@ -2394,8 +2477,8 @@ export default function EmployeeObjectiveDetailPage() {
                                     setWDesc(w.blockers ?? w.description ?? "");
                                     setWMonthPlanId(
                                       w.employee_month_plan_id ??
-                                        w.employeeMonthPlanId ??
-                                        "",
+                                      w.employeeMonthPlanId ??
+                                      "",
                                     );
 
                                     const mappedItems = (w.items || []).map(
@@ -2413,6 +2496,7 @@ export default function EmployeeObjectiveDetailPage() {
                                             currentValue: t.current_value ?? 0,
                                           }),
                                         ),
+                                        isDirect: it.is_direct !== false,
                                       }),
                                     );
                                     setWItems(mappedItems);
@@ -2455,13 +2539,16 @@ export default function EmployeeObjectiveDetailPage() {
                                   Weekly Progress: {current} / {target}
                                 </span>
                               </div>
-                              <ProgressBar percent={pct} />
+                              <div className="flex flex-col gap-2">
+                                <div>
+                                  <ProgressBar percent={pct} />
+                                </div>
+                              </div>
                             </div>
                             <div className="flex gap-4 text-[11px] font-semibold">
                               <div className="text-gray-400">
-                                Score:{" "}
                                 <span className="text-gray-800">
-                                  {w.final_score ?? "0"}
+                                  {w.progress_percent ?? "0"}
                                 </span>
                               </div>
                               <div className="text-gray-400">
@@ -2506,7 +2593,7 @@ export default function EmployeeObjectiveDetailPage() {
                                                 setDpSelectedWeeklyPlanIds([
                                                   Number(w.id),
                                                 ]);
-                                                setDpKrTargets({
+                                                 setDpKrTargets({
                                                   [Number(w.id)]: {
                                                     target: m.target_value
                                                       ? Number(m.target_value)
@@ -2517,9 +2604,10 @@ export default function EmployeeObjectiveDetailPage() {
                                                     metricId:
                                                       m.metric_definition_id
                                                         ? Number(
-                                                            m.metric_definition_id,
-                                                          )
+                                                          m.metric_definition_id,
+                                                        )
                                                         : "",
+                                                    isDirect: m.is_direct !== false,
                                                   },
                                                 });
                                                 setDpTitle(m.title ?? "");
@@ -2544,14 +2632,14 @@ export default function EmployeeObjectiveDetailPage() {
                                                   Number(w.week_number),
                                                   Number(
                                                     w.employee_month_plan_id ||
-                                                      1,
+                                                    1,
                                                   ),
                                                   Number(m.id),
                                                   Number(m.current_value || 0),
                                                   Number(
                                                     m.target_value ||
-                                                      task.target_value ||
-                                                      0,
+                                                    task.target_value ||
+                                                    0,
                                                   ),
                                                   task.title || "",
                                                   m.title || "",
@@ -2574,18 +2662,18 @@ export default function EmployeeObjectiveDetailPage() {
                                             {String(
                                               m.status_code ?? "",
                                             ).toLowerCase() !== "completed" && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  void handleCompleteDailyPlan(
-                                                    Number(m.id),
-                                                  )
-                                                }
-                                                className="cursor-pointer text-primary font-semibold hover:underline transition-colors"
-                                              >
-                                                Done
-                                              </button>
-                                            )}
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    void handleCompleteDailyPlan(
+                                                      Number(m.id),
+                                                    )
+                                                  }
+                                                  className="cursor-pointer text-primary font-semibold hover:underline transition-colors"
+                                                >
+                                                  Done
+                                                </button>
+                                              )}
                                           </div>
                                         </li>
                                       ),
@@ -2633,7 +2721,7 @@ export default function EmployeeObjectiveDetailPage() {
                       setDpMonthPlanId(Number(w.employee_month_plan_id));
                       setDpWeekNumber(Number(w.week_number));
                       setDpSelectedWeeklyPlanIds([Number(w.id)]);
-                      setDpSelectedTaskId(w.tasks?.[0]?.id || "");
+                      if (w.tasks?.[0]?.id) setDpSelectedTaskIds([w.tasks[0].id]);
                       setDpKrTargets({
                         [Number(w.id)]: {
                           target: w.target_value ? Number(w.target_value) : "",
@@ -2643,6 +2731,7 @@ export default function EmployeeObjectiveDetailPage() {
                           metricId: w.metric_definition_id
                             ? Number(w.metric_definition_id)
                             : "",
+                          isDirect: true,
                         },
                       });
                       setDpTitle("");
@@ -2692,9 +2781,16 @@ export default function EmployeeObjectiveDetailPage() {
                                         className="flex items-center justify-between bg-white border border-gray-100 p-3 rounded-xl shadow-sm"
                                       >
                                         <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-gray-800 truncate">
-                                            {m.title}
-                                          </p>
+                                          <div className="flex items-center gap-2 mb-0.5">
+                                            <p className="text-sm font-medium text-gray-800 truncate">
+                                              {m.title}
+                                            </p>
+                                            {m.is_direct === false && (
+                                              <span className="text-[9px] font-bold bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                                Indirect
+                                              </span>
+                                            )}
+                                          </div>
                                           <div className="flex items-center gap-4 mt-1">
                                             {m.description && (
                                               <p className="text-xs text-gray-500 truncate">
@@ -2705,19 +2801,19 @@ export default function EmployeeObjectiveDetailPage() {
                                               percent={
                                                 m.target_value > 0
                                                   ? Number(
-                                                      (
-                                                        (Number(
-                                                          m.current_value || 0,
-                                                        ) /
-                                                          Number(
-                                                            m.target_value,
-                                                          )) *
-                                                        100
-                                                      ).toFixed(2),
-                                                    )
+                                                    (
+                                                      (Number(
+                                                        m.current_value || 0,
+                                                      ) /
+                                                        Number(
+                                                          m.target_value,
+                                                        )) *
+                                                      100
+                                                    ).toFixed(2),
+                                                  )
                                                   : Number(
-                                                      m.progress_percent || 0,
-                                                    )
+                                                    m.progress_percent || 0,
+                                                  )
                                               }
                                               className="w-24"
                                             />
@@ -2743,8 +2839,8 @@ export default function EmployeeObjectiveDetailPage() {
                                                 Number(m.current_value || 0),
                                                 Number(
                                                   m.target_value ??
-                                                    task.target_value ??
-                                                    0,
+                                                  task.target_value ??
+                                                  0,
                                                 ),
                                                 task.title || "",
                                                 m.title || "",
@@ -2990,14 +3086,16 @@ export default function EmployeeObjectiveDetailPage() {
           teamMembers={
             isManager
               ? (teamMembers || []).map((tm: any) => ({
-                  id: tm.employee.employee_id || tm.employee.id,
-                  name: tm.employee.full_name,
-                }))
+                id: tm.employee.employee_id || tm.employee.id,
+                name: tm.employee.full_name,
+              }))
               : undefined
           }
           assignedEmployeeIds={krAssignedEmployeeIds}
           lockedEmployeeIds={krLockedEmployeeIds}
           onChangeAssignedEmployees={setKrAssignedEmployeeIds}
+          isDirect={krIsDirect}
+          onChangeIsDirect={setKrIsDirect}
           objectiveTitle={objectiveTitle}
         />
         <MonthlyPlanModal
@@ -3030,6 +3128,7 @@ export default function EmployeeObjectiveDetailPage() {
                 initial: "",
                 metricId: "",
                 managerMonthPlanItemId: "",
+                isDirect: true,
               },
             ]);
           }}
@@ -3072,6 +3171,7 @@ export default function EmployeeObjectiveDetailPage() {
                 blockers: "",
                 tasks: [],
                 managerWeeklyPlanId: "",
+                isDirect: true,
               },
             ]);
           }}
@@ -3094,14 +3194,14 @@ export default function EmployeeObjectiveDetailPage() {
           isOpen={dailyPlanModal}
           onClose={() => setDailyPlanModal(false)}
           krOptions={dpKrOptions}
-          selectedKrIds={dpSelectedWeeklyPlanIds}
-          onChangeSelectedKrIds={setDpSelectedWeeklyPlanIds}
+          selectedTaskIds={dpSelectedTaskIds}
+          onChangeTaskIds={setDpSelectedTaskIds}
           krTargets={dpKrTargets}
           onChangeKrValue={(id, field, val) => {
             setDpKrTargets((prev) => ({
               ...prev,
               [id]: {
-                ...(prev[id] || { target: "", initial: "", metricId: "" }),
+                ...(prev[id] || { target: "", initial: "", metricId: "", isDirect: true }),
                 [field]: val,
               },
             }));
@@ -3110,36 +3210,13 @@ export default function EmployeeObjectiveDetailPage() {
           onChangeTitle={setDpTitle}
           description={dpDesc}
           onChangeDescription={setDpDesc}
-          weeklyTaskRef={dpWeeklyTaskRef}
-          onChangeWeeklyTaskRef={setDpWeeklyTaskRef}
           completionDay={dpCompletionDay}
           onChangeCompletionDay={setDpCompletionDay}
           metrics={metricDefinitions}
+          weeklyPlanOptions={weeklyPlans}
           onSubmit={() => void handleCreateDailyPlan()}
           isEdit={dpEditId != null}
           submitting={submitting}
-          weeklyPlanOptions={weeklyPlanOptionsForDp}
-          selectedWeeklyPlanId={
-            dpSelectedWeeklyPlanIds.length > 0 ? dpSelectedWeeklyPlanIds[0] : ""
-          }
-          onChangeWeeklyPlanId={handleDailyPlanWeeklyPlanChange}
-          selectedTaskId={dpSelectedTaskId}
-          onChangeTaskId={(id) => {
-            setDpSelectedTaskId(id);
-            const wpId = dpSelectedWeeklyPlanIds[0];
-            const wp = weeklyPlans.find((w: any) => w.id === wpId);
-            const task = wp?.tasks?.find((t: any) => t.id === id);
-            if (task && wpId) {
-              setDpKrTargets((prev) => ({
-                ...prev,
-                [wpId]: {
-                  ...(prev[wpId] || { initial: "", metricId: "" }),
-                  target: task.target_value ? Number(task.target_value) : "",
-                },
-              }));
-            }
-          }}
-          existingDays={dpExistingDays}
         />
         <ProgressUpdateModal
           isOpen={progModal}

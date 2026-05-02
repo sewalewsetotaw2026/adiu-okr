@@ -36,6 +36,8 @@ type Props = {
   lockedEmployeeIds?: string[];
   onChangeAssignedEmployees?: (ids: string[]) => void;
   objectiveTitle?: string;
+  isDirect: boolean;
+  onChangeIsDirect: (v: boolean) => void;
 };
 
 /** Create / edit employee KR (matches POST/PUT `/okr/employee/.../key-results`). */
@@ -64,6 +66,8 @@ export default function EmployeeKRModal({
   lockedEmployeeIds,
   onChangeAssignedEmployees,
   objectiveTitle,
+  isDirect,
+  onChangeIsDirect,
 }: Props) {
   const [search, setSearch] = useState("");
   return (
@@ -173,6 +177,22 @@ export default function EmployeeKRModal({
             }
             className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
           />
+        </div>
+
+        <div className="flex items-center gap-2 py-2">
+          <input
+            type="checkbox"
+            id="is_direct"
+            checked={isDirect}
+            onChange={(e) => onChangeIsDirect(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <label
+            htmlFor="is_direct"
+            className="text-sm font-semibold text-k-medium-grey"
+          >
+            Directly contribute to Objective progress
+          </label>
         </div>
 
         {teamMembers && teamMembers.length > 0 && (

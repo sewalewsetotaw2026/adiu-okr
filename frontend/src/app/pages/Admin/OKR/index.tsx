@@ -481,7 +481,7 @@ export default function OKRDashboard() {
             </section>
 
             <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <article className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 transition-all hover:shadow-md">
+              {/*<article className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 transition-all hover:shadow-md">
                 <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black tracking-widest font-space">
                   <MdInsights className="text-primary text-sm" />
                   <span>Navigation</span>
@@ -510,9 +510,9 @@ export default function OKRDashboard() {
                     Department Comparison
                   </button>
                 </div>
-              </article>
+              </article>*/}
 
-              <article className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 transition-all hover:shadow-md">
+              {/*<article className="rounded-2xl bg-white p-5 shadow-sm border border-slate-100 transition-all hover:shadow-md">
                 <div className="flex items-center gap-2 text-slate-500 text-[10px] font-black tracking-widest font-space">
                   <MdSettings className="text-primary text-sm" />
                   <span>Controls</span>
@@ -537,7 +537,7 @@ export default function OKRDashboard() {
                     Audit Logs
                   </button>
                 </div>
-              </article>
+              </article>*/}
             </section>
           </main>
         </div>

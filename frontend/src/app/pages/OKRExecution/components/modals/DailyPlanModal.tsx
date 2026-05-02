@@ -7,10 +7,8 @@ type Props = {
   onClose: () => void;
   // NEW: KR selection options (filtered by weekly plan group)
   krOptions: Array<{ id: number; title: string; targetValue: number; metricId?: number }>;
-  selectedKrIds: number[];
-  onChangeSelectedKrIds: (ids: number[]) => void;
-  krTargets: Record<number, { target: number | ""; initial: number | ""; metricId: number | "" }>;
-  onChangeKrValue: (id: number, field: "target" | "initial" | "metricId", val: string | number | "") => void;
+  krTargets: Record<number, { target: number | ""; initial: number | ""; metricId: number | ""; isDirect: boolean }>;
+  onChangeKrValue: (id: number, field: "target" | "initial" | "metricId" | "isDirect", val: string | number | boolean | "") => void;
 
   title: string;
   onChangeTitle: (v: string) => void;
@@ -36,8 +34,6 @@ export default function DailyPlanModal({
   isOpen,
   onClose,
   krOptions,
-  selectedKrIds,
-  onChangeSelectedKrIds,
   krTargets,
   onChangeKrValue,
   title,
@@ -97,17 +93,17 @@ export default function DailyPlanModal({
               <div key={w.id} className="space-y-2 border-b border-gray-100 last:border-0 pb-3 last:pb-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    {w.title.split(":")[0]} {/* "Week X" */}
+                    {(w.title || "Untitled").split(":")[0]} {/* "Week X" */}
                   </span>
                   <span className="text-[11px] font-bold text-gray-400 tracking-tighter truncate">
-                    {w.title.split(":")[1] || w.title}
+                    {(w.title || "Untitled").split(":")[1] || (w.title || "Untitled")}
                   </span>
                 </div>
                 
                 <div className="pl-2 space-y-2">
                   {w.tasks.map((t) => {
                     const isSelected = selectedTaskIds?.includes(t.id);
-                    const values = krTargets[t.id] || { target: "", initial: "", metricId: "" };
+                    const values = krTargets[t.id] || { target: "", initial: "", metricId: "", isDirect: true };
                     
                     return (
                       <div key={t.id} className={`p-2 rounded-lg border transition-all ${isSelected ? "bg-white border-primary/20 shadow-sm" : "border-transparent hover:bg-white/50"}`}>
@@ -166,6 +162,21 @@ export default function DailyPlanModal({
                                 className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-primary"
                                 placeholder="Start"
                               />
+                            </div>
+                            <div className="col-span-3 mt-1 flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                id={`is_direct_daily_${t.id}`}
+                                checked={values.isDirect !== false}
+                                onChange={(e) => onChangeKrValue(t.id, "isDirect", e.target.checked)}
+                                className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                              />
+                              <label
+                                htmlFor={`is_direct_daily_${t.id}`}
+                                className="text-[10px] font-semibold text-k-medium-grey"
+                              >
+                                Directly contribute to Weekly Task
+                              </label>
                             </div>
                           </div>
                         )}
