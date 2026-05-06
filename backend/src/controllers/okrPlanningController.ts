@@ -14,7 +14,10 @@ class ValidationError extends Error {
   statusCode = 422;
   errors: Array<{ field: string; message: string }>;
 
-  constructor(message: string, errors?: Array<{ field: string; message: string }>) {
+  constructor(
+    message: string,
+    errors?: Array<{ field: string; message: string }>,
+  ) {
     super(message);
     this.name = "ValidationError";
     this.errors = errors || [];
@@ -50,9 +53,13 @@ class UnauthorizedError extends Error {
 const requireUser = (req: Request) => {
   if (!req.user) throw new UnauthorizedError("Not authorized.");
   if (!req.user.employee_id) {
-    throw new UnauthorizedError("Not authorized — employee_id missing on token.");
+    throw new UnauthorizedError(
+      "Not authorized — employee_id missing on token.",
+    );
   }
-  return req.user as Required<Pick<NonNullable<Request["user"]>, "employee_id" | "company_id">> &
+  return req.user as Required<
+    Pick<NonNullable<Request["user"]>, "employee_id" | "company_id">
+  > &
     NonNullable<Request["user"]>;
 };
 
@@ -68,17 +75,31 @@ const parseId = (v: any, field = "id"): number => {
 
 // ────────────── Validation Helpers ────────────────────────────────────
 
-const validateRequired = (value: any, field: string, customMessage?: string): void => {
-  if (value === undefined || value === null || (typeof value === "string" && value.trim() === "")) {
+const validateRequired = (
+  value: any,
+  field: string,
+  customMessage?: string,
+): void => {
+  if (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && value.trim() === "")
+  ) {
     throw new ValidationError(customMessage || `${field} is required.`, [
       { field, message: "This field is required" },
     ]);
   }
 };
 
-const validateNumber = (value: any, field: string, options?: { min?: number; max?: number; allowZero?: boolean }): number => {
+const validateNumber = (
+  value: any,
+  field: string,
+  options?: { min?: number; max?: number; allowZero?: boolean },
+): number => {
   if (value === undefined || value === null) {
-    throw new ValidationError(`${field} is required.`, [{ field, message: "This field is required" }]);
+    throw new ValidationError(`${field} is required.`, [
+      { field, message: "This field is required" },
+    ]);
   }
   const num = Number(value);
   if (Number.isNaN(num)) {
@@ -102,18 +123,31 @@ const validateNumber = (value: any, field: string, options?: { min?: number; max
   return num;
 };
 
-const validateEnum = (value: any, validValues: string[], field: string): string => {
+const validateEnum = (
+  value: any,
+  validValues: string[],
+  field: string,
+): string => {
   const str = String(value || "").toUpperCase();
   if (!validValues.includes(str)) {
-    throw new ValidationError(`${field} must be one of: ${validValues.join(", ")}.`, [
-      { field, message: `Must be one of: ${validValues.join(", ")}` },
-    ]);
+    throw new ValidationError(
+      `${field} must be one of: ${validValues.join(", ")}.`,
+      [{ field, message: `Must be one of: ${validValues.join(", ")}` }],
+    );
   }
   return str;
 };
 
 const validateDayOfWeek = (value: any): string => {
-  const validDays = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+  const validDays = [
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
+  ];
   const day = String(value || "").toUpperCase();
   if (!validDays.includes(day)) {
     throw new ValidationError(`completion_day must be MONDAY–SUNDAY.`, [
@@ -167,12 +201,17 @@ export const createMonthlyPlan = async (
 
     // ── VALIDATION ─────────────────────────────────────────────────────
     validateRequired(body.month_number, "month_number");
-    const monthNumber = validateNumber(body.month_number, "month_number", { min: 1, max: 3 });
+    const monthNumber = validateNumber(body.month_number, "month_number", {
+      min: 1,
+      max: 3,
+    });
 
     validateRequired(body.title, "title");
     const title = String(body.title).trim();
     if (title.length < 1) {
-      throw new ValidationError("title is required.", [{ field: "title", message: "Title cannot be empty" }]);
+      throw new ValidationError("title is required.", [
+        { field: "title", message: "Title cannot be empty" },
+      ]);
     }
     if (title.length > 200) {
       throw new ValidationError("title must be at most 200 characters.", [
@@ -180,29 +219,45 @@ export const createMonthlyPlan = async (
       ]);
     }
 
-    const mode = validateEnum(body.adoption_mode || "DECOMPOSED", ["DIRECT", "DECOMPOSED"], "adoption_mode") as "DIRECT" | "DECOMPOSED";
+    const mode = validateEnum(
+      body.adoption_mode || "DECOMPOSED",
+      ["DIRECT", "DECOMPOSED"],
+      "adoption_mode",
+    ) as "DIRECT" | "DECOMPOSED";
 
     let weightPct: number | undefined;
     if (mode === "DECOMPOSED") {
       validateRequired(body.weight_pct, "weight_pct");
-      weightPct = validateNumber(body.weight_pct, "weight_pct", { min: 1, max: 100 });
+      weightPct = validateNumber(body.weight_pct, "weight_pct", {
+        min: 1,
+        max: 100,
+      });
     }
 
     let targetValue: number | undefined;
     if (body.target_value !== undefined) {
-      targetValue = validateNumber(body.target_value, "target_value", { min: 0, allowZero: true });
+      targetValue = validateNumber(body.target_value, "target_value", {
+        min: 0,
+        allowZero: true,
+      });
     }
 
     let startValue: number | undefined;
     if (body.start_value !== undefined) {
-      startValue = validateNumber(body.start_value, "start_value", { allowZero: true });
+      startValue = validateNumber(body.start_value, "start_value", {
+        allowZero: true,
+      });
     }
 
-    const description = body.description !== undefined ? String(body.description).trim() : undefined;
+    const description =
+      body.description !== undefined
+        ? String(body.description).trim()
+        : undefined;
     if (description && description.length > 1000) {
-      throw new ValidationError("description must be at most 1000 characters.", [
-        { field: "description", message: "Maximum 1000 characters" },
-      ]);
+      throw new ValidationError(
+        "description must be at most 1000 characters.",
+        [{ field: "description", message: "Maximum 1000 characters" }],
+      );
     }
     // ────────────────────────────────────────────────────────────────────
 
@@ -215,11 +270,20 @@ export const createMonthlyPlan = async (
       weightPct,
       title,
       description,
-      metric_definition_id: body.metric_definition_id ? Number(body.metric_definition_id) : undefined,
+      metric_definition_id: body.metric_definition_id
+        ? Number(body.metric_definition_id)
+        : undefined,
       start_value: startValue,
       target_value: targetValue,
-      contribute_to_score: body.contribute_to_score !== undefined ? Boolean(body.contribute_to_score) : undefined,
-      contribute_to_value: body.contribute_to_value !== undefined ? Boolean(body.contribute_to_value) : undefined,
+      contribute_to_score:
+        body.contribute_to_score !== undefined
+          ? Boolean(body.contribute_to_score)
+          : undefined,
+      contribute_to_value:
+        body.contribute_to_value !== undefined
+          ? Boolean(body.contribute_to_value)
+          : undefined,
+      aligned_manager_plan_id: body.aligned_manager_plan_id,
     });
     res.status(201).json({ status: "success", data: plan });
   } catch (e) {
@@ -238,11 +302,26 @@ export const updateMonthlyPlan = async (
     const plan = await svc.updateMonthlyPlan(id, u.employee_id, {
       title: req.body?.title,
       description: req.body?.description,
-      metric_definition_id: req.body?.metric_definition_id !== undefined ? Number(req.body.metric_definition_id) : undefined,
-      start_value: req.body?.start_value !== undefined ? Number(req.body.start_value) : undefined,
-      target_value: req.body?.target_value !== undefined ? Number(req.body.target_value) : undefined,
-      contribute_to_score: req.body?.contribute_to_score !== undefined ? Boolean(req.body.contribute_to_score) : undefined,
-      contribute_to_value: req.body?.contribute_to_value !== undefined ? Boolean(req.body.contribute_to_value) : undefined,
+      metric_definition_id:
+        req.body?.metric_definition_id !== undefined
+          ? Number(req.body.metric_definition_id)
+          : undefined,
+      start_value:
+        req.body?.start_value !== undefined
+          ? Number(req.body.start_value)
+          : undefined,
+      target_value:
+        req.body?.target_value !== undefined
+          ? Number(req.body.target_value)
+          : undefined,
+      contribute_to_score:
+        req.body?.contribute_to_score !== undefined
+          ? Boolean(req.body.contribute_to_score)
+          : undefined,
+      contribute_to_value:
+        req.body?.contribute_to_value !== undefined
+          ? Boolean(req.body.contribute_to_value)
+          : undefined,
     });
     res.json({ status: "success", data: plan });
   } catch (e) {
@@ -260,6 +339,26 @@ export const deleteMonthlyPlan = async (
     const id = parseId(req.params.id);
     const result = await svc.deleteMonthlyPlan(id, u.employee_id);
     res.json({ status: "success", data: result });
+  } catch (e) {
+    next(e);
+  }
+};
+
+export const listManagerMonthlyPlans = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const u = requireUser(req);
+    const monthNumber = parseId(req.query.monthNumber, "monthNumber");
+    const cycleId = parseId(req.query.cycleId, "cycleId");
+    const data = await svc.getManagerMonthlyPlans(
+      u.employee_id,
+      monthNumber,
+      cycleId,
+    );
+    res.json({ status: "success", data });
   } catch (e) {
     next(e);
   }
@@ -309,12 +408,17 @@ export const createWeeklyPlan = async (
 
     // ── VALIDATION ─────────────────────────────────────────────────────
     validateRequired(body.week_number, "week_number");
-    const weekNumber = validateNumber(body.week_number, "week_number", { min: 1, max: 5 });
+    const weekNumber = validateNumber(body.week_number, "week_number", {
+      min: 1,
+      max: 5,
+    });
 
     validateRequired(body.title, "title");
     const title = String(body.title).trim();
     if (title.length < 1) {
-      throw new ValidationError("title is required.", [{ field: "title", message: "Title cannot be empty" }]);
+      throw new ValidationError("title is required.", [
+        { field: "title", message: "Title cannot be empty" },
+      ]);
     }
     if (title.length > 200) {
       throw new ValidationError("title must be at most 200 characters.", [
@@ -322,22 +426,34 @@ export const createWeeklyPlan = async (
       ]);
     }
 
-    const mode = validateEnum(body.adoption_mode || "DECOMPOSED", ["DIRECT", "DECOMPOSED"], "adoption_mode") as "DIRECT" | "DECOMPOSED";
+    const mode = validateEnum(
+      body.adoption_mode || "DECOMPOSED",
+      ["DIRECT", "DECOMPOSED"],
+      "adoption_mode",
+    ) as "DIRECT" | "DECOMPOSED";
 
     let weightPct: number | undefined;
     if (mode === "DECOMPOSED") {
       validateRequired(body.weight_pct, "weight_pct");
-      weightPct = validateNumber(body.weight_pct, "weight_pct", { min: 1, max: 100 });
+      weightPct = validateNumber(body.weight_pct, "weight_pct", {
+        min: 1,
+        max: 100,
+      });
     }
 
     let targetValue: number | undefined;
     if (body.target_value !== undefined) {
-      targetValue = validateNumber(body.target_value, "target_value", { min: 0, allowZero: true });
+      targetValue = validateNumber(body.target_value, "target_value", {
+        min: 0,
+        allowZero: true,
+      });
     }
 
     let startValue: number | undefined;
     if (body.start_value !== undefined) {
-      startValue = validateNumber(body.start_value, "start_value", { allowZero: true });
+      startValue = validateNumber(body.start_value, "start_value", {
+        allowZero: true,
+      });
     }
     // ────────────────────────────────────────────────────────────────────
 
@@ -349,11 +465,20 @@ export const createWeeklyPlan = async (
       adoptionMode: mode,
       weightPct,
       title,
-      metric_definition_id: body.metric_definition_id ? Number(body.metric_definition_id) : undefined,
+      aligned_manager_plan_id: body.aligned_manager_plan_id,
+      metric_definition_id: body.metric_definition_id
+        ? Number(body.metric_definition_id)
+        : undefined,
       start_value: startValue,
       target_value: targetValue,
-      contribute_to_score: body.contribute_to_score !== undefined ? Boolean(body.contribute_to_score) : undefined,
-      contribute_to_value: body.contribute_to_value !== undefined ? Boolean(body.contribute_to_value) : undefined,
+      contribute_to_score:
+        body.contribute_to_score !== undefined
+          ? Boolean(body.contribute_to_score)
+          : undefined,
+      contribute_to_value:
+        body.contribute_to_value !== undefined
+          ? Boolean(body.contribute_to_value)
+          : undefined,
     });
     res.status(201).json({ status: "success", data: plan });
   } catch (e) {
@@ -371,11 +496,26 @@ export const updateWeeklyPlan = async (
     const id = parseId(req.params.id);
     const plan = await svc.updateWeeklyPlan(id, u.employee_id, {
       title: req.body?.title,
-      metric_definition_id: req.body?.metric_definition_id !== undefined ? Number(req.body.metric_definition_id) : undefined,
-      start_value: req.body?.start_value !== undefined ? Number(req.body.start_value) : undefined,
-      target_value: req.body?.target_value !== undefined ? Number(req.body.target_value) : undefined,
-      contribute_to_score: req.body?.contribute_to_score !== undefined ? Boolean(req.body.contribute_to_score) : undefined,
-      contribute_to_value: req.body?.contribute_to_value !== undefined ? Boolean(req.body.contribute_to_value) : undefined,
+      metric_definition_id:
+        req.body?.metric_definition_id !== undefined
+          ? Number(req.body.metric_definition_id)
+          : undefined,
+      start_value:
+        req.body?.start_value !== undefined
+          ? Number(req.body.start_value)
+          : undefined,
+      target_value:
+        req.body?.target_value !== undefined
+          ? Number(req.body.target_value)
+          : undefined,
+      contribute_to_score:
+        req.body?.contribute_to_score !== undefined
+          ? Boolean(req.body.contribute_to_score)
+          : undefined,
+      contribute_to_value:
+        req.body?.contribute_to_value !== undefined
+          ? Boolean(req.body.contribute_to_value)
+          : undefined,
     });
     res.json({ status: "success", data: plan });
   } catch (e) {
@@ -398,9 +538,29 @@ export const deleteWeeklyPlan = async (
   }
 };
 
+export const listManagerWeeklyPlans = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const u = requireUser(req);
+    const monthlyId = parseId(req.query.monthlyId, "monthlyId");
+    const weekNumber = parseId(req.query.weekNumber, "weekNumber");
+
+    const data = await svc.getManagerWeeklyPlans(
+      u.employee_id,
+      monthlyId,
+      weekNumber,
+    );
+
+    res.json({ status: "success", data });
+  } catch (e) {
+    next(e);
+  }
+};
+
 // ────────────── Daily Plan Endpoints ───────────────────────────────────
-
-
 
 export const listDailyPlans = async (
   req: Request,
@@ -434,7 +594,9 @@ export const createDailyPlan = async (
     validateRequired(body.title, "title");
     const title = String(body.title).trim();
     if (title.length < 1) {
-      throw new ValidationError("title is required.", [{ field: "title", message: "Title cannot be empty" }]);
+      throw new ValidationError("title is required.", [
+        { field: "title", message: "Title cannot be empty" },
+      ]);
     }
     if (title.length > 200) {
       throw new ValidationError("title must be at most 200 characters.", [
@@ -444,19 +606,28 @@ export const createDailyPlan = async (
 
     let targetValue: number | undefined;
     if (body.target_value !== undefined) {
-      targetValue = validateNumber(body.target_value, "target_value", { min: 0, allowZero: true });
+      targetValue = validateNumber(body.target_value, "target_value", {
+        min: 0,
+        allowZero: true,
+      });
     }
 
     let startValue = 0;
     if (body.start_value !== undefined && body.start_value !== null) {
-      startValue = validateNumber(body.start_value, "start_value", { allowZero: true });
+      startValue = validateNumber(body.start_value, "start_value", {
+        allowZero: true,
+      });
     }
 
-    const description = body.description !== undefined ? String(body.description).trim() : undefined;
+    const description =
+      body.description !== undefined
+        ? String(body.description).trim()
+        : undefined;
     if (description && description.length > 1000) {
-      throw new ValidationError("description must be at most 1000 characters.", [
-        { field: "description", message: "Maximum 1000 characters" },
-      ]);
+      throw new ValidationError(
+        "description must be at most 1000 characters.",
+        [{ field: "description", message: "Maximum 1000 characters" }],
+      );
     }
     // ────────────────────────────────────────────────────────────────────
 
@@ -468,9 +639,17 @@ export const createDailyPlan = async (
       title,
       targetValue,
       startValue,
-      metric_definition_id: body.metric_definition_id ? Number(body.metric_definition_id) : undefined,
-      contributeToScore: body.contribute_to_score === undefined ? true : Boolean(body.contribute_to_score),
-      contributeToValue: body.contribute_to_value === undefined ? true : Boolean(body.contribute_to_value),
+      metric_definition_id: body.metric_definition_id
+        ? Number(body.metric_definition_id)
+        : undefined,
+      contributeToScore:
+        body.contribute_to_score === undefined
+          ? true
+          : Boolean(body.contribute_to_score),
+      contributeToValue:
+        body.contribute_to_value === undefined
+          ? true
+          : Boolean(body.contribute_to_value),
       description,
     });
     res.status(201).json({ status: "success", data: plan });
@@ -498,7 +677,9 @@ export const updateDailyPlan = async (
     if (body.completion_day !== undefined)
       patch.completion_day = String(body.completion_day).toUpperCase();
     if (body.metric_definition_id !== undefined)
-      patch.metric_definition_id = body.metric_definition_id ? Number(body.metric_definition_id) : null;
+      patch.metric_definition_id = body.metric_definition_id
+        ? Number(body.metric_definition_id)
+        : null;
     if (body.contribute_to_score !== undefined)
       patch.contribute_to_score = Boolean(body.contribute_to_score);
     if (body.contribute_to_value !== undefined)
@@ -749,9 +930,10 @@ export const manualRollup = async (
       "company_objective",
     ];
     if (!allowed.includes(entityType)) {
-      return res
-        .status(422)
-        .json({ status: "fail", message: `entityType must be one of ${allowed.join(", ")}.` });
+      return res.status(422).json({
+        status: "fail",
+        message: `entityType must be one of ${allowed.join(", ")}.`,
+      });
     }
     await recalculateRollUp(entityType as any, entityId);
     res.json({ status: "success", data: { entityType, entityId } });
@@ -849,6 +1031,7 @@ export function okrPlanningErrorHandler(
   // Default to 500 for unexpected errors
   return res.status(500).json({
     status: "error",
-    message: process.env.NODE_ENV === "production" ? "Internal server error" : message,
+    message:
+      process.env.NODE_ENV === "production" ? "Internal server error" : message,
   });
 }

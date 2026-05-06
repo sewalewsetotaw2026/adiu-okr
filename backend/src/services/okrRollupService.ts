@@ -9,6 +9,15 @@ import {
 // OKR ROLLUP ENGINE — Dynamic Metric-Aware Scoring
 // =============================================================================
 
+/**
+ * Check if a metric definition uses value-based progress.
+ * When true, progress is calculated as (current_value / target_value) × 100
+ * instead of weighted score aggregation.
+ */
+function isValueBasedProgressMetric(metricDefinition: any): boolean {
+  return metricDefinition?.value_based_progress === true;
+}
+
 function clampPercent(value: Decimal) {
   return Decimal.max(new Decimal(0), Decimal.min(value, new Decimal(100)));
 }
@@ -172,6 +181,98 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
   const metric = kr.metricDefinition;
   if (!metric) throw new Error("Metric definition not found for KR.");
   const latestProgress = kr.progressUpdates[0];
+
+  // ── VALUE-BASED PROGRESS SHORTCUT ──
+  // When the metric uses value-based progress, bypass score aggregation
+  // and compute progress purely from current_value / target_value.
+  if (isValueBasedProgressMetric(metric)) {
+    const krTargetValue = toDecimal(kr.target_value) ?? new Decimal(0);
+
+    // Sum current_value from all child plans (monthly → weekly → daily)
+    let totalCurrentValue = new Decimal(0);
+    const monthlyPlans = kr.monthlyPlans ?? [];
+
+    for (const monthPlan of monthlyPlans) {
+      let monthValue = new Decimal(0);
+      const weeks = monthPlan.weeklyPlans ?? [];
+
+      if (weeks.length > 0) {
+        for (const week of weeks) {
+          const dailies = week.dailyPlans ?? [];
+          if (dailies.length > 0) {
+            let weekValue = new Decimal(0);
+            for (const daily of dailies) {
+              weekValue = weekValue.add(
+                toDecimal(daily.current_value) ?? new Decimal(0),
+              );
+            }
+            // Update weekly plan with summed daily values
+            const weekTarget = toDecimal(week.target_value) ?? new Decimal(0);
+            const weekProgress = weekTarget.gt(0)
+              ? clampPercent(weekValue.div(weekTarget).mul(100))
+              : new Decimal(0);
+            await tx.weeklyPlan.update({
+              where: { id: week.id },
+              data: { current_value: weekValue, progress_pct: weekProgress },
+            });
+            monthValue = monthValue.add(weekValue);
+          } else {
+            monthValue = monthValue.add(
+              toDecimal(week.current_value) ?? new Decimal(0),
+            );
+          }
+        }
+      } else {
+        monthValue = toDecimal(monthPlan.current_value) ?? new Decimal(0);
+      }
+
+      // Update monthly plan with summed weekly values
+      const monthTarget = toDecimal(monthPlan.target_value) ?? new Decimal(0);
+      const monthProgress = monthTarget.gt(0)
+        ? clampPercent(monthValue.div(monthTarget).mul(100))
+        : new Decimal(0);
+      await tx.employeeMonthPlan.update({
+        where: { id: monthPlan.id },
+        data: { current_value: monthValue, progress_pct: monthProgress },
+      });
+      totalCurrentValue = totalCurrentValue.add(monthValue);
+    }
+
+    // If no monthly plans, fall back to latest progress update
+    if (monthlyPlans.length === 0 && latestProgress?.current_value) {
+      totalCurrentValue = new Decimal(latestProgress.current_value);
+    }
+
+    const score = krTargetValue.gt(0)
+      ? clampPercent(totalCurrentValue.div(krTargetValue).mul(100))
+      : new Decimal(0);
+
+    const confidenceLevel = await calculateConfidenceLevel(
+      kr.company_id,
+      score,
+    );
+
+    await tx.employeeKeyResult.update({
+      where: { id: employeeKrId },
+      data: {
+        final_score: score,
+        final_value: totalCurrentValue,
+        indirect_score: new Decimal(0),
+        indirect_value: new Decimal(0),
+      },
+    });
+
+    return {
+      score,
+      value: totalCurrentValue,
+      indirectScore: new Decimal(0),
+      indirectValue: new Decimal(0),
+      isFinancial: metric.is_financial,
+      supportsWeightedScore: metric.supports_weighted_score,
+      supportsValueRollup: metric.supports_value_rollup,
+    };
+  }
+  // ── END VALUE-BASED PROGRESS SHORTCUT ──
 
   let score: Decimal | null = null;
   let value: Decimal | null = null;
@@ -564,6 +665,26 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
       updates.progress_pct = month.aggregateScore;
     }
 
+    // Calculate indirect_score for monthly plan based on KR's indirect_score weighted by plan's weight
+    // Only set indirect_score if the plan has actual progress (progress_pct > 0)
+    if (
+      hasDecimal(indirectScore) &&
+      month.weight_pct &&
+      hasDecimal(updates.progress_pct) &&
+      new Decimal(updates.progress_pct).gt(0)
+    ) {
+      const weightPctRaw = toDecimal(month.weight_pct);
+      if (weightPctRaw !== null) {
+        // indirect_score = kr.indirect_score * (weight_pct / 100)
+        // This allocates the KR's indirect score to the plan based on the plan's weight percentage
+        const planIndirectScore = indirectScore.mul(weightPctRaw.div(100));
+        updates.indirect_score = planIndirectScore;
+      }
+    } else {
+      // Clear indirect_score if no progress
+      updates.indirect_score = null;
+    }
+
     if (Object.keys(updates).length > 0) {
       await tx.employeeMonthPlan.update({
         where: { id: month.monthPlanId },
@@ -572,19 +693,42 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
     }
   }
 
-  // 7) Update confidence on weeks
+  // 7) Update confidence on weeks and calculate indirect_score
   for (const week of weeklyAggregates) {
     const wConf = await calculateConfidenceLevel(
       kr.company_id,
       week.aggregateScore,
     );
+
+    const weekUpdates: Record<string, any> = {
+      progress_pct: week.aggregateScore,
+      current_value: week.aggregateValue,
+      confidence_level: wConf,
+    };
+
+    // Calculate indirect_score for weekly plan based on KR's indirect_score weighted by plan's weight
+    // Only set indirect_score if the plan has actual progress (progress_pct > 0)
+    if (
+      hasDecimal(indirectScore) &&
+      week.weight_pct &&
+      hasDecimal(week.aggregateScore) &&
+      new Decimal(week.aggregateScore).gt(0)
+    ) {
+      const weightPctRaw = toDecimal(week.weight_pct);
+      if (weightPctRaw !== null) {
+        // indirect_score = kr.indirect_score * (weight_pct / 100)
+        // This allocates the KR's indirect score to the plan based on the plan's weight percentage
+        const weekIndirectScore = indirectScore.mul(weightPctRaw.div(100));
+        weekUpdates.indirect_score = weekIndirectScore;
+      }
+    } else {
+      // Clear indirect_score if no progress
+      weekUpdates.indirect_score = null;
+    }
+
     await tx.weeklyPlan.update({
       where: { id: week.id },
-      data: {
-        progress_pct: week.aggregateScore,
-        current_value: week.aggregateValue,
-        confidence_level: wConf,
-      },
+      data: weekUpdates,
     });
   }
 
@@ -668,6 +812,63 @@ async function _rollupEmployeeObjectiveInternal(
     where: { employee_objective_id: objectiveId },
     include: { metricDefinition: true },
   });
+
+  // ── VALUE-BASED PROGRESS FOR OBJECTIVE ──
+  // If ALL contributing KRs use value-based progress, compute objective
+  // progress as totalValue / objectiveTargetValue instead of weighted score.
+  const valueBasedKRs = updatedKRs.filter((kr: any) =>
+    isValueBasedProgressMetric(kr.metricDefinition),
+  );
+  const allKRsValueBased =
+    updatedKRs.length > 0 && valueBasedKRs.length === updatedKRs.length;
+
+  if (allKRsValueBased) {
+    let totalValue = new Decimal(0);
+    let allMandatoryComplete = true;
+
+    for (const kr of updatedKRs) {
+      totalValue = totalValue.add(kr.final_value ?? new Decimal(0));
+      if (
+        kr.is_mandatory_for_completion &&
+        (!kr.final_score || kr.final_score.lt(100))
+      ) {
+        allMandatoryComplete = false;
+      }
+    }
+
+    // Use the objective's own target_value if available, otherwise sum KR targets
+    const objTargetValue =
+      toDecimal((objective as any).target_value) ??
+      updatedKRs.reduce(
+        (sum: Decimal, kr: any) =>
+          sum.add(toDecimal(kr.target_value) ?? new Decimal(0)),
+        new Decimal(0),
+      );
+
+    const finalScore = objTargetValue.gt(0)
+      ? clampPercent(totalValue.div(objTargetValue).mul(100))
+      : new Decimal(0);
+
+    await tx.employeeObjective.update({
+      where: { id: objectiveId },
+      data: {
+        final_score: finalScore,
+        final_value: totalValue,
+        indirect_score: new Decimal(0),
+        indirect_value: new Decimal(0),
+      },
+    });
+
+    return {
+      objectiveId,
+      finalScore,
+      finalValue: totalValue,
+      indirectScore: new Decimal(0),
+      indirectValue: new Decimal(0),
+      allMandatoryComplete,
+    };
+  }
+  // ── END VALUE-BASED PROGRESS FOR OBJECTIVE ──
 
   // Weighted average for score
   let totalWeight = new Decimal(0);
@@ -2071,45 +2272,150 @@ function decOrZero(v: any): Decimal {
   return new Decimal(v);
 }
 
+// async function rollupWeeklyPlanFromDailies(
+//   weeklyPlanId: number,
+//   tx: any = prisma,
+// ) {
+//   const weekly = await tx.weeklyPlan.findUnique({
+//     where: { id: weeklyPlanId },
+//   });
+//   if (!weekly) return;
+
+//   const manager_weekly = await tx.weeklyPlan.findUnique({
+//     where: { id: weekly.aligned_manager_plan_id },
+//   });
+
+//   const dailies = await tx.dailyPlan.findMany({
+//     where: {
+//       OR: [
+//         { weekly_plan_id: weeklyPlanId },
+//         { weeklyPlan: { aligned_manager_plan_id: weeklyPlanId } },
+//       ],
+//       contribute_to_score: true,
+//     },
+//     select: { progress_pct: true },
+//   });
+
+//   let progress: Decimal;
+//   if (dailies.length === 0) {
+//     progress = new Decimal(0);
+//   } else {
+//     // Daily plans are atomic units → equal weight (=1) per spec.
+//     const total = dailies.reduce(
+//       (sum: Decimal, d: any) => sum.add(decOrZero(d.progress_pct)),
+//       new Decimal(0),
+//     );
+//     progress = total.div(dailies.length);
+//   }
+//   progress = clampPercent(progress);
+
+//   const start = decOrZero(weekly.start_value);
+//   const target = decOrZero(weekly.target_value);
+//   const current = weekly.contribute_to_value
+//     ? start.add(target.sub(start).mul(progress).div(100))
+//     : decOrZero(weekly.current_value);
+
+//   const updated = await tx.weeklyPlan.update({
+//     where: { id: weeklyPlanId },
+//     data: { progress_pct: progress, current_value: current },
+//   });
+//   let progress_percent: Decimal;
+
+//   progress_percent = new Decimal(
+//     (updated.current_value / manager_weekly.target_value) * 100,
+//   );
+//   progress_percent = clampPercent(progress_percent);
+//   await tx.weeklyPlan.update({
+//     where: { id: manager_weekly.id },
+//     data: {
+//       progress_pct: progress_percent,
+//       current_value: weekly.current_value,
+//     },
+//   });
+// }
 async function rollupWeeklyPlanFromDailies(
   weeklyPlanId: number,
   tx: any = prisma,
 ) {
   const weekly = await tx.weeklyPlan.findUnique({
     where: { id: weeklyPlanId },
+    include: { dailyPlans: { where: { contribute_to_score: true } } },
   });
   if (!weekly) return;
 
-  const dailies = await tx.dailyPlan.findMany({
-    where: { weekly_plan_id: weeklyPlanId, contribute_to_score: true },
-    select: { progress_pct: true },
+  const manager_weekly = await tx.weeklyPlan.findUnique({
+    where: { id: weekly.aligned_manager_plan_id },
   });
+  if (!manager_weekly) return;
 
-  let progress: Decimal;
+  // Calculate employee's progress from dailies
+  let employeeProgress: Decimal;
+  const dailies = weekly.dailyPlans || [];
+
   if (dailies.length === 0) {
-    progress = new Decimal(0);
+    employeeProgress = new Decimal(0);
   } else {
-    // Daily plans are atomic units → equal weight (=1) per spec.
     const total = dailies.reduce(
       (sum: Decimal, d: any) => sum.add(decOrZero(d.progress_pct)),
       new Decimal(0),
     );
-    progress = total.div(dailies.length);
+    employeeProgress = total.div(dailies.length);
   }
-  progress = clampPercent(progress);
+  employeeProgress = clampPercent(employeeProgress);
 
+  // Calculate employee's current value based on progress
   const start = decOrZero(weekly.start_value);
   const target = decOrZero(weekly.target_value);
-  const current = weekly.contribute_to_value
-    ? start.add(target.sub(start).mul(progress).div(100))
+  const employeeCurrent = weekly.contribute_to_value
+    ? start.add(target.sub(start).mul(employeeProgress).div(100))
     : decOrZero(weekly.current_value);
 
+  // Update employee's weekly plan
   await tx.weeklyPlan.update({
     where: { id: weeklyPlanId },
-    data: { progress_pct: progress, current_value: current },
+    data: {
+      progress_pct: employeeProgress,
+      current_value: employeeCurrent,
+    },
   });
-}
 
+  // Now update manager's plan based on the employee's PROGRESS percentage,
+  // not the employee's current value directly
+  const managerTarget = decOrZero(manager_weekly.target_value);
+  let managerProgress: Decimal;
+
+  if (manager_weekly.contribute_to_value) {
+    // Calculate manager's progress as: (achieved / target) * 100
+    // Where achieved is the employee's progress relative to manager's target
+    const achieved = managerTarget.mul(employeeProgress).div(100);
+    managerProgress = clampPercent(achieved.div(managerTarget).mul(100));
+
+    // Calculate manager's current value
+    const managerStart = decOrZero(manager_weekly.start_value);
+    const managerCurrent = manager_weekly.contribute_to_value
+      ? managerStart.add(
+          managerTarget.sub(managerStart).mul(managerProgress).div(100),
+        )
+      : employeeCurrent; // Use employee's actual value if manager doesn't contribute to value
+
+    await tx.weeklyPlan.update({
+      where: { id: manager_weekly.id },
+      data: {
+        progress_pct: managerProgress,
+        current_value: managerCurrent,
+      },
+    });
+  } else {
+    // If manager doesn't contribute to value, just propagate the progress percentage
+    await tx.weeklyPlan.update({
+      where: { id: manager_weekly.id },
+      data: {
+        progress_pct: employeeProgress,
+        current_value: employeeCurrent,
+      },
+    });
+  }
+}
 async function rollupMonthlyPlanFromWeeklies(
   monthlyPlanId: number,
   tx: any = prisma,
@@ -2121,7 +2427,10 @@ async function rollupMonthlyPlanFromWeeklies(
 
   const weeklies = await tx.weeklyPlan.findMany({
     where: {
-      employee_month_plan_id: monthlyPlanId,
+      OR: [
+        { employee_month_plan_id: monthlyPlanId },
+        { monthPlan: { aligned_manager_plan_id: monthlyPlanId } },
+      ],
       contribute_to_score: true,
     },
     select: { progress_pct: true, weight_pct: true },
@@ -2169,7 +2478,21 @@ export async function recalculateRollUp(
         select: { weekly_plan_id: true },
       });
       if (daily?.weekly_plan_id) {
-        return recalculateRollUp("weekly_plan", daily.weekly_plan_id, tx);
+        await recalculateRollUp("weekly_plan", daily.weekly_plan_id, tx);
+
+        // Also trigger rollup for aligned manager's weekly plan
+        const weekly = await tx.weeklyPlan.findUnique({
+          where: { id: daily.weekly_plan_id },
+          select: { aligned_manager_plan_id: true },
+        });
+        if (weekly?.aligned_manager_plan_id) {
+          await recalculateRollUp(
+            "weekly_plan",
+            weekly.aligned_manager_plan_id,
+            tx,
+          );
+        }
+        return;
       }
       return;
     }
@@ -2180,12 +2503,27 @@ export async function recalculateRollUp(
         where: { id: nodeId },
         select: { employee_month_plan_id: true },
       });
+
       if (weekly?.employee_month_plan_id) {
-        return recalculateRollUp(
+        await recalculateRollUp(
           "monthly_plan",
           weekly.employee_month_plan_id,
           tx,
         );
+
+        // Also trigger rollup for aligned manager's monthly plan
+        const monthly = await tx.employeeMonthPlan.findUnique({
+          where: { id: weekly.employee_month_plan_id },
+          select: { aligned_manager_plan_id: true },
+        });
+        if (monthly?.aligned_manager_plan_id) {
+          await recalculateRollUp(
+            "monthly_plan",
+            monthly.aligned_manager_plan_id,
+            tx,
+          );
+        }
+        return;
       }
       return;
     }
@@ -2240,6 +2578,9 @@ export async function recalculateRollUp(
           chosen_parent_employee_kr_id: true,
         },
       });
+      // NOTE: Disconnected upward rollup for employee objectives to avoid duplicate values
+      // as progress now flows through aligned plans.
+
       if (obj?.chosen_parent_kr_id) {
         return recalculateRollUp(
           "company_key_result",
@@ -2253,6 +2594,7 @@ export async function recalculateRollUp(
           tx,
         );
       }
+
       return;
     }
 

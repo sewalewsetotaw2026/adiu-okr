@@ -87,6 +87,10 @@ router.delete("/daily-plans/:id", ctrl.deleteDailyPlan);
 // ── Manual roll-up trigger ─────────────────────────────────────────────
 router.post("/recalculate/:entityType/:entityId", ctrl.manualRollup);
 
+// ── Manager Plans for Alignment ─────────────────────────────────────
+router.get("/manager/monthly-plans", ctrl.listManagerMonthlyPlans);
+router.get("/manager/weekly-plans", ctrl.listManagerWeeklyPlans);
+
 // ── Error Handler ──────────────────────────────────────────────────────
 // Must be last to catch all errors from the above routes
 router.use(ctrl.okrPlanningErrorHandler);

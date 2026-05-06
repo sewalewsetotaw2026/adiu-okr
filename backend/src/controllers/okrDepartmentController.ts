@@ -1162,6 +1162,7 @@ export const createWeeklyPlan = async (
   next: NextFunction,
 ) => {
   try {
+    console.log("reqest body", req.body);
     const employeeKrId = parsePositiveInt(req.params.id);
     if (employeeKrId === null) {
       return res
@@ -1177,6 +1178,8 @@ export const createWeeklyPlan = async (
       contributes_to_parent_score,
       contributes_to_parent_value,
     } = req.body;
+
+    console.log(req.body);
 
     const weekNumber = parsePositiveInt(week_number);
     const metricDefinitionId =
@@ -1218,6 +1221,8 @@ export const createWeeklyPlan = async (
           "target_value and current_value must be valid numbers when provided.",
       });
     }
+    console.log("the whole req", req.body);
+    console.log("aligned manager id", req.body.assigned_manager_plan_id);
 
     const plan = await deptService.createWeeklyPlan({
       companyId: req.user!.company_id,
@@ -1231,6 +1236,7 @@ export const createWeeklyPlan = async (
       contributesToParentValue: contributes_to_parent_value,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
+      assigned_manager_plan_id: req.body.assigned_manager_plan_id,
     });
 
     res.status(201).json({ status: "success", data: plan });
@@ -1475,10 +1481,15 @@ export const listPendingDepartmentApprovals = async (
   try {
     const cycleId = parsePositiveInt(req.query.cycle_id);
     const departmentIdRaw = req.query.department_id;
-    const departmentId = departmentIdRaw !== undefined ? parsePositiveInt(departmentIdRaw) : undefined;
+    const departmentId =
+      departmentIdRaw !== undefined
+        ? parsePositiveInt(departmentIdRaw)
+        : undefined;
 
     if (cycleId === null) {
-      return res.status(400).json({ status: "fail", message: "cycle_id query param required." });
+      return res
+        .status(400)
+        .json({ status: "fail", message: "cycle_id query param required." });
     }
 
     if (departmentIdRaw !== undefined && departmentId === null) {
@@ -1506,9 +1517,23 @@ export const bulkApproveDepartmentItems = async (
   next: NextFunction,
 ) => {
   try {
-    const { objective_ids, kr_ids, month_plan_ids, weekly_plan_ids, daily_plan_ids, action, comments } = req.body;
+    const {
+      objective_ids,
+      kr_ids,
+      month_plan_ids,
+      weekly_plan_ids,
+      daily_plan_ids,
+      action,
+      comments,
+    } = req.body;
 
-    if (!objective_ids && !kr_ids && !month_plan_ids && !weekly_plan_ids && !daily_plan_ids) {
+    if (
+      !objective_ids &&
+      !kr_ids &&
+      !month_plan_ids &&
+      !weekly_plan_ids &&
+      !daily_plan_ids
+    ) {
       return res.status(400).json({
         status: "fail",
         message: "At least one list of entity IDs is required.",
@@ -1516,11 +1541,24 @@ export const bulkApproveDepartmentItems = async (
     }
 
     const items: { type: string; id: number }[] = [];
-    if (objective_ids) objective_ids.forEach((id: number) => items.push({ type: "DEPARTMENT_OBJECTIVE", id }));
-    if (kr_ids) kr_ids.forEach((id: number) => items.push({ type: "DEPARTMENT_KR", id }));
-    if (month_plan_ids) month_plan_ids.forEach((id: number) => items.push({ type: "EMPLOYEE_MONTH_PLAN", id }));
-    if (weekly_plan_ids) weekly_plan_ids.forEach((id: number) => items.push({ type: "WEEKLY_PLAN", id }));
-    if (daily_plan_ids) daily_plan_ids.forEach((id: number) => items.push({ type: "DAILY_PLAN", id }));
+    if (objective_ids)
+      objective_ids.forEach((id: number) =>
+        items.push({ type: "DEPARTMENT_OBJECTIVE", id }),
+      );
+    if (kr_ids)
+      kr_ids.forEach((id: number) => items.push({ type: "DEPARTMENT_KR", id }));
+    if (month_plan_ids)
+      month_plan_ids.forEach((id: number) =>
+        items.push({ type: "EMPLOYEE_MONTH_PLAN", id }),
+      );
+    if (weekly_plan_ids)
+      weekly_plan_ids.forEach((id: number) =>
+        items.push({ type: "WEEKLY_PLAN", id }),
+      );
+    if (daily_plan_ids)
+      daily_plan_ids.forEach((id: number) =>
+        items.push({ type: "DAILY_PLAN", id }),
+      );
 
     const result = await deptService.bulkApproveDepartmentItems(
       items,

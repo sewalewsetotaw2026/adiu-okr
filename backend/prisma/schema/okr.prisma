@@ -194,6 +194,7 @@ model OkrMetricDefinition {
   allows_binary_completion Boolean            @default(false)
   supports_value_rollup    Boolean            @default(true)
   supports_weighted_score  Boolean            @default(true)
+  value_based_progress     Boolean            @default(false)
   is_active                Boolean            @default(true)
   created_at               DateTime           @default(now())
   updated_at               DateTime           @updatedAt
@@ -208,6 +209,7 @@ model OkrMetricDefinition {
   @@unique([company_id, code])
   @@index([company_id])
   @@index([company_id, category, is_active])
+  @@index([company_id, value_based_progress])
   @@map("okr_metric_definition")
 }
 
@@ -465,6 +467,7 @@ model EmployeeMonthPlan {
   target_value        Decimal?            @db.Decimal(18, 4)
   current_value       Decimal?            @db.Decimal(18, 4)
   progress_pct        Decimal?            @db.Decimal(7, 2)
+  indirect_score      Decimal?            @db.Decimal(7, 2)
   contribute_to_score Boolean             @default(true)
   contribute_to_value Boolean             @default(true)
   plan_status         OkrPlanStatus       @default(DRAFT)
@@ -485,6 +488,10 @@ model EmployeeMonthPlan {
 
   submission_id Int?
   submission    OkrSubmission? @relation(fields: [submission_id], references: [id])
+
+  aligned_manager_plan_id Int?
+  alignedManagerPlan      EmployeeMonthPlan?  @relation("MonthlyAlignment", fields: [aligned_manager_plan_id], references: [id])
+  alignedChildren         EmployeeMonthPlan[] @relation("MonthlyAlignment")
 
   @@index([company_id])
   @@index([cycle_id])
@@ -510,6 +517,7 @@ model WeeklyPlan {
   target_value           Decimal?            @db.Decimal(18, 4)
   current_value          Decimal?            @db.Decimal(18, 4)
   progress_pct           Decimal?            @db.Decimal(7, 2)
+  indirect_score         Decimal?            @db.Decimal(7, 2)
   contribute_to_score    Boolean             @default(true)
   contribute_to_value    Boolean             @default(true)
   plan_status            OkrPlanStatus       @default(DRAFT)
@@ -530,6 +538,10 @@ model WeeklyPlan {
 
   submission_id Int?
   submission    OkrSubmission? @relation(fields: [submission_id], references: [id])
+
+  aligned_manager_plan_id Int?
+  alignedManagerPlan      WeeklyPlan?  @relation("WeeklyAlignment", fields: [aligned_manager_plan_id], references: [id])
+  alignedChildren         WeeklyPlan[] @relation("WeeklyAlignment")
 
   @@index([company_id])
   @@index([owner_id])
@@ -972,7 +984,7 @@ enum OkrEntityType {
   CYCLE
   COMPANY_OBJECTIVE
   COMPANY_KR
-
+  CHANGE_REQUEST
   KR_CONTRIBUTOR
   EMPLOYEE_OBJECTIVE
   EMPLOYEE_KR
