@@ -551,7 +551,7 @@ export default function CompanyObjectives() {
                     }
                     className="mt-6 inline-flex items-center gap-2 rounded-xl"
                   >
-                    {Number(
+                    {/* {Number(
                       configMenu?.additional_configuration?.allowed_objectives
                         ?.max,
                     ) > 0 &&
@@ -561,7 +561,7 @@ export default function CompanyObjectives() {
                           ?.max,
                       )
                       ? "Limit Reached"
-                      : "Create Objective"}
+                      : "Create Objective"} */}
                   </Button>
                 </div>
               ) : filteredObjectives.length === 0 ? (
