@@ -324,7 +324,7 @@ export default function OKRDashboard() {
                     </div>
                   </div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Department Objectives
+                    Dept Objectives
                   </p>
                   {loading ? (
                     <div className="h-8 w-12 bg-slate-200 rounded animate-pulse mt-1" />
@@ -357,7 +357,7 @@ export default function OKRDashboard() {
                         {currentCycleId ? `${companySummary.avgProgress}%` : "—"}
                       </p>
                       <p className="text-xs text-white/60 font-medium mb-1 uppercase tracking-tighter">
-                        Average Completion
+                        Avg Completion
                       </p>
                     </div>
                   )}

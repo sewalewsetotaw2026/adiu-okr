@@ -359,9 +359,9 @@ export default function ContributorAssignmentPage() {
                 </span>
               </div>
             )}
-            {/* {cycleId != null ? (
+            {cycleId != null ? (
               <span className="text-xs text-k-medium-grey">Cycle ID: {cycleId}</span>
-            ) : null} */}
+            ) : null}
           </div>
 
           {summary ? (

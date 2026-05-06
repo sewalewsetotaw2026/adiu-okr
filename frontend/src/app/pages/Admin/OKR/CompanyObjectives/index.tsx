@@ -331,7 +331,7 @@ export default function CompanyObjectives() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-black tracking-tighter capitalize">
-                    Company Objective
+                    Company Strategy
                   </h1>
                   <div className="flex items-center gap-2 mt-1">
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 ring-1 ring-white/20 text-[10px] font-black uppercase tracking-widest text-white/70 font-space">
@@ -429,19 +429,19 @@ export default function CompanyObjectives() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   {
-                    label: "Objectives",
+                    label: "Strategic Goals",
                     value: summary.n,
                     icon: MdTrackChanges,
                     color: "text-primary",
                   },
                   {
-                    label: "Key Results",
+                    label: "Active Key Results",
                     value: summary.totalKRs,
                     icon: MdOutlineHub,
                     color: "text-emerald-500",
                   },
                   {
-                    label: "Overall Progress",
+                    label: "Strategy Progress",
                     value: `${summary.avgProgress}%`,
                     icon: MdTrendingUp,
                     color: "text-blue-500",
@@ -493,7 +493,7 @@ export default function CompanyObjectives() {
                   </div>
                   <input
                     type="text"
-                    placeholder="Search company objectives..."
+                    placeholder="Search strategic objectives..."
                     className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition-all"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -533,7 +533,7 @@ export default function CompanyObjectives() {
                     Create your first company objective, then add key results
                     and assign owning departments from the detail view.
                   </p>
-                  {/* <Button
+                  <Button
                     variant="primary"
                     size="sm"
                     icon={MdAdd}
@@ -562,7 +562,7 @@ export default function CompanyObjectives() {
                       )
                       ? "Limit Reached"
                       : "Create Objective"}
-                  </Button> */}
+                  </Button>
                 </div>
               ) : filteredObjectives.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-white/80 px-8 py-16 text-center">

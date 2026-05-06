@@ -155,7 +155,7 @@ export default function DepartmentInsightsDashboard({
             </div>
           </div>
           <div className="text-xs text-slate-600 font-medium">
-            Weighted across Key Results
+            Weighted across KRs
           </div>
         </div>
       </div>
@@ -254,7 +254,7 @@ export default function DepartmentInsightsDashboard({
       </div>
 
       {/* Notes */}
-      {/* <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
+      <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
         <div className="text-xs font-black text-slate-600 uppercase tracking-wider mb-2">
           Key Insights
         </div>
@@ -283,7 +283,7 @@ export default function DepartmentInsightsDashboard({
             </span>
           </li>
         </ul>
-      </div> */}
+      </div>
     </div>
   );
 }

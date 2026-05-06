@@ -224,13 +224,6 @@ export default function ObjectiveDetail() {
               ? Number(kr.metric_definition_id)
               : undefined,
           assignedDepartmentIds: collectDepartmentIdsFromKr(kr),
-          contributors: kr.contributors || [],
-          assignedEmployeeIds: (kr.contributors || []).map((c: any) => c.user_id).filter(Boolean),
-          employeeNameById: new Map(
-            (kr.contributors || [])
-              .filter((c: any) => c.user_id && c.user?.employee?.full_name)
-              .map((c: any) => [c.user_id, c.user.employee.full_name])
-          ),
           contributesToScore: kr.contributes_to_objective_score !== false,
           contributesToValue: kr.contributes_to_objective_value !== false,
         })),
@@ -522,7 +515,7 @@ export default function ObjectiveDetail() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {/* {objective.status_code !== "published" && (
+                    {objective.status_code !== "published" && (
                       <Button
                         onClick={openAddModal}
                         icon={MdAdd}
@@ -530,7 +523,7 @@ export default function ObjectiveDetail() {
                       >
                         Define Key Result
                       </Button>
-                    )} */}
+                    )}
                   </div>
                 ) : (
                   krs.map((kr) => (

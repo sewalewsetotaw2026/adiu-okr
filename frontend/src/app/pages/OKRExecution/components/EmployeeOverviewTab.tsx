@@ -176,8 +176,8 @@ export default function EmployeeOverviewTab({
       {/* Middle Row: Goal Health + Recent Feedback */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Goal Health + Adoption */}
-        {/* <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 flex flex-col justify-between"> */}
-          {/* <div>
+        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 flex flex-col justify-between">
+          <div>
             <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-3">
               <div className="p-2 bg-primary-50 rounded-xl">
                 <MdTimeline className="text-primary-600" size={20} />
@@ -210,9 +210,9 @@ export default function EmployeeOverviewTab({
                 color="bg-slate-200"
               />
             </div>
-          </div> */}
+          </div>
 
-          {/* <div className="mt-8 pt-6 border-t border-slate-100">
+          <div className="mt-8 pt-6 border-t border-slate-100">
             <div className="flex justify-between items-center mb-3">
               <span className="text-xs font-black text-slate-700 uppercase tracking-tight">
                 Strategy Adoption
@@ -249,12 +249,12 @@ export default function EmployeeOverviewTab({
                 </span>
               </div>
             </div>
-          </div> */}
-        {/* </div> */}
+          </div>
+        </div>
 
         {/* Recent Feedback */}
         <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col overflow-hidden">
-          {/* <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
               <div className="p-2 bg-indigo-50 rounded-xl">
                 <MdComment className="text-indigo-600" size={20} />
@@ -264,13 +264,13 @@ export default function EmployeeOverviewTab({
             <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
               Latest {recentComments.length} reviews
             </span>
-          </div> */}
+          </div>
           <div className="flex-1 overflow-y-auto p-6 max-h-[420px] scrollbar-hide">
             {recentComments.length > 0 ? (
               <div className="space-y-6">
                 {recentComments.map((comment) => (
                   <div key={comment.id} className="flex gap-4 group">
-                    {/* <div className="flex-shrink-0">
+                    <div className="flex-shrink-0">
                       {comment.reviewerAvatar ? (
                         <img
                           src={comment.reviewerAvatar}
@@ -282,7 +282,7 @@ export default function EmployeeOverviewTab({
                           {comment.reviewerName.charAt(0)}
                         </div>
                       )}
-                    </div> */}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-1.5">
                         <span className="text-sm font-black text-slate-900 truncate">
@@ -328,15 +328,15 @@ export default function EmployeeOverviewTab({
               </div>
             ) : (
               <div className="h-52 flex flex-col items-center justify-center text-slate-400 space-y-3">
-                {/* <MdComment size={40} className="opacity-20" /> */}
-                {/* <div className="text-center">
+                <MdComment size={40} className="opacity-20" />
+                <div className="text-center">
                   <p className="text-base font-black text-slate-700">
                     No Feedback Yet
                   </p>
                   <p className="text-sm text-slate-400">
                     Keep executing — feedback will appear here.
                   </p>
-                </div> */}
+                </div>
               </div>
             )}
           </div>
@@ -344,7 +344,7 @@ export default function EmployeeOverviewTab({
       </div>
 
       {/* Planning Activity — Bottom Section with real data */}
-      {/* <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 p-8">
+      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
@@ -387,7 +387,7 @@ export default function EmployeeOverviewTab({
             colorClass="text-emerald-600 bg-emerald-50"
           />
         </div>
-      </div> */}
+      </div>
     </div>
   );
 }

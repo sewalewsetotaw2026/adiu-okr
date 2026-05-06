@@ -233,19 +233,7 @@ export default function EmployeeObjectiveDetailPage() {
             kr.metric_definition_id != null
               ? Number(kr.metric_definition_id)
               : undefined,
-          user_id: data?.user_id || objective?.user_id,
           assignedDepartmentIds: collectDepartmentIdsFromKr(kr),
-          contributors: kr.contributors || [],
-          assignedEmployeeIds: kr.contributors?.length > 0 
-            ? kr.contributors.map((c: any) => c.user_id).filter(Boolean)
-            : [data?.user_id || objective?.user_id].filter(Boolean),
-          employeeNameById: new Map(
-            kr.contributors?.length > 0
-              ? kr.contributors
-                  .filter((c: any) => c.user_id && c.user?.employee?.full_name)
-                  .map((c: any) => [c.user_id, c.user.employee.full_name])
-              : [[data?.user_id || objective?.user_id, data?.user?.employee?.full_name || objective?.user?.employee?.full_name || "Owner"]]
-          ),
           contributesToScore: kr.contributes_to_objective_score !== false,
           contributesToValue: kr.contributes_to_objective_value !== false,
           comments: allComments.filter((c: any) => c.entity_type === "EMPLOYEE_KR" && Number(c.entity_id) === Number(kr.id)),
@@ -538,7 +526,7 @@ export default function EmployeeObjectiveDetailPage() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {/* {objective.status_code !== "published" && (
+                    {objective.status_code !== "published" && (
                       <Button
                         variant="primary"
                         onClick={openAddModal}
@@ -547,7 +535,7 @@ export default function EmployeeObjectiveDetailPage() {
                       >
                         Define Key Result
                       </Button>
-                    )} */}
+                    )}
                   </div>
                 ) : (
                   krs.map((kr) => (
@@ -581,7 +569,6 @@ export default function EmployeeObjectiveDetailPage() {
         editingKR={editingKR}
         assignmentType={isAdminView ? "company" : "employee"}
         onSuccess={fetchObjective}
-        isEmployeeKr={true}
       />
 
       {/* DELETE KR CONFIRMATION */}

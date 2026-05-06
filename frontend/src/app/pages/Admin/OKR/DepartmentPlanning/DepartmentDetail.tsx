@@ -310,7 +310,7 @@ export default function DepartmentDetail() {
           />
 
           {/* Employee Contribution Roster */}
-          {/* <div className="mt-12 space-y-4">
+          <div className="mt-12 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                 <MdInfoOutline className="text-primary" />
@@ -343,10 +343,10 @@ export default function DepartmentDetail() {
               }
               loading={loading}
             />
-          </div> */}
+          </div>
 
           {/* Call to Action */}
-          {/* <div className="mt-12 rounded-xl bg-gradient-to-r from-primary/10 to-blue-50 border border-primary/20 p-6">
+          <div className="mt-12 rounded-xl bg-gradient-to-r from-primary/10 to-blue-50 border border-primary/20 p-6">
             <div className="flex items-start gap-4">
               <div className="p-3 bg-white rounded-lg shrink-0">
                 <MdTrendingUp className="text-2xl text-primary" />
@@ -372,7 +372,7 @@ export default function DepartmentDetail() {
                 </div>
               </div>
             </div>
-          </div> */}
+          </div>
         </div>
       </div>
     </AdminLayout>

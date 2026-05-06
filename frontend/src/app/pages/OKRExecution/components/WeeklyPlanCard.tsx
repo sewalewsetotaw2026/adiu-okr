@@ -19,7 +19,6 @@ export default function WeeklyPlanCard({
   onDelete,
 }: WeeklyPlanCardProps) {
   const editable = EDITABLE_STATUSES.has(plan.plan_status);
-  const isPublished = plan.plan_status === "PUBLISHED" || plan.plan_status === "APPROVED";
   const rejected = plan.plan_status === "REJECTED";
   const progress = Math.max(0, Math.min(100, Number(plan.progress_pct ?? plan.final_score ?? 0)));
   const indirectProgress = Math.max(0, Math.min(100, Number(plan.indirect_score ?? 0)));
@@ -104,7 +103,7 @@ export default function WeeklyPlanCard({
         </div>
       </div>
 
-      {(editable || isPublished) && (onEdit || onDelete) && (
+      {editable && (onEdit || onDelete) && (
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
           {onEdit && (
             <Button
@@ -113,10 +112,10 @@ export default function WeeklyPlanCard({
               icon={MdEdit}
               onClick={() => onEdit(plan)}
             >
-              {editable ? "Edit" : "Request Edit"}
+              Edit
             </Button>
           )}
-          {editable && onDelete && (
+          {onDelete && (
             <Button
               variant="ghost"
               size="sm"

@@ -10,10 +10,9 @@ import {
   MdSend,
 } from "react-icons/md";
 import ApprovalActionModal from "./modals/ApprovalActionModal";
-import { Link } from "react-router-dom";
 import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
-import { okrErrorMessage, okrUnwrap, okrAsArray } from "../../../utils/okrApi";
+import { okrErrorMessage, okrUnwrap } from "../../../utils/okrApi";
 import ToastService from "../../../../utils/ToastService";
 import Button from "../../../components/Core/ui/Button";
 import OkrStatusBadge from "./OkrStatusBadge";
@@ -148,8 +147,8 @@ function SubmissionReviewCard({
   onRefresh,
 }: {
   submission: Submission;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
+  onApprove: (id: number) => void;
+  onReject: (id: number) => void;
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -161,19 +160,15 @@ function SubmissionReviewCard({
         ? "Department Plan"
         : submission.type === "MONTHLY_PLAN"
           ? "Monthly Plan"
-          : submission.type === "CHANGE_REQUEST"
-            ? "Change Request"
-            : "Weekly Plan";
+          : "Weekly Plan";
 
   const typeTone =
     submission.type === "QUARTERLY_PLANNING" ||
     submission.type === "DEPARTMENT_OBJECTIVE"
       ? "primary"
-      : submission.type === "CHANGE_REQUEST"
+      : submission.type === "MONTHLY_PLAN"
         ? "warning"
-        : submission.type === "MONTHLY_PLAN"
-          ? "warning"
-          : "info";
+        : "info";
 
   const statusTone =
     submission.status === "pending_approval"
@@ -255,7 +250,7 @@ function SubmissionReviewCard({
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onReject((submission as any).uid || String(submission.id));
+                  onReject(submission.id);
                 }}
                 className="text-red-500 hover:text-red-600 hover:bg-red-50 uppercase tracking-widest font-space text-[10px] font-black"
               >
@@ -267,7 +262,7 @@ function SubmissionReviewCard({
                 icon={MdCheckCircle}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onApprove((submission as any).uid || String(submission.id));
+                  onApprove(submission.id);
                 }}
                 className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border-emerald-100 uppercase tracking-widest font-space text-[10px] font-black"
                 disabled={hasDraftItems}
@@ -287,22 +282,6 @@ function SubmissionReviewCard({
 
       {expanded && (
         <div className="border-t border-slate-50 px-6 py-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
-          {(submission as any).isChangeRequest && (submission as any).changeRequestData && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/30 p-4">
-              <p className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wider">Change Request Summary</p>
-              <div className="text-sm text-slate-800 bg-white p-3 rounded-lg border border-amber-100 whitespace-pre-wrap font-mono">
-                {(submission as any).changeRequestData.change_summary || "No specific changes found."}
-              </div>
-              <div className="mt-4 flex gap-2">
-                <Link to={`/okr/reviews/change-requests/${(submission as any).changeRequestData.id}`}>
-                  <Button size="sm" variant="primary" className="!bg-amber-500 hover:!bg-amber-600 !border-none shadow-sm">
-                    View Full Details
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          )}
-
           {submission.employeeObjectives.map((obj) => (
             <div
               key={`obj-${obj.id}`}
@@ -492,7 +471,7 @@ export default function SubmissionApprovalQueue({
   >("all");
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
+  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
   const [action, setAction] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -519,51 +498,14 @@ export default function SubmissionApprovalQueue({
           ? apiRoutes.okr.managerSubmissions
           : apiRoutes.okr.managerSubmissions;
 
-      const [res, crRes] = await Promise.allSettled([
-        makeCall({
-          method: "GET",
-          route,
-          query: { cycle_id: cid },
-          isSecureRoute: true,
-        }),
-        makeCall({
-          method: "GET",
-          route: viewerType === "admin" ? apiRoutes.okr.changeRequests.list : apiRoutes.okr.changeRequests.myReviews,
-          query: { cycle_id: cid, status: "PENDING" },
-          isSecureRoute: true,
-        })
-      ]);
-
-      let allData: any[] = [];
-      if (res.status === "fulfilled") {
-        const data = okrUnwrap<any>(res.value);
-        allData = [...(Array.isArray(data) ? data : [])].map(sub => ({
-          ...sub,
-          uid: `sub_${sub.id}`
-        }));
-      }
-
-      if (crRes.status === "fulfilled") {
-        const crDataArray = okrAsArray(okrUnwrap(crRes.value));
-        const mappedCRs = (crDataArray || []).map((cr: any) => ({
-          uid: `cr_${cr.id}`,
-          id: cr.id,
-          type: "CHANGE_REQUEST",
-          status: cr.status === "PENDING" ? "pending_approval" : cr.status.toLowerCase(),
-          submitter_name: cr.requester?.full_name || "Team Member",
-          submitter_id: cr.requester_id,
-          item_count: 1,
-          created_at: cr.created_at,
-          employeeObjectives: [],
-          employeeMonthPlans: [],
-          weeklyPlans: [],
-          isChangeRequest: true,
-          changeRequestData: cr
-        }));
-        allData = [...allData, ...mappedCRs];
-      }
-
-      setSubmissions(allData);
+      const res = await makeCall({
+        method: "GET",
+        route,
+        query: { cycle_id: cid },
+        isSecureRoute: true,
+      });
+      const data = okrUnwrap<any>(res);
+      setSubmissions(Array.isArray(data) ? data : []);
     } catch (e) {
       ToastService.error(okrErrorMessage(e));
       setSubmissions([]);
@@ -587,7 +529,7 @@ export default function SubmissionApprovalQueue({
     (s) => s.status === "pending_approval",
   ).length;
 
-  const openModal = (submissionId: string, nextAction: "approve" | "reject") => {
+  const openModal = (submissionId: number, nextAction: "approve" | "reject") => {
     setActiveSubmissionId(submissionId);
     setAction(nextAction);
     setComment("");
@@ -602,32 +544,21 @@ export default function SubmissionApprovalQueue({
     }
     setSubmitting(true);
     try {
-      const activeItem = submissions.find(s => (s as any).uid === activeSubmissionId);
-      const isCR = (activeItem as any)?.isChangeRequest;
-      const actualId = activeItem?.id;
-
-      if (!actualId) throw new Error("Invalid submission ID.");
-
       if (action === "approve") {
         await makeCall({
           method: "POST",
-          route: isCR 
-            ? apiRoutes.okr.changeRequests.approve(actualId)
-            : apiRoutes.okr.approveSubmission(actualId),
-          body: isCR ? { comment: comment.trim() } : undefined,
+          route: apiRoutes.okr.approveSubmission(activeSubmissionId),
           isSecureRoute: true,
         });
-        ToastService.success(isCR ? "Change Request approved." : "Submission approved.");
+        ToastService.success("Submission approved.");
       } else {
         await makeCall({
           method: "POST",
-          route: isCR
-            ? apiRoutes.okr.changeRequests.reject(actualId)
-            : apiRoutes.okr.rejectSubmission(actualId),
-          body: isCR ? { comment: comment.trim() } : { reason: comment.trim() },
+          route: apiRoutes.okr.rejectSubmission(activeSubmissionId),
+          body: { reason: comment.trim() },
           isSecureRoute: true,
         });
-        ToastService.success(isCR ? "Change Request rejected." : "Submission rejected. All items reverted to draft.");
+        ToastService.success("Submission rejected. All items reverted to draft.");
       }
       setModalOpen(false);
       await load();
@@ -708,10 +639,9 @@ export default function SubmissionApprovalQueue({
                 [
                   ["all", "All Plans"],
                   ["QUARTERLY_PLANNING", "Quarterly"],
-                  // ["DEPARTMENT_OBJECTIVE", "Department"],
+                  ["DEPARTMENT_OBJECTIVE", "Department"],
                   ["MONTHLY_PLAN", "Monthly"],
                   ["WEEKLY_PLAN", "Weekly"],
-                  ["CHANGE_REQUEST", "Change Requests"],
                 ] as const
               ).map(([id, label]) => (
                 <Button

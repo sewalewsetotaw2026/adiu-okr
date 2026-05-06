@@ -71,7 +71,6 @@ import ApprovalQueuePage from "../../app/pages/OKRExecution/ApprovalQueue";
 import DepartmentApprovalQueuePage from "../../app/pages/Admin/OKR/DepartmentApprovalQueue";
 import ReviewDashboard from "../../app/pages/OKRExecution/ReviewerPanel";
 import ReviewDetail from "../../app/pages/OKRExecution/ReviewerPanel/ReviewDetail";
-import ChangeRequestReview from "../../app/pages/OKRExecution/ReviewerPanel/ChangeRequestReview";
 
 import { IRoute } from "./types";
 
@@ -532,12 +531,6 @@ export const routes: IRoute[] = [
   {
     path: routeConstants.okrReviewDetail,
     element: <ReviewDetail />,
-    isAuthenticated: true,
-    allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
-  },
-  {
-    path: routeConstants.okrChangeRequestReview,
-    element: <ChangeRequestReview />,
     isAuthenticated: true,
     allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
   },

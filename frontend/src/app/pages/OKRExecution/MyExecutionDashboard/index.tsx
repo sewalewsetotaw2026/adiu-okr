@@ -10,7 +10,6 @@ import DailyPlanTab from "../components/DailyPlanTab";
 import EmployeeOverviewTab from "../components/EmployeeOverviewTab";
 import ObjectiveCard from "../../../components/common/ObjectiveCard";
 import LoadingSkeleton from "../../../components/common/LoadingSkeleton";
-import RealignmentBanner from "../components/RealignmentBanner";
 import { routeConstants } from "../../../../utils/constants";
 import { fetchMonthlyAvailableWeight } from "../../../services/okr-execution.api";
 import type { AvailableWeight } from "../../../../types/okr.types";
@@ -446,9 +445,10 @@ export default function MyExecutionDashboardPage() {
             });
             const unwrapped = okrUnwrap(detRes);
             // Handle both { status, data } and direct object returns
-            fullObj = (unwrapped && typeof unwrapped === "object" && "data" in unwrapped)
-              ? (unwrapped as any).data
-              : unwrapped;
+            fullObj =
+              unwrapped && typeof unwrapped === "object" && "data" in unwrapped
+                ? (unwrapped as any).data
+                : unwrapped;
           } catch (e) {
             console.warn(`Detail fetch failed for objective ${objectiveId}`, e);
           }
@@ -474,7 +474,7 @@ export default function MyExecutionDashboardPage() {
             | undefined;
 
           const keyResults = Array.isArray(o.keyResults) ? o.keyResults : [];
-          
+
           return {
             id: String(o.id),
             title: (o.title as string) ?? "Employee objective",
@@ -492,7 +492,7 @@ export default function MyExecutionDashboardPage() {
                 (o as any).progress_pct ??
                 (o as any).progress ??
                 (o as any).progressPercent;
-              
+
               // Convert to number - handles string (Prisma Decimal) and number
               if (raw != null && raw !== "") {
                 const num = parseFloat(String(raw));
@@ -505,11 +505,18 @@ export default function MyExecutionDashboardPage() {
               const tgt = parseFloat(String((o as any).target_value ?? 0));
               const cur = parseFloat(String((o as any).current_value ?? 0));
               if (tgt > 0) {
-                return Math.max(0, Math.min(100, Number(((cur / tgt) * 100).toFixed(2))));
+                return Math.max(
+                  0,
+                  Math.min(100, Number(((cur / tgt) * 100).toFixed(2))),
+                );
               }
               return 0;
             })(),
-            indirectProgress: Number((o as any).indirect_score ?? (o as any).indirect_score_percent ?? 0),
+            indirectProgress: Number(
+              (o as any).indirect_score ??
+                (o as any).indirect_score_percent ??
+                0,
+            ),
             mode: fromBackendExecutionMode(
               first?.execution_mode ?? (o.execution_mode as string | undefined),
             ),
@@ -545,15 +552,16 @@ export default function MyExecutionDashboardPage() {
       employeeData?.job_title ||
       ""
     ).toUpperCase();
-    
+
     // Department head info comes from user level (from backend auth response)
     const isHead = !!(
-      (user as any)?.headed_department_id || 
+      (user as any)?.headed_department_id ||
       (user as any)?.is_department_head ||
       (user as any)?.isDepartmentHead
     );
-    
-    const isManagerFlag = !!(user as any)?.is_manager || !!(user as any)?.isManager;
+
+    const isManagerFlag =
+      !!(user as any)?.is_manager || !!(user as any)?.isManager;
 
     // CEO check first (highest priority)
     if (
@@ -883,7 +891,6 @@ export default function MyExecutionDashboardPage() {
             </div>
           }
         >
-          <RealignmentBanner />
           {/* TABS NAVIGATION */}
           <div className="mb-6">
             <TabBar
@@ -892,9 +899,13 @@ export default function MyExecutionDashboardPage() {
               onChange={(id) => {
                 const next = id as TabId;
                 setActiveTab(next);
-                
+
                 // Refresh data when switching to relevant tabs
-                if (next === "quarterly" || next === "overview" || next === "monthly") {
+                if (
+                  next === "quarterly" ||
+                  next === "overview" ||
+                  next === "monthly"
+                ) {
                   void loadObjectives();
                 }
                 if (next === "quarterly" || next === "monthly") {
@@ -921,7 +932,9 @@ export default function MyExecutionDashboardPage() {
                   My Objectives
                 </h3>
                 <div className="flex items-center gap-3">
-                  {cards.some(c => ["draft", "rejected"].includes(c.status)) && (
+                  {cards.some((c) =>
+                    ["draft", "rejected"].includes(c.status),
+                  ) && (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -929,26 +942,32 @@ export default function MyExecutionDashboardPage() {
                       onClick={async () => {
                         try {
                           const submittableIds = cards
-                            .filter(c => ["draft", "rejected"].includes(c.status))
-                            .map(c => Number(c.id));
-                          
+                            .filter((c) =>
+                              ["draft", "rejected"].includes(c.status),
+                            )
+                            .map((c) => Number(c.id));
+
                           await makeCall({
                             method: "PATCH",
                             route: apiRoutes.okr.employeeBulkSubmit,
                             isSecureRoute: true,
                             body: { objective_ids: submittableIds, kr_ids: [] },
                           });
-                          ToastService.success("Quarterly plan submitted for review.");
+                          ToastService.success(
+                            "Quarterly plan submitted for review.",
+                          );
                           loadObjectives();
                         } catch (e) {
-                          ToastService.error("Failed to submit quarterly plan.");
+                          ToastService.error(
+                            "Failed to submit quarterly plan.",
+                          );
                         }
                       }}
                     >
                       Submit for Review
                     </Button>
                   )}
-                  {cards.some(c => c.status === "approved") && (
+                  {cards.some((c) => c.status === "approved") && (
                     <Button
                       variant="primary"
                       size="sm"
@@ -956,16 +975,18 @@ export default function MyExecutionDashboardPage() {
                       onClick={async () => {
                         try {
                           const approvedIds = cards
-                            .filter(c => c.status === "approved")
-                            .map(c => Number(c.id));
-                          
+                            .filter((c) => c.status === "approved")
+                            .map((c) => Number(c.id));
+
                           await makeCall({
                             method: "PATCH",
                             route: apiRoutes.okr.employeeBulkPublish,
                             isSecureRoute: true,
                             body: { objective_ids: approvedIds, kr_ids: [] },
                           });
-                          ToastService.success("Approved objectives published successfully.");
+                          ToastService.success(
+                            "Approved objectives published successfully.",
+                          );
                           loadObjectives();
                         } catch (e) {
                           ToastService.error("Failed to publish objectives.");
@@ -1055,7 +1076,11 @@ export default function MyExecutionDashboardPage() {
                                 kr.final_value ??
                                 0,
                             );
-                            const directRaw = kr.final_score ?? kr.progress_percent ?? kr.progress_pct ?? kr.progress;
+                            const directRaw =
+                              kr.final_score ??
+                              kr.progress_percent ??
+                              kr.progress_pct ??
+                              kr.progress;
                             const krPct =
                               directRaw != null
                                 ? Number(directRaw)
@@ -1063,7 +1088,9 @@ export default function MyExecutionDashboardPage() {
                                   ? Number(((krCur / krTgt) * 100).toFixed(2))
                                   : 0;
                             const krIndirectPct = Number(
-                              kr.indirect_score ?? kr.indirect_score_percent ?? 0,
+                              kr.indirect_score ??
+                                kr.indirect_score_percent ??
+                                0,
                             );
                             const aw = krAllocations[String(kr.id)];
                             const allocated = aw?.allocated_pct ?? 0;
@@ -1130,7 +1157,7 @@ export default function MyExecutionDashboardPage() {
                     Your execution dashboard is empty. Adopt an assigned Key
                     Result to start planning your progress.
                   </p>
-                  {assignedKrs.length > 0 ? (
+                  {/*{assignedKrs.length > 0 ? (
                     <div className="flex flex-col items-center gap-4">
                       <div className="px-4 py-2 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-3">
                         <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -1155,8 +1182,8 @@ export default function MyExecutionDashboardPage() {
                     <div className="text-slate-400 text-xs font-bold tracking-[0.2em] font-space flex items-center gap-2">
                       <MdWarningAmber className="text-lg" />
                       No Pending Assignments
-                    </div>
-                  )}
+                    </div>*/}
+                  {/*)}*/}
                 </div>
               )}
             </>

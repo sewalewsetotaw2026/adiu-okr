@@ -49,7 +49,6 @@ export const routeConstants = {
   okrTeamExecutionMonitor: "/manager/okr/team-execution",
   okrReviews: "/okr/reviews",
   okrReviewDetail: "/okr/reviews/:planId",
-  okrChangeRequestReview: "/okr/reviews/change-requests/:id",
   okrPlanningCompliance: "/manager/okr/planning-compliance",
 
   createUser: "/admin/users/create",

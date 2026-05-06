@@ -426,14 +426,14 @@ export default function CEOStrategicDashboardPage() {
                 progress: null,
               },
               {
-                label: "Overall Progress",
+                label: "Strategic Progress",
                 value: `${avgCompanyScore}%`,
                 icon: MdTrendingUp,
                 color: "text-blue-500",
                 progress: avgCompanyScore,
               },
               {
-                label: "Department Objectives",
+                label: "Dept Objectives",
                 value: totalDepartmentObjectives,
                 icon: MdBusinessCenter,
                 color: "text-amber-500",
@@ -506,7 +506,7 @@ export default function CEOStrategicDashboardPage() {
                       <span className="text-base font-black text-slate-900 group-hover:text-primary transition-colors tracking-tight">
                         {d.name}
                       </span>
-                      <div className="flex items-center gap-3  text-slate-400 font-black uppercase tracking-widest font-space">
+                      <div className="flex items-center gap-3 text-[9px] text-slate-400 font-black uppercase tracking-widest font-space">
                         <span className="flex items-center gap-1">
                           <MdTrackChanges className="text-xs" />{" "}
                           {d.objectiveCount}
@@ -550,7 +550,7 @@ export default function CEOStrategicDashboardPage() {
           </section>
 
           {/* Strategic Health + At Risk — Side by Side */}
-          {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500">
@@ -668,10 +668,10 @@ export default function CEOStrategicDashboardPage() {
                 )}
               </div>
             </section>
-          </div> */}
+          </div>
 
           {/* Snapshot History — Full Width */}
-          {/* <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+          <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
@@ -726,7 +726,7 @@ export default function CEOStrategicDashboardPage() {
                 </p>
               </div>
             )}
-          </section> */}
+          </section>
         </div>
       </div>
     </AdminLayout>

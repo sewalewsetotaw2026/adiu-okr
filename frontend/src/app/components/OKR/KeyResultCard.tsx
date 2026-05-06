@@ -57,9 +57,9 @@ export default function KeyResultCard({
             {/* Status & ID Badge Row */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1">
-                {/* <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
                   KR #{kr.id}
-                </span> */}
+                </span>
               </div>
               <StatusBadge status={kr.status as Status} />
 
@@ -79,18 +79,18 @@ export default function KeyResultCard({
           </div>
 
           {/* Action Buttons - Refined Grouping */}
-          {(!isReadOnly || !isDraft) && (
+          {!isReadOnly && (
             <div className="flex gap-2 shrink-0 flex-wrap sm:flex-col sm:items-end justify-start">
-              {onEdit && (
+              {isDraft && onEdit && (
                 <button
                   type="button"
                   onClick={() => onEdit(kr)}
                   className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-slate-50 text-slate-600 text-[10px] font-black tracking-widest font-space border border-slate-100 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all duration-300"
                 >
-                  {isDraft ? "Edit" : "Request Edit"}
+                  Edit
                 </button>
               )}
-              {isDraft && onDelete && !isReadOnly && (
+              {isDraft && onDelete && (
                 <button
                   type="button"
                   onClick={() => onDelete(kr)}
@@ -99,7 +99,7 @@ export default function KeyResultCard({
                   Delete
                 </button>
               )}
-              {showDecompose && onDecompose && !isReadOnly && (
+              {showDecompose && onDecompose && (
                 <button
                   type="button"
                   onClick={() => onDecompose(kr.id)}

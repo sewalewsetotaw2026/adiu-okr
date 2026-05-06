@@ -315,7 +315,7 @@ export default function DepartmentComparisonPage() {
           </section>
 
           {/* HR Insight Graph */}
-          {/* <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+          <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-violet-500">
@@ -378,7 +378,7 @@ export default function DepartmentComparisonPage() {
                 })}
               </div>
             )}
-          </section> */}
+          </section>
         </div>
       </div>
     </AdminLayout>

@@ -72,35 +72,15 @@ export default function EditWeeklyPlanModal({
     setSubmitting(true);
     setError(null);
     try {
-      const payload = {
+      const updated = await updateWeeklyPlan(plan.id, {
         title: title.trim(),
         metric_definition_id: metricDefinitionId ? Number(metricDefinitionId) : undefined,
         start_value: startValue !== "" ? Number(startValue) : undefined,
         target_value: targetValue !== "" ? Number(targetValue) : undefined,
         contribute_to_score: contributeToScore,
         contribute_to_value: contributeToValue,
-      };
-
-      if (plan.plan_status === "PUBLISHED" || plan.plan_status === "APPROVED") {
-        const { default: makeCall } = await import("../../../API");
-        const { default: apiRoutes } = await import("../../../API/apiRoutes");
-        await makeCall({
-          method: "POST",
-          route: apiRoutes.okr.changeRequests.create,
-          body: {
-            entity_type: "WEEKLY_PLAN",
-            entity_id: plan.id,
-            new_values: payload,
-          },
-          isSecureRoute: true,
-        });
-        const { default: ToastService } = await import("../../../../utils/ToastService");
-        ToastService.success("Change request submitted for approval");
-        onSaved(plan);
-      } else {
-        const updated = await updateWeeklyPlan(plan.id, payload);
-        onSaved(updated);
-      }
+      });
+      onSaved(updated);
       onClose();
     } catch (err: any) {
       setError(

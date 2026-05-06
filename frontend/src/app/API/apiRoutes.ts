@@ -437,22 +437,6 @@ const apiRoutes = {
     adminSubmissions: `${BASE_URL}/okr/approvals/admin/submissions`,
     dashboardEmployee: (cycleId: number | string) =>
       `${BASE_URL}/okr/dashboard/employee?cycle_id=${cycleId}`,
-
-    // Post-Publish Change Requests
-    changeRequests: {
-      create: `${BASE_URL}/okr/change-requests`,
-      list: `${BASE_URL}/okr/change-requests`,
-      myReviews: `${BASE_URL}/okr/change-requests/my-reviews`,
-      detail: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}`,
-      approve: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}/approve`,
-      reject: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}/reject`,
-      realignmentFlags: `${BASE_URL}/okr/change-requests/realignment/my-flags`,
-      entityRealignmentFlags: `${BASE_URL}/okr/change-requests/realignment/entity`,
-      acknowledgeRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/acknowledge`,
-      dismissRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/dismiss`,
-      completeRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/complete`,
-      subordinateAlignment: `${BASE_URL}/okr/change-requests/alignment/subordinates`,
-    },
   },
   manager: {
     team: `${BASE_URL}/manager/team`,

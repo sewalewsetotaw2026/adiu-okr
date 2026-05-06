@@ -17,7 +17,6 @@ interface KRModalProps {
   editingKR?: any;
   assignmentType: "employee" | "department" | "company";
   onSuccess: () => void;
-  isEmployeeKr?: boolean;
 }
 
 
@@ -36,7 +35,6 @@ export default function KRModal({
   editingKR,
   assignmentType,
   onSuccess,
-  isEmployeeKr = false,
 }: KRModalProps) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -67,15 +65,15 @@ export default function KRModal({
         setForm({
           title: editingKR.title || "",
           description: editingKR.description || "",
-          weight: String(editingKR.weight_percent ?? editingKR.weightPercent ?? editingKR.weight ?? ""),
-          targetValue: String(editingKR.target_value ?? editingKR.targetValue ?? editingKR.targetValue ?? ""),
+          weight: String(editingKR.weight_percent || editingKR.weightPercent || ""),
+          targetValue: String(editingKR.target_value || editingKR.targetValue || ""),
           unitOfMeasure: editingKR.unit_of_measure || editingKR.unitOfMeasure || "",
           metricDefinitionId: String(editingKR.metric_definition_id || editingKR.metricDefinitionId || ""),
-          assignedIds: assignmentType === "employee"
+          assignedIds: assignmentType === "employee" 
             ? collectEmployeeIdsFromKr(editingKR)
-            : (editingKR.departments || editingKR.assignedDepartments || editingKR.assignedDepartmentIds || []).map((d: any) => d.id || d),
-          contributesToScore: editingKR.contributes_to_score !== false && editingKR.contributesToScore !== false,
-          contributesToValue: editingKR.contributes_to_value !== false && editingKR.contributesToValue !== false,
+            : (editingKR.departments || editingKR.assignedDepartments || []).map((d: any) => d.id || d),
+          contributesToScore: editingKR.contributes_to_score !== false,
+          contributesToValue: editingKR.contributes_to_value !== false,
           chosenParentKrId: editingKR.chosen_parent_kr_id || editingKR.chosenParentKrId || null,
         });
       } else {
@@ -148,15 +146,15 @@ export default function KRModal({
 
   const filteredAssignments = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    const sourceList = (assignmentType === "department" || assignmentType === "company")
-      ? departmentAssignments
+    const sourceList = (assignmentType === "department" || assignmentType === "company") 
+      ? departmentAssignments 
       : assignments;
     if (!q) return sourceList;
     return sourceList.filter((item) => {
       if (assignmentType === "employee") {
-        const name = String(item.employee.full_name || "").toLowerCase();
-        const title = String(item.jobTitle.title || "").toLowerCase();
-        const dept = String(item.department.name || "").toLowerCase();
+        const name = String(item.employee?.full_name || "").toLowerCase();
+        const title = String(item.jobTitle?.title || "").toLowerCase();
+        const dept = String(item.department?.name || "").toLowerCase();
         return name.includes(q) || title.includes(q) || dept.includes(q);
       } else {
         const name = String(item.name || "").toLowerCase();
@@ -211,58 +209,41 @@ export default function KRModal({
       }
 
       let route: string;
-      let isChangeRequest = false;
-      let finalPayload: any = payload;
-
-      if (editingKR && (editingKR.status === "published" || editingKR.status === "approved" || editingKR.status_code === "published" || editingKR.status_code === "approved")) {
-        isChangeRequest = true;
-        route = apiRoutes.okr.changeRequests.create;
-        finalPayload = {
-          entity_type: assignmentType === "company" ? "COMPANY_KR" : "EMPLOYEE_KR",
-          entity_id: editingKR.id,
-          new_values: payload,
-        };
-      } else if (assignmentType === "department") {
-        route = editingKR
-          ? apiRoutes.okr.departmentKRById(editingKR.id)
+      if (assignmentType === "department") {
+        route = editingKR 
+          ? apiRoutes.okr.departmentKRById(editingKR.id) 
           : apiRoutes.okr.departmentKRs(objectiveId);
       } else if (assignmentType === "company") {
-        route = editingKR
-          ? apiRoutes.okr.companyKRById(editingKR.id)
+        route = editingKR 
+          ? apiRoutes.okr.companyKRById(editingKR.id) 
           : apiRoutes.okr.companyKRs(objectiveId);
       } else {
-        route = editingKR
-          ? apiRoutes.okr.employeeKRById(editingKR.id)
+        route = editingKR 
+          ? apiRoutes.okr.employeeKRById(editingKR.id) 
           : apiRoutes.okr.employeeKRs(objectiveId);
       }
 
       const res = await makeCall({
-        method: (editingKR && !isChangeRequest) ? "PUT" : "POST",
+        method: editingKR ? "PUT" : "POST",
         route,
-        body: finalPayload,
+        body: payload,
         isSecureRoute: true,
       });
 
       if (res.status === 200 || res.status === 201) {
-        if (isChangeRequest) {
-          toast.success("Change request submitted for approval");
-          onSuccess();
-          onClose();
-        } else {
-          const savedKR = okrUnwrap(res) as any;
-
-          // Sync contributors if employee assignment
-          if (assignmentType === "employee") {
-            const krId = savedKR?.id || editingKR?.id;
-            if (krId) {
-              await syncContributors(krId, form.assignedIds, editingKR);
-            }
+        const savedKR = okrUnwrap(res) as any;
+        
+        // Sync contributors if employee assignment
+        if (assignmentType === "employee") {
+          const krId = savedKR?.id || editingKR?.id;
+          if (krId) {
+            await syncContributors(krId, form.assignedIds, editingKR);
           }
-
-          toast.success(editingKR ? "Key Result updated" : "Key Result created");
-          onSuccess();
-          onClose();
         }
+
+        toast.success(editingKR ? "Key Result updated" : "Key Result created");
+        onSuccess();
+        onClose();
       } else {
         toast.error(okrErrorMessage(res));
       }
@@ -281,7 +262,7 @@ export default function KRModal({
     const toAdd = selectedIds.filter(id => !existingIds.includes(id));
     const toRemove = originalKR?.contributors?.filter((c: any) => !selectedIds.includes(c.employee_id || c.employee?.id)) || [];
 
-    console.log("Syncing contributors for Key Results:", krId, "Adding:", toAdd, "Removing:", toRemove.length);
+    console.log("Syncing contributors for KR:", krId, "Adding:", toAdd, "Removing:", toRemove.length);
 
     // Add new
     for (const empId of toAdd) {
@@ -295,8 +276,8 @@ export default function KRModal({
       await makeCall({
         method: "POST",
         route: apiRoutes.okr.contributors,
-        body: {
-          employee_id: empId,
+        body: { 
+          employee_id: empId, 
           employee_kr_id: krId,
           user_id: userId,
           role_type: "EMPLOYEE"
@@ -339,10 +320,10 @@ export default function KRModal({
         <div className="lg:col-span-7 p-6 overflow-y-auto space-y-6">
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              {/* <MdTrackChanges className="text-lg" /> */}
+              <MdTrackChanges className="text-lg" />
               <span>Core Details</span>
             </div>
-
+            
             <div className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -373,10 +354,10 @@ export default function KRModal({
           {/* Metrics */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              {/* <MdOutlineHub className="text-lg" /> */}
+              <MdOutlineHub className="text-lg" />
               <span>Measurement & Metric</span>
             </div>
-
+            
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -388,8 +369,8 @@ export default function KRModal({
                   onChange={(e) => {
                     const mId = e.target.value;
                     const mDef = metricDefinitions.find(d => String(d.id) === mId);
-                    setForm({
-                      ...form,
+                    setForm({ 
+                      ...form, 
                       metricDefinitionId: mId,
                       targetValue: mDef?.allows_binary_completion ? "" : form.targetValue,
                       unitOfMeasure: mDef?.unit_of_measure || form.unitOfMeasure
@@ -453,7 +434,7 @@ export default function KRModal({
           {/* Impact */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              {/* <MdSend className="text-lg" /> */}
+              <MdSend className="text-lg" />
               <span>Impact & Strategy</span>
             </div>
             <div className="space-y-3">
@@ -496,11 +477,11 @@ export default function KRModal({
         {/* RIGHT: ASSIGNMENT */}
         <div className="lg:col-span-5 border-l border-gray-100 bg-slate-50/30 flex flex-col h-full">
           <div className="p-6 flex-1 flex flex-col min-h-0">
-            <div className="mb-6">
-              <div className="flex items-center gap-2 text-primary font-semibold text-sm mb-4">
-                {assignmentType === "employee" ? <MdGroups className="text-lg" /> : <MdBusiness className="text-lg" />}
-                <span>Assign Owner {assignmentType === "employee" ? "Employees" : "Departments"}</span>
-              </div>
+             <div className="mb-6">
+               <div className="flex items-center gap-2 text-primary font-semibold text-sm mb-4">
+                 {assignmentType === "employee" ? <MdGroups className="text-lg" /> : <MdBusiness className="text-lg" />}
+                 <span>Assign Owner {assignmentType === "employee" ? "Employees" : "Departments"}</span>
+               </div>
               <div className="relative">
                 <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg" />
                 <input
@@ -513,41 +494,34 @@ export default function KRModal({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-2">
-              {((assignmentType === "employee" && loading) || ((assignmentType === "department" || assignmentType === "company") && depsLoading)) ? (
-                <div className="py-12 text-center text-gray-400">Loading...</div>
-              ) : filteredAssignments.length === 0 ? (
-                <div className="py-12 text-center">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 text-gray-400 mb-3">
-                    <MdGroups className="text-2xl" />
-                  </div>
-                  <p className="text-sm text-gray-500 font-medium">No matching {assignmentType}s found.</p>
-                </div>
-              ) : (
-                filteredAssignments.map((item) => {
-                  const itemId = assignmentType === "employee" ? item.employee.id : item.id;
-                  const itemIdStr = String(itemId);
-                  const itemUserIdStr = assignmentType === "employee" && item.employee?.appUsers?.[0]?.id
-                    ? String(item.employee.appUsers[0].id)
-                    : null;
-                  const assignedStrs = form.assignedIds.map(String);
-                  const checked = assignedStrs.includes(itemIdStr) || (itemUserIdStr && assignedStrs.includes(itemUserIdStr));
+              <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-2">
+                {((assignmentType === "employee" && loading) || ((assignmentType === "department" || assignmentType === "company") && depsLoading)) ? (
+                  <div className="py-12 text-center text-gray-400">Loading...</div>
+                ) : filteredAssignments.length === 0 ? (
+                 <div className="py-12 text-center">
+                   <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-100 text-gray-400 mb-3">
+                     <MdGroups className="text-2xl" />
+                   </div>
+                   <p className="text-sm text-gray-500 font-medium">No matching {assignmentType}s found.</p>
+                 </div>
+               ) : (
+                 filteredAssignments.map((item) => {
+                  const itemId = assignmentType === "employee" ? item.employee?.id || item.id : item.id;
+                  const checked = form.assignedIds.includes(itemId);
                   return (
                     <label
                       key={itemId}
-                      className={`flex items-center gap-3 rounded-xl p-3 text-sm transition-all border ${checked
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl p-3 text-sm transition-all border ${
+                        checked
                           ? "bg-primary/5 border-primary/20 ring-1 ring-primary/10"
-                          : "bg-white border-slate-100"
-                        } ${isEmployeeKr ? "opacity-75 cursor-not-allowed" : "cursor-pointer hover:bg-white hover:border-gray-200 hover:shadow-sm"
-                        }`}
+                          : "bg-white border-slate-100 hover:bg-white hover:border-gray-200 hover:shadow-sm"
+                      }`}
                     >
                       <div className="relative flex items-center">
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={isEmployeeKr}
                           onChange={(e) => {
-                            if (isEmployeeKr) return;
                             setForm((f) => ({
                               ...f,
                               assignedIds: e.target.checked
@@ -560,13 +534,13 @@ export default function KRModal({
                       </div>
                       <div className="flex flex-col min-w-0">
                         <span className={`font-semibold truncate ${checked ? "text-primary" : "text-gray-900"}`}>
-                          {assignmentType === "employee" ? item.employee.full_name : item.name}
+                          {assignmentType === "employee" ? item.employee?.full_name || "Unknown Employee" : item.name}
                         </span>
-                        {/* <span className="text-[11px] text-gray-500 truncate uppercase tracking-tight font-bold">
+                        <span className="text-[11px] text-gray-500 truncate uppercase tracking-tight font-bold">
                           {assignmentType === "employee" 
-                            ? `${item.jobTitle.title} • ${item.department.name}`
+                            ? `${item.jobTitle?.title || "No Title"} • ${item.department?.name || "No Dept"}`
                             : item.department_code || "No Code"}
-                        </span> */}
+                        </span>
                       </div>
                     </label>
                   );
@@ -590,17 +564,10 @@ export default function KRModal({
 
 function collectEmployeeIdsFromKr(kr: any): string[] {
   if (!kr) return [];
-
-  // 1. Collect from contributors first (these are the explicit assignees)
   const fromContributors = (kr.contributors || []).map((c: any) =>
-    typeof c === "string" ? c : c.employee_id || c.employee?.id || c.user_id,
+    typeof c === "string" ? c : c.employee_id || c.employee?.id,
   );
-
-  if (fromContributors.length > 0) {
-    return Array.from(new Set(fromContributors.filter(Boolean))) as string[];
-  }
-
-  // 2. Fallback to owner/creator ONLY if no contributors exist
-  const ownerId = kr.employee_id || kr.employee?.id || kr.user_id;
-  return ownerId ? [String(ownerId)] : [];
+  const ownerId = kr.employee_id || kr.employee?.id;
+  const ids = ownerId ? [ownerId, ...fromContributors] : fromContributors;
+  return Array.from(new Set(ids.filter(Boolean))) as string[];
 }

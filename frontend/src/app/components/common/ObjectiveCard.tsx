@@ -190,11 +190,11 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
               >
                 {statusStyles.label}
               </span>
-              {/* {showId && (
+              {showId && (
                 <span className="text-slate-300 text-[10px] font-bold font-space uppercase tracking-widest">
                   ID: {id}
                 </span>
-              )} */}
+              )}
 
             </div>
 
@@ -213,7 +213,7 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                   {krCount !== undefined && (
                     <span>
                       {krCount}{" "}
-                      <span className="font-medium text-slate-300">Key Results</span>
+                      <span className="font-medium text-slate-300">KRs</span>
                     </span>
                   )}
                   {krCount !== undefined &&
