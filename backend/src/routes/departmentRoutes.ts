@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createDepartment,
   getDepartments,
+  getDepartmentById,
   countDepartments,
   updateDepartment,
   deleteDepartment,
@@ -26,6 +27,12 @@ router.get(
   "/",
   verifyAccessControl(Resources.DEPARTMENT, ActionTypes.READ_ANY),
   getDepartments,
+);
+
+router.get(
+  "/:id",
+  verifyAccessControl(Resources.DEPARTMENT, ActionTypes.READ_ANY),
+  getDepartmentById,
 );
 
 router.get(

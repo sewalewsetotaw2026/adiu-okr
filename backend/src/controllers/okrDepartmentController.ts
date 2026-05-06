@@ -47,6 +47,27 @@ async function checkDepartmentAccess(
     }
   }
 
+  // 4. Check if user manages any active employees in the department
+  if (user.employee_id) {
+    const managerUser = await prisma.appUser.findFirst({
+      where: { id: Number(user.user_id), company_id: companyId },
+      select: { id: true, employee_id: true },
+    });
+    const managerIds = [user.employee_id];
+    if (managerUser?.id) managerIds.push(String(managerUser.id));
+
+    const subordinateInDept = await prisma.employment.findFirst({
+      where: {
+        company_id: companyId,
+        department_id: departmentId,
+        is_active: true,
+        manager_id: { in: managerIds },
+      },
+      select: { id: true },
+    });
+    if (subordinateInDept) return true;
+  }
+
   return false;
 }
 
@@ -199,6 +220,33 @@ export const listPendingDepartmentKeyResults = async (
   }
 };
 
+export const listDepartmentPendingApprovals = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const cycleId = parsePositiveInt(req.query.cycle_id);
+    if (cycleId === null) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "cycle_id query param required." });
+    }
+
+    const data = await deptService.listDepartmentPendingApprovals(
+      req.user!.company_id,
+      cycleId,
+    );
+
+    res.status(200).json({
+      status: "success",
+      data: data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getDepartmentObjectiveDetail = async (
   req: Request,
   res: Response,
@@ -232,10 +280,12 @@ export const createDepartmentObjective = async (
     const {
       department_id,
       company_kr_id,
-      cycle_id,
-      title,
       execution_mode,
+      title,
       description,
+      cycle_id,
+      contributes_to_score,
+      contributes_to_value,
     } = req.body;
 
     console.log("hello there");
@@ -290,6 +340,14 @@ export const createDepartmentObjective = async (
       executionMode: execution_mode as ExecutionMode,
       description: description,
       createdBy: req.user!.user_id,
+      contributesToScore:
+        contributes_to_score !== undefined
+          ? Boolean(contributes_to_score)
+          : undefined,
+      contributesToValue:
+        contributes_to_value !== undefined
+          ? Boolean(contributes_to_value)
+          : undefined,
     });
 
     res.status(201).json({ status: "success", data: objective });
@@ -303,7 +361,9 @@ export const createDepartmentObjective = async (
       error.message?.includes("cycle_id") ||
       error.message?.includes("Title") ||
       error.message?.includes("Description") ||
-      error.message?.includes("required")
+      error.message?.includes("required") ||
+      error.message?.includes("assigned to this department") ||
+      error.message?.includes("planning is disabled")
     ) {
       return res.status(400).json({ status: "fail", message: error.message });
     }
@@ -583,7 +643,6 @@ export const createDepartmentKR = async (
       contributor_user_id,
       contributor_user_ids,
       contributor_role_type,
-      is_direct,
       is_required_for_completion,
     } = req.body;
 
@@ -679,7 +738,6 @@ export const createDepartmentKR = async (
       weightPercent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
-      isDirect: is_direct,
       isMandatory: is_mandatory,
       contributorUserId: hasContributorUserId ? contributor_user_id : undefined,
       contributorUserIds: Array.isArray(contributor_user_ids)
@@ -735,7 +793,6 @@ export const updateDepartmentKR = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
-      is_direct,
       is_mandatory,
     } = req.body;
 
@@ -779,7 +836,6 @@ export const updateDepartmentKR = async (
       weightPercent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
-      isDirect: is_direct,
       isMandatory: is_mandatory,
     });
 
@@ -993,7 +1049,6 @@ export const approveDepartmentKeyResult = async (
       id,
       req.user!.company_id,
       req.user!.user_id,
-      req.user!.role,
       action,
       comments,
     );
@@ -1033,7 +1088,8 @@ export const createMonthPlan = async (
       target_value,
       current_value,
       weight_percent,
-      is_direct,
+      contributes_to_parent_score,
+      contributes_to_parent_value,
     } = req.body;
     console.log("the target value for the month plan", target_value);
 
@@ -1052,7 +1108,8 @@ export const createMonthPlan = async (
       targetValue: targetValue || undefined,
       currentValue: current_value,
       weightPercent: weightPercent || undefined,
-      isDirect: is_direct,
+      contributesToParentScore: contributes_to_parent_score,
+      contributesToParentValue: contributes_to_parent_value,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
     });
@@ -1117,7 +1174,8 @@ export const createWeeklyPlan = async (
       metric_definition_id,
       target_value,
       current_value,
-      is_direct,
+      contributes_to_parent_score,
+      contributes_to_parent_value,
     } = req.body;
 
     const weekNumber = parsePositiveInt(week_number);
@@ -1169,7 +1227,8 @@ export const createWeeklyPlan = async (
       metricDefinitionId,
       targetValue,
       currentValue,
-      isDirect: is_direct,
+      contributesToParentScore: contributes_to_parent_score,
+      contributesToParentValue: contributes_to_parent_value,
       createdBy: req.user!.user_id,
       actorRole: req.user!.role,
     });
@@ -1220,15 +1279,15 @@ export const createDepartmentDailyPlan = async (
   next: NextFunction,
 ) => {
   try {
-    const weekly_task_id_from_params = parsePositiveInt(req.params.id);
-    if (weekly_task_id_from_params === null) {
+    const weeklyPlanId = parsePositiveInt(req.params.id);
+    if (weeklyPlanId === null) {
       return res
         .status(400)
         .json({ status: "fail", message: "id must be a positive integer." });
     }
     const {
       title,
-      weekly_task_ref,
+
       completion_day,
       description,
       target_value,
@@ -1237,18 +1296,20 @@ export const createDepartmentDailyPlan = async (
 
     const targetValue = parseOptionalFiniteNumber(target_value);
 
-    const dailyPlan = await deptService.createDepartmentDailyPlan({
-      companyId: req.user!.company_id,
-      weeklyTaskId: weekly_task_id_from_params,
-      title,
-      weeklyTaskRef: weekly_task_ref,
-      completionDay: completion_day,
-      description,
-      targetValue: targetValue || undefined,
-      currentValue: current_value,
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
+    const dailyPlan = await deptService.createDepartmentDailyPlan(
+      weeklyPlanId,
+      req.user!.company_id,
+      {
+        title,
+
+        completionDay: completion_day,
+        description,
+        targetValue: targetValue || undefined,
+        currentValue: current_value,
+        createdBy: req.user!.user_id,
+        actorRole: req.user!.role,
+      },
+    );
 
     res.status(201).json({ status: "success", data: dailyPlan });
   } catch (error: any) {
@@ -1279,14 +1340,15 @@ export const updateDepartmentDailyPlan = async (
     }
     const {
       title,
-      weekly_task_ref,
+
       completion_day,
       description,
       status_code,
       metric_definition_id,
       target_value,
       current_value,
-      is_direct,
+      contributes_to_parent_score,
+      contributes_to_parent_value,
     } = req.body;
 
     const metricDefinitionId =
@@ -1330,14 +1392,15 @@ export const updateDepartmentDailyPlan = async (
       req.user!.company_id,
       {
         title,
-        weeklyTaskRef: weekly_task_ref,
+
         completionDay: completion_day,
         description,
         statusCode: status_code,
         metricDefinitionId,
         targetValue,
         currentValue,
-        isDirect: is_direct,
+        contributesToParentScore: contributes_to_parent_score,
+        contributesToParentValue: contributes_to_parent_value,
       },
     );
 
@@ -1425,7 +1488,7 @@ export const listPendingDepartmentApprovals = async (
       });
     }
 
-    const approvals = await deptService.listPendingDepartmentApprovals(
+    const approvals = await deptService.listDepartmentPendingApprovals(
       req.user!.company_id,
       cycleId,
       departmentId !== undefined ? (departmentId as number) : undefined,
@@ -1452,16 +1515,20 @@ export const bulkApproveDepartmentItems = async (
       });
     }
 
+    const items: { type: string; id: number }[] = [];
+    if (objective_ids) objective_ids.forEach((id: number) => items.push({ type: "DEPARTMENT_OBJECTIVE", id }));
+    if (kr_ids) kr_ids.forEach((id: number) => items.push({ type: "DEPARTMENT_KR", id }));
+    if (month_plan_ids) month_plan_ids.forEach((id: number) => items.push({ type: "EMPLOYEE_MONTH_PLAN", id }));
+    if (weekly_plan_ids) weekly_plan_ids.forEach((id: number) => items.push({ type: "WEEKLY_PLAN", id }));
+    if (daily_plan_ids) daily_plan_ids.forEach((id: number) => items.push({ type: "DAILY_PLAN", id }));
+
     const result = await deptService.bulkApproveDepartmentItems(
-      objective_ids || [],
-      kr_ids || [],
-      month_plan_ids || [],
-      weekly_plan_ids || [],
-      daily_plan_ids || [],
+      items,
       req.user!.company_id,
       req.user!.user_id,
       action,
       comments,
+      req.user!.role,
     );
 
     res.status(200).json({ status: "success", data: result });

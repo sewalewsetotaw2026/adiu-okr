@@ -4,6 +4,7 @@ import { validateWeightsBeforePublish } from "./okrWeightValidationService";
 import { captureConfigSnapshot } from "./okrAuditHookService";
 import * as configResolver from "./okrConfigResolverService";
 import { validateSafePublish } from "./okrValidationService";
+import { notifySubmissionCreated } from "./okrNotificationService";
 
 /**
  * High-level orchestration use case for publishing a Company Objective.
@@ -374,6 +375,47 @@ export async function submitDepartmentPlan(companyId: number, cycleId: number, d
     }
   });
 
+  // Create notification for Admin/HR approvers
+  const adminRoles = await prisma.appRole.findMany({
+    where: {
+      company_id: companyId,
+      OR: [
+        { name: { in: ["Admin", "SuperAdmin", "Super Admin"] } },
+        { name: { contains: "admin", mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
+  const adminRoleIds = adminRoles.map(r => r.id);
+
+  const adminUsers = adminRoleIds.length > 0
+    ? await prisma.appUser.findMany({
+        where: {
+          company_id: companyId,
+          role_id: { in: adminRoleIds },
+          employee_id: { not: null },
+        },
+      })
+    : [];
+
+  const submitter = await prisma.employee.findFirst({
+    where: { id: actorId, company_id: companyId },
+    select: { full_name: true }
+  });
+
+  for (const admin of adminUsers) {
+    if (admin.employee_id) {
+      await notifySubmissionCreated({
+        companyId,
+        submissionId: deptObjectiveId,
+        entityType: "DEPARTMENT_OBJECTIVE",
+        entityId: deptObjectiveId,
+        submitterName: submitter?.full_name || "Unknown",
+        reviewerUserId: admin.employee_id,
+      });
+    }
+  }
+
   return { success: true };
 }
 
@@ -632,14 +674,20 @@ export async function rejectEmployeePlan(companyId: number, cycleId: number, emp
       data: { status_code: "draft" }
     });
     
-    // Cascade to plans - reset month plans linked to this objective
+    // Cascade to plans — reset all monthly/weekly plans linked to KRs of this objective.
     await tx.employeeMonthPlan.updateMany({
-      where: { employee_objective_id: employeeObjectiveId },
-      data: { status_code: "draft" },
+      where: {
+        employeeKr: { employee_objective_id: employeeObjectiveId },
+      },
+      data: { plan_status: "DRAFT" },
     });
     await tx.weeklyPlan.updateMany({
-      where: { employeeKr: { employee_objective_id: employeeObjectiveId } },
-      data: { status_code: "draft" },
+      where: {
+        monthPlan: {
+          employeeKr: { employee_objective_id: employeeObjectiveId },
+        },
+      },
+      data: { plan_status: "DRAFT" },
     });
     
     await tx.okrAuditLog.create({

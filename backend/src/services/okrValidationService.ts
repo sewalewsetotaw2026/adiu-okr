@@ -26,6 +26,7 @@ export function validateTitleAndDescription(
 
 /**
  * Ensures duplicate KRs with exact same titles are not created under the same Objective.
+ * Excludes archived records to allow reuse of titles for archived key results.
  */
 export async function validateDuplicateKR(
   companyId: number,
@@ -40,6 +41,7 @@ export async function validateDuplicateKR(
         company_id: companyId,
         objective_id: parentObjectiveId,
         title: { equals: title, mode: "insensitive" },
+        status_code: { not: "archived" },
         id: excludeKrId ? { not: excludeKrId } : undefined,
       },
     });
@@ -53,6 +55,7 @@ export async function validateDuplicateKR(
         company_id: companyId,
         employee_objective_id: parentObjectiveId,
         title: { equals: title, mode: "insensitive" },
+        status_code: { not: "archived" },
         id: excludeKrId ? { not: excludeKrId } : undefined,
       },
     });
@@ -66,6 +69,7 @@ export async function validateDuplicateKR(
         company_id: companyId,
         employee_objective_id: parentObjectiveId,
         title: { equals: title, mode: "insensitive" },
+        status_code: { not: "archived" },
         id: excludeKrId ? { not: excludeKrId } : undefined,
       },
     });

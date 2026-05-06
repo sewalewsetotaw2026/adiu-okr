@@ -18,24 +18,24 @@ router.get("/", listConfigurations);
 router.get("/menu", getConfigurationMenu);
 router.put(
   "/menu",
-  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN"),
+  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN", "Super Admin"),
   upsertConfigurationMenu,
 );
 
 router.get("/:key", getConfigurationByKey);
 router.post(
   "/:key",
-  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN"),
+  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN", "Super Admin"),
   createConfigurationByKey,
 );
 router.put(
   "/:key",
-  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN"),
+  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN", "Super Admin"),
   updateConfigurationByKey,
 );
 router.delete(
   "/:key",
-  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN"),
+  restrictTo("Admin", "HR", "CEO", "SUPER_ADMIN", "Super Admin"),
   deleteConfigurationByKey,
 );
 

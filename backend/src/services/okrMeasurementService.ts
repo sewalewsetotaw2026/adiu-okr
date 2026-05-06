@@ -171,6 +171,8 @@ export async function computeMeasurementSnapshot(
   currentValue: number | null;
   progressPercent: number | null;
   confidenceLevel: OkrConfidenceStatus | null;
+  finalScore: number | null;
+  finalValue: number | null;
 }> {
   const targetValue = toOptionalNumber(input.targetValue);
   const currentValue = toOptionalNumber(input.currentValue);
@@ -196,5 +198,7 @@ export async function computeMeasurementSnapshot(
     currentValue,
     progressPercent,
     confidenceLevel,
+    finalScore: progressPercent,
+    finalValue: currentValue,
   };
 }

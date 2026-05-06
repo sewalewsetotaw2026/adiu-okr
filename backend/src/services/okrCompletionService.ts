@@ -18,7 +18,7 @@ export async function markEmployeeKrAsComplete(companyId: number, krId: number, 
 
   const updatedKr = await prisma.employeeKeyResult.update({
     where: { id: krId },
-    data: { status_code: "completed", progress_percent: 100 }
+    data: { status_code: "completed", final_score: 100 }
   });
 
   await logActivity({
@@ -124,7 +124,7 @@ export async function markDepartmentKrAsComplete(companyId: number, krId: number
 
   await prisma.employeeKeyResult.update({
     where: { id: krId },
-    data: { status_code: "completed", progress_percent: 100 }
+    data: { status_code: "completed", final_score: 100 }
   });
 
   await logActivity({

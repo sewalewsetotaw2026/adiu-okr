@@ -21,23 +21,23 @@ export const listEmployeeObjectives = async (
 
     const objectives = requestedUserId
       ? await empService.listEmployeeObjectives(
-          requestedUserId,
+        requestedUserId,
+        req.user!.company_id,
+        cycleId,
+      )
+      : isAdminLike
+        ? await empService.listEmployeeObjectivesForCycle(
           req.user!.company_id,
           cycleId,
         )
-      : isAdminLike
-        ? await empService.listEmployeeObjectivesForCycle(
-            req.user!.company_id,
-            cycleId,
-          )
         : await empService.listEmployeeObjectives(
-            [
-              req.user!.user_id,
-              String((req.user as any)?.employee_id || ""),
-            ].filter((v) => !!v),
-            req.user!.company_id,
-            cycleId,
-          );
+          [
+            req.user!.user_id,
+            String((req.user as any)?.employee_id || ""),
+          ].filter((v) => !!v),
+          req.user!.company_id,
+          cycleId,
+        );
     res.status(200).json({
       status: "success",
       results: objectives.length,
@@ -62,12 +62,17 @@ export const listAssignedKRs = async (
     const includeAdopted = includeAdoptedRaw === "true";
     const requestedUserId = (req.query.user_id as string)?.trim();
     const userId = requestedUserId || req.user!.user_id;
+    
+    // Optional department ID for department heads viewing their execution dashboard
+    const departmentIdRaw = req.query.department_id as string | undefined;
+    const departmentId = departmentIdRaw ? parseInt(departmentIdRaw) : undefined;
 
     const data = await empService.listAssignedKRsForEmployee(
       req.user!.company_id,
       userId,
       cycleId,
       includeAdopted,
+      departmentId,
     );
 
     res.status(200).json({ status: "success", results: data.length, data });
@@ -280,14 +285,11 @@ export const createEmployeeKR = async (
       metric_definition_id,
       unit_of_measure,
       target_value,
-      current_value,
       weight_percent,
       contributes_to_score,
       contributes_to_value,
-      is_direct,
       is_mandatory,
       execution_mode,
-      contributor_user_ids,
     } = req.body;
 
     if (!title)
@@ -303,13 +305,12 @@ export const createEmployeeKR = async (
       metricDefinitionId: metric_definition_id,
       unitOfMeasure: unit_of_measure,
       targetValue: target_value,
-      currentValue: current_value,
       weightPercent: weight_percent,
-      isDirect: is_direct ?? contributes_to_value ?? contributes_to_score,
+      contributesToScore: contributes_to_score,
+      contributesToValue: contributes_to_value,
       isMandatory: is_mandatory,
       executionMode: execution_mode,
       createdBy: req.user!.user_id,
-      contributorUserIds: contributor_user_ids,
     });
     res.status(201).json({ status: "success", data: kr });
   } catch (error: any) {
@@ -334,13 +335,10 @@ export const updateEmployeeKR = async (
       metric_definition_id,
       unit_of_measure,
       target_value,
-      current_value,
       weight_percent,
       contributes_to_score,
       contributes_to_value,
-      is_direct,
       is_mandatory,
-      contributor_user_ids,
     } = req.body;
 
     const kr = await empService.updateEmployeeKR(id, req.user!.company_id, {
@@ -349,11 +347,10 @@ export const updateEmployeeKR = async (
       metricDefinitionId: metric_definition_id,
       unitOfMeasure: unit_of_measure,
       targetValue: target_value,
-      currentValue: current_value,
       weightPercent: weight_percent,
-      isDirect: is_direct ?? contributes_to_value ?? contributes_to_score,
+      contributesToScore: contributes_to_score,
+      contributesToValue: contributes_to_value,
       isMandatory: is_mandatory,
-      contributorUserIds: contributor_user_ids,
     });
     res.status(200).json({ status: "success", data: kr });
   } catch (error: any) {
@@ -410,454 +407,6 @@ export const listEmployeeKRs = async (
   }
 };
 
-// ─── Employee Month Plans ─────────────────────────────────────────────────────
-
-export const createEmployeeMonthPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const employeeObjectiveId = parseInt(req.params.id);
-    if (isNaN(employeeObjectiveId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Valid numeric employee objective ID required in URL path.",
-      });
-    }
-
-    console.log("the request body", req.body);
-    const { month_number, description, items } = req.body;
-    const title = description;
-
-    if (
-      !month_number ||
-      !title ||
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
-      return res.status(400).json({
-        status: "fail",
-        message: "month_number, title, and at least one item are required.",
-      });
-    }
-
-    const plan = await empService.createEmployeeMonthPlan({
-      companyId: req.user!.company_id,
-      employeeObjectiveId,
-      monthNumber: Number(month_number),
-      title,
-      description,
-      items: items.map((i: any) => ({
-        employeeKrId: Number(i.employee_kr_id),
-        title: i.title || "Untitled",
-        targetValue: Number(i.target_value),
-        currentValue: Number(i.current_value || 0),
-        parentMonthPlanItemId: i.parent_employee_month_plan_item_id ? Number(i.parent_employee_month_plan_item_id) : undefined,
-        note: i.note,
-        isDirect: i.is_direct !== false,
-      })),
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
-    res.status(201).json({ status: "success", data: plan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (
-      error.message?.includes("must be") ||
-      error.message?.includes("required") ||
-      error.message?.includes("≥") ||
-      error.message?.includes("duplicate")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const createEmployeeKRMonthPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const employeeKrId = parseInt(req.params.id);
-    if (isNaN(employeeKrId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Valid numeric employee key result ID required in URL path.",
-      });
-    }
-
-    const {
-      month_number,
-      description,
-      target_value,
-      weight_percent,
-      is_direct,
-    } = req.body;
-
-    if (!month_number) {
-      return res.status(400).json({
-        status: "fail",
-        message: "month_number is required.",
-      });
-    }
-
-    const plan = await empService.createOrUpdateKRMonthPlan({
-      companyId: req.user!.company_id,
-      employeeKrId: Number(employeeKrId),
-      monthNumber: Number(month_number),
-      targetValue: Number(target_value),
-      currentValue: Number(req.body.current_value || 0),
-      description,
-      isDirect: is_direct,
-      weightPercent: weight_percent,
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
-    res.status(201).json({ status: "success", data: plan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (error.message?.includes("approved"))
-      return res.status(400).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const updateEmployeeMonthPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const id = parseInt(req.params.id);
-    const { title, description } = req.body;
-
-    const plan = await empService.updateEmployeeMonthPlan(
-      id,
-      req.user!.company_id,
-      { title, description },
-    );
-    res.status(200).json({ status: "success", data: plan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (error.message?.includes("Only draft"))
-      return res.status(400).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const deleteEmployeeMonthPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const id = parseInt(req.params.id);
-    const result = await empService.deleteEmployeeMonthPlan(
-      id,
-      req.user!.company_id,
-    );
-    res.status(200).json({ status: "success", data: result });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (error.message?.includes("Only draft"))
-      return res.status(400).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const listEmployeeMonthPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const objectiveId = parseInt(req.params.id);
-    const plans = await empService.listEmployeeMonthPlans(
-      objectiveId,
-      req.user!.company_id,
-    );
-    res
-      .status(200)
-      .json({ status: "success", results: plans.length, data: plans });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const listEmployeeKRMonthPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const krId = parseInt(req.params.id);
-    if (isNaN(krId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Valid numeric employee key result ID required in URL path.",
-      });
-    }
-
-    const plans = await empService.listEmployeeKRMonthPlans(
-      krId,
-      req.user!.company_id,
-    );
-    res
-      .status(200)
-      .json({ status: "success", results: plans.length, data: plans });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const addMonthPlanItem = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const planId = parseInt(req.params.id);
-    const { employee_kr_id, target_value, note } = req.body;
-    const item = await empService.addMonthPlanItem(
-      planId,
-      req.user!.company_id,
-      {
-        employeeKrId: employee_kr_id,
-        title: req.body.title || "Untitled",
-        targetValue: target_value,
-        currentValue: req.body.current_value
-          ? Number(req.body.current_value)
-          : 0,
-        parentMonthPlanItemId: req.body.parent_employee_month_plan_item_id ? Number(req.body.parent_employee_month_plan_item_id) : undefined,
-        note,
-      },
-      req.user!.user_id,
-    );
-    res.status(201).json({ status: "success", data: item });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const removeMonthPlanItem = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const planId = parseInt(req.params.id);
-    const itemId = parseInt(req.params.itemId);
-    const result = await empService.removeMonthPlanItem(
-      planId,
-      itemId,
-      req.user!.company_id,
-      req.user!.user_id,
-    );
-    res.status(200).json({ status: "success", data: result });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ─── Weekly Plans ─────────────────────────────────────────────────────────────
-export const createWeeklyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log("[DEBUG] createWeeklyPlans Body:", JSON.stringify(req.body, null, 2));
-    const employeeMonthPlanId = parseInt(req.params.id);
-    const {
-      week_number,
-      title,
-      description,
-      items,
-      tasks,
-    } = req.body;
-
-    if (!week_number || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ status: "fail", message: "week_number and a non-empty items array are required." });
-    }
-
-    const plans = await empService.createWeeklyPlans({
-      companyId: req.user!.company_id,
-      employeeMonthPlanId,
-      weekNumber: week_number,
-      title,
-      description,
-      items: items.map((i: any) => ({
-        employeeKrId: Number(i.employee_kr_id),
-        employeeMonthPlanItemId: i.employee_month_plan_item_id ? Number(i.employee_month_plan_item_id) : undefined,
-        targetValue: Number(i.target_value),
-        currentValue: Number(i.current_value || 0),
-        metricDefinitionId: i.metric_definition_id ? Number(i.metric_definition_id) : undefined,
-        blockers: i.blockers,
-        parentWeeklyPlanId: i.parent_weekly_plan_id ? Number(i.parent_weekly_plan_id) : undefined,
-        parentWeeklyTaskId: i.parent_weekly_task_id ? Number(i.parent_weekly_task_id) : undefined,
-        tasks: i.tasks,
-        isDirect: i.is_direct !== false,
-      })),
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
-    
-    res.status(201).json({ status: "success", data: plans });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (
-      error.message?.includes("must be between") ||
-      error.message?.includes("must exist before") ||
-      error.message?.includes("disabled") ||
-      error.message?.includes("not available")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const createWeeklyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log("[DEBUG] createWeeklyPlan Body:", JSON.stringify(req.body, null, 2));
-    const employeeKrId = parseInt(req.params.id);
-    const {
-      week_number,
-      employee_month_plan_id,
-      blockers,
-      metric_definition_id,
-      target_value,
-      current_value,
-      is_direct,
-      title,
-      tasks,
-    } = req.body;
-
-    delete req.body.confidence_level;
-
-    if (!week_number)
-      return res
-        .status(400)
-        .json({ status: "fail", message: "week_number is required." });
-
-    const plan = await empService.createWeeklyPlan({
-      companyId: req.user!.company_id,
-      employeeKrId,
-      employeeMonthPlanId: employee_month_plan_id,
-      weekNumber: week_number,
-      blockers,
-      title,
-      tasks,
-      metricDefinitionId: metric_definition_id,
-      targetValue: target_value,
-      currentValue: current_value,
-      isDirect: is_direct,
-      employeeMonthPlanItemId: req.body.employee_month_plan_item_id ? Number(req.body.employee_month_plan_item_id) : undefined,
-      parentWeeklyPlanId: req.body.parent_weekly_plan_id ? Number(req.body.parent_weekly_plan_id) : undefined,
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
-    res.status(201).json({ status: "success", data: plan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (
-      error.message?.includes("must be between") ||
-      error.message?.includes("must exist before") ||
-      error.message?.includes("disabled") ||
-      error.message?.includes("not available")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const updateWeeklyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log("[DEBUG] updateWeeklyPlan Body:", JSON.stringify(req.body, null, 2));
-    const id = parseInt(req.params.id);
-    const {
-      blockers,
-      employee_month_plan_id,
-      metric_definition_id,
-      target_value,
-      current_value,
-      is_direct,
-      tasks,
-    } = req.body;
-
-    delete req.body.confidence_level;
-
-    const plan = await empService.updateWeeklyPlan(id, req.user!.company_id, {
-      blockers,
-      employeeMonthPlanId: employee_month_plan_id,
-      metricDefinitionId: metric_definition_id,
-      targetValue: target_value,
-      currentValue: current_value,
-      isDirect: is_direct,
-      tasks,
-    });
-    res.status(200).json({ status: "success", data: plan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const deleteWeeklyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const id = parseInt(req.params.id);
-    const result = await empService.deleteWeeklyPlan(id, req.user!.company_id);
-    res.status(200).json({ status: "success", data: result });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (error.message?.includes("Only draft"))
-      return res.status(400).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const listWeeklyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const krId = parseInt(req.params.id);
-    const plans = await empService.listWeeklyPlans(krId, req.user!.company_id);
-    const weeklyPlansData = plans;
-    console.log("[DEBUG] Fetched Weekly Plans:", weeklyPlansData);
-    res
-      .status(200)
-      .json({ status: "success", results: plans.length, data: plans });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // ─── Subtasks ─────────────────────────────────────────────────────────────────
 
 export const createSubtask = async (
@@ -876,7 +425,8 @@ export const createSubtask = async (
       metric_definition_id,
       target_value,
       current_value,
-      is_direct,
+      contributes_to_parent_score,
+      contributes_to_parent_value,
     } = req.body;
 
     if (
@@ -903,7 +453,8 @@ export const createSubtask = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      isDirect: is_direct,
+      contributesToParentScore: contributes_to_parent_score,
+      contributesToParentValue: contributes_to_parent_value,
       targetMonth: target_month,
       targetWeek: target_week,
       sequenceOrder: sequence_order,
@@ -931,7 +482,8 @@ export const updateSubtask = async (
       metric_definition_id,
       target_value,
       current_value,
-      is_direct,
+      contributes_to_parent_score,
+      contributes_to_parent_value,
       target_month,
       target_week,
       sequence_order,
@@ -955,7 +507,8 @@ export const updateSubtask = async (
       metricDefinitionId: metric_definition_id,
       targetValue: target_value,
       currentValue: current_value,
-      isDirect: is_direct,
+      contributesToParentScore: contributes_to_parent_score,
+      contributesToParentValue: contributes_to_parent_value,
       targetMonth: target_month,
       targetWeek: target_week,
       sequenceOrder: sequence_order,
@@ -1000,216 +553,6 @@ export const listSubtasks = async (
   }
 };
 
-// ─── Daily Plans ───────────────────────────────────────────────────────────────
-
-export const createDailyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log("[DEBUG] createDailyPlan Body:", JSON.stringify(req.body, null, 2));
-    const weeklyPlanId = parseInt(req.params.id);
-    const {
-      title,
-      weekly_task_ref,
-      completion_day,
-      description,
-      metric_definition_id,
-      target_value,
-      current_value,
-      is_direct,
-    } = req.body;
-
-    if (
-      req.body?.progress_percent !== undefined ||
-      req.body?.confidence_level !== undefined
-    ) {
-      return res.status(400).json({
-        status: "fail",
-        message:
-          "progress_percent and confidence_level are system-generated. Provide current_value and target_value instead.",
-      });
-    }
-
-    if (!title || !weekly_task_ref || !completion_day)
-      return res.status(400).json({
-        status: "fail",
-        message: "title, weekly_task_ref, and completion_day are required.",
-      });
-
-    const dailyPlan = await empService.createDailyPlan({
-      companyId: req.user!.company_id,
-      weeklyTaskId: weeklyPlanId,
-      title,
-      weeklyTaskRef: weekly_task_ref,
-      completionDay: completion_day,
-      description,
-      metricDefinitionId: metric_definition_id,
-      targetValue: target_value,
-      currentValue: current_value,
-      isDirect: is_direct,
-      createdBy: req.user!.user_id,
-    });
-    res.status(201).json({ status: "success", data: dailyPlan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (
-      error.message?.includes("disabled") ||
-      error.message?.includes("not available")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const createDailyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log("[DEBUG] createDailyPlans Body:", JSON.stringify(req.body, null, 2));
-    const { completion_day, title, description, weekly_task_ref, items } =
-      req.body;
-
-    if (
-      !completion_day ||
-      !items ||
-      !Array.isArray(items) ||
-      items.length === 0
-    ) {
-      return res.status(400).json({
-        status: "fail",
-        message: "completion_day and a non-empty items array are required.",
-      });
-    }
-
-    const dailyPlans = await empService.createDailyPlans({
-      companyId: req.user!.company_id,
-      completionDay: completion_day,
-      title,
-      description,
-      weeklyTaskRef: weekly_task_ref,
-      items: items.map((i: any) => ({
-        weeklyTaskId: Number(i.weekly_task_id),
-        targetValue: Number(i.target_value),
-        currentValue: Number(i.current_value || 0),
-        metricDefinitionId: i.metric_definition_id
-          ? Number(i.metric_definition_id)
-          : undefined,
-        isDirect: i.is_direct !== false,
-      })),
-      createdBy: req.user!.user_id,
-      actorRole: req.user!.role,
-    });
-
-    res.status(201).json({ status: "success", data: dailyPlans });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    if (
-      error.message?.includes("disabled") ||
-      error.message?.includes("not available")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const updateDailyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const id = parseInt(req.params.id);
-    const {
-      title,
-      weekly_task_ref,
-      completion_day,
-      description,
-      status_code,
-      metric_definition_id,
-      target_value,
-      current_value,
-      is_direct,
-    } = req.body;
-
-    if (
-      req.body?.progress_percent !== undefined ||
-      req.body?.confidence_level !== undefined
-    ) {
-      return res.status(400).json({
-        status: "fail",
-        message:
-          "progress_percent and confidence_level are system-generated. Provide current_value and target_value instead.",
-      });
-    }
-
-    const dailyPlan = await empService.updateDailyPlan(
-      id,
-      req.user!.company_id,
-      {
-        title,
-        weeklyTaskRef: weekly_task_ref,
-        completionDay: completion_day,
-        description,
-        statusCode: status_code,
-        metricDefinitionId: metric_definition_id,
-        targetValue: target_value,
-        currentValue: current_value,
-        isDirect: is_direct,
-      },
-    );
-    res.status(200).json({ status: "success", data: dailyPlan });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const deleteDailyPlan = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const id = parseInt(req.params.id);
-    const result = await empService.deleteDailyPlan(id, req.user!.company_id);
-    res.status(200).json({ status: "success", data: result });
-  } catch (error: any) {
-    if (error.message?.includes("not found"))
-      return res.status(404).json({ status: "fail", message: error.message });
-    next(error);
-  }
-};
-
-export const listDailyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const weeklyPlanId = parseInt(req.params.id);
-    const dailyPlans = await empService.listDailyPlans(
-      weeklyPlanId,
-      req.user!.company_id,
-    );
-    res.status(200).json({
-      status: "success",
-      results: dailyPlans.length,
-      data: dailyPlans,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 // ─── Progress Updates ─────────────────────────────────────────────────────────
 
 export const submitProgressUpdate = async (
@@ -1222,10 +565,7 @@ export const submitProgressUpdate = async (
     const {
       week_number,
       month_number,
-      daily_plan_id,
-      completion_day,
       current_value,
-      target_value,
       blockers,
       comment,
       is_completed,
@@ -1248,10 +588,7 @@ export const submitProgressUpdate = async (
       employeeKrId,
       weekNumber: week_number,
       monthNumber: month_number,
-      dailyPlanId: daily_plan_id,
-      completionDay: completion_day,
       currentValue: current_value,
-      targetValue: target_value,
       blockers,
       comment,
       isCompleted: is_completed,
@@ -1457,73 +794,3 @@ export const bulkSubmitEmployee = async (
   }
 };
 
-export const bulkSubmitEmployeePlanning = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const { month_plan_ids, weekly_plan_ids, daily_plan_ids } = req.body;
-    if (!month_plan_ids && !weekly_plan_ids && !daily_plan_ids) {
-      return res.status(400).json({
-        status: "fail",
-        message:
-          "month_plan_ids, weekly_plan_ids or daily_plan_ids are required.",
-      });
-    }
-
-    const result = await empService.bulkSubmitEmployeePlanning(
-      month_plan_ids || [],
-      weekly_plan_ids || [],
-      daily_plan_ids || [],
-      req.user!.company_id,
-      req.user!.user_id,
-    );
-    res.status(200).json({ status: "success", data: result });
-  } catch (error: any) {
-    if (
-      error.message?.includes("not found") ||
-      error.message?.includes("transition") ||
-      error.message?.includes("submitted") ||
-      error.message?.includes("Published")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};
-
-export const bulkPublishEmployeePlanning = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const { month_plan_ids, weekly_plan_ids, daily_plan_ids } = req.body;
-    if (!month_plan_ids && !weekly_plan_ids && !daily_plan_ids) {
-      return res.status(400).json({
-        status: "fail",
-        message:
-          "month_plan_ids, weekly_plan_ids or daily_plan_ids are required.",
-      });
-    }
-
-    const result = await empService.bulkPublishEmployeePlanning(
-      month_plan_ids || [],
-      weekly_plan_ids || [],
-      daily_plan_ids || [],
-      req.user!.company_id,
-      req.user!.user_id,
-    );
-    res.status(200).json({ status: "success", data: result });
-  } catch (error: any) {
-    if (
-      error.message?.includes("not found") ||
-      error.message?.includes("transition") ||
-      error.message?.includes("Published")
-    ) {
-      return res.status(400).json({ status: "fail", message: error.message });
-    }
-    next(error);
-  }
-};

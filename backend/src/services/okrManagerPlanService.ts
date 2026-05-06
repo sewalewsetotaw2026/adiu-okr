@@ -74,20 +74,16 @@ export async function getManagerMonthPlanItemsForEmployee(
     ...new Set(parentKrs.map((kr) => kr.employeeObjective.id)),
   ];
 
-  // Query the manager's own EmployeeMonthPlan records
+  // Query the manager's own monthly plan records (per-KR in the new schema).
   return prisma.employeeMonthPlan.findMany({
     where: {
-      employee_objective_id: { in: managerObjectiveIds },
+      employeeKr: { employee_objective_id: { in: managerObjectiveIds } },
       company_id: companyId,
       month_number: monthNumber,
-      status_code: { in: ["draft", "submitted", "approved", "published"] },
+      plan_status: { in: ["DRAFT", "SUBMITTED", "APPROVED", "PUBLISHED"] },
     },
     include: {
-      items: {
-        include: {
-          employeeKr: { select: { id: true, title: true, target_value: true } },
-        },
-      },
+      employeeKr: { select: { id: true, title: true, target_value: true } },
     },
   });
 }
@@ -131,19 +127,25 @@ export async function getManagerWeeklyPlanItemsForEmployee(
     ...new Set(parentKrs.map((kr) => kr.employeeObjective.id)),
   ];
 
-  // Query manager's own WeeklyPlan records via their month plans
+  // Query manager's own weekly plan records via their monthly plans.
   return prisma.weeklyPlan.findMany({
     where: {
       monthPlan: {
-        employee_objective_id: { in: managerObjectiveIds },
+        employeeKr: { employee_objective_id: { in: managerObjectiveIds } },
       },
       company_id: companyId,
       week_number: weekNumber,
-      status_code: "published",
+      plan_status: "PUBLISHED",
     },
     include: {
-      employeeKr: { select: { id: true, title: true, target_value: true } },
-      tasks: true,
+      monthPlan: {
+        select: {
+          employeeKr: {
+            select: { id: true, title: true, target_value: true },
+          },
+        },
+      },
+      dailyPlans: true,
     },
   });
 }
@@ -184,19 +186,18 @@ export async function validateMonthlyAlignment(
     );
   }
 
-  // Verify the referenced item exists and its parent plan is published
-  const parentItem = await prisma.employeeMonthPlanItem.findUnique({
+  // The legacy EmployeeMonthPlanItem table was removed; alignment now points
+  // directly at a manager's monthly plan id.
+  const parentPlan = await prisma.employeeMonthPlan.findUnique({
     where: { id: parentMonthPlanItemId },
-    include: {
-      monthPlan: { select: { status_code: true } },
-    },
+    select: { plan_status: true },
   });
 
-  if (!parentItem) {
-    throw new Error("The referenced manager plan item does not exist.");
+  if (!parentPlan) {
+    throw new Error("The referenced manager monthly plan does not exist.");
   }
 
-  if (parentItem.monthPlan.status_code !== "published") {
+  if (parentPlan.plan_status !== "PUBLISHED") {
     throw new Error(
       "The manager's monthly plan must be published before employees can align to it.",
     );
@@ -226,14 +227,14 @@ export async function validateWeeklyAlignment(
 
   const parentPlan = await prisma.weeklyPlan.findUnique({
     where: { id: parentWeeklyPlanId },
-    select: { status_code: true },
+    select: { plan_status: true },
   });
 
   if (!parentPlan) {
     throw new Error("The referenced manager weekly plan does not exist.");
   }
 
-  if (parentPlan.status_code !== "published") {
+  if (parentPlan.plan_status !== "PUBLISHED") {
     throw new Error(
       "The manager's weekly plan must be published before employees can align to it.",
     );

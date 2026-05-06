@@ -5,6 +5,8 @@ import {
   submitDepartmentPlan,
   approveDepartmentPlan,
 } from "src/services/okrPublishOrchestrator";
+import * as approvalService from "./okrApprovalService";
+import { OkrSubmissionType, Prisma } from "@prisma/client";
 import { checkWeightLimit } from "./okrWeightValidationService";
 import {
   validateDepartmentPlanningStart,
@@ -23,13 +25,13 @@ import {
 } from "./okrValidationService";
 import { resolveConfigValue } from "./okrConfigResolverService";
 import { validateWeightsBeforePublish } from "./okrWeightValidationService";
-import { processApprovalAction } from "./okrManagerService";
-import { rollupEmployeeKR } from "src/services/okrRollupService";
+import { rollupFromDepartmentKr } from "src/services/okrRollupService";
 import { computeMeasurementSnapshot } from "src/services/okrMeasurementService";
+import { resolveDepartmentHeadEmployeeIds } from "./okrCompanyService";
 
 async function tryRollupDepartmentKr(employeeKrId: number, reason: string) {
   try {
-    await rollupEmployeeKR(employeeKrId);
+    await rollupFromDepartmentKr(employeeKrId);
   } catch (error) {
     console.warn(`Auto-rollup after ${reason} failed:`, error);
   }
@@ -81,7 +83,8 @@ export async function listDepartmentObjectives(
         select: {
           id: true,
           title: true,
-          is_direct: true,
+          contributes_to_objective_score: true,
+          contributes_to_objective_value: true,
           is_mandatory_for_completion: true,
           objective: { select: { id: true, title: true, status_code: true } },
         },
@@ -103,6 +106,13 @@ export async function listPendingDepartmentObjectives(
     },
     orderBy: { updated_at: "desc" },
     include: {
+      user: {
+        include: {
+          employee: {
+            select: { full_name: true },
+          },
+        },
+      },
       contributor: {
         include: {
           employeeKr: {
@@ -175,17 +185,33 @@ export async function listPendingDepartmentKeyResults(
     orderBy: { updated_at: "desc" },
     include: {
       employeeObjective: {
-        select: {
-          id: true,
-          title: true,
-          status_code: true,
+        include: {
           user: {
             include: {
               employee: {
+                select: { full_name: true },
+              },
+            },
+          },
+          contributor: {
+            include: {
+              employeeKr: {
                 include: {
-                  employments: {
-                    where: { is_active: true },
-                    include: { department: true },
+                  employeeObjective: {
+                    include: {
+                      user: {
+                        include: {
+                          employee: {
+                            include: {
+                              employments: {
+                                where: { is_active: true },
+                                include: { department: true },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
                   },
                 },
               },
@@ -198,6 +224,146 @@ export async function listPendingDepartmentKeyResults(
       },
     },
   });
+}
+
+export async function listDepartmentPendingApprovals(
+  companyId: number,
+  cycleId: number,
+  departmentId?: number,
+) {
+  const pending_objectives = await listPendingDepartmentObjectives(
+    companyId,
+    cycleId,
+  );
+  const pending_krs = await listPendingDepartmentKeyResults(companyId, cycleId, departmentId);
+
+  // Monthly plans (new schema: child of EmployeeKeyResult).
+  const pending_month_plans = await prisma.employeeMonthPlan.findMany({
+    where: {
+      company_id: companyId,
+      cycle_id: cycleId,
+      plan_status: "SUBMITTED",
+    },
+    include: {
+      employeeKr: {
+        include: {
+          employeeObjective: {
+            include: {
+              user: {
+                include: {
+                  employee: {
+                    select: { full_name: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { updated_at: "desc" },
+  });
+
+  // Weekly plans (new schema: child of EmployeeMonthPlan).
+  const pending_weekly_plans = await prisma.weeklyPlan.findMany({
+    where: {
+      company_id: companyId,
+      plan_status: "SUBMITTED",
+      monthPlan: { cycle_id: cycleId },
+    },
+    include: {
+      monthPlan: {
+        include: {
+          employeeKr: {
+            include: {
+              employeeObjective: {
+                include: {
+                  user: {
+                    include: {
+                      employee: {
+                        select: { full_name: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { updated_at: "desc" },
+  });
+
+  // Daily plans don't have a submission lifecycle; surface in-progress tasks.
+  const pending_daily_plans = await prisma.dailyPlan.findMany({
+    where: {
+      company_id: companyId,
+      status: { in: ["PENDING", "IN_PROGRESS"] },
+      weeklyPlan: {
+        monthPlan: { cycle_id: cycleId },
+      },
+    },
+    include: {
+      weeklyPlan: {
+        include: {
+          monthPlan: {
+            include: {
+              employeeKr: {
+                include: {
+                  employeeObjective: {
+                    include: {
+                      user: {
+                        include: {
+                          employee: {
+                            select: { full_name: true },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    orderBy: { updated_at: "desc" },
+  });
+
+  // Flattening employee name for the frontend to match its expectations
+  const mapWithEmployee = (items: any[]) =>
+    items.map((item) => {
+      const obj =
+        item.employeeKr?.employeeObjective ||
+        item.monthPlan?.employeeKr?.employeeObjective ||
+        item.weeklyPlan?.monthPlan?.employeeKr?.employeeObjective;
+      return {
+        ...item,
+        employee: {
+          full_name: obj?.user?.employee?.full_name || "—",
+        },
+      };
+    });
+
+  return {
+    pending_objectives: pending_objectives.map((o: any) => ({
+      ...o,
+      employee: {
+        full_name: o.user?.employee?.full_name || "—",
+      },
+    })),
+    pending_krs: pending_krs.map((k: any) => ({
+      ...k,
+      employee: {
+        full_name: k.employeeObjective?.user?.employee?.full_name || "—",
+      },
+    })),
+    pending_month_plans: mapWithEmployee(pending_month_plans),
+    pending_weekly_plans: mapWithEmployee(pending_weekly_plans),
+    pending_daily_plans: mapWithEmployee(pending_daily_plans),
+  };
 }
 
 export async function getDepartmentObjectiveDetail(
@@ -238,116 +404,196 @@ export async function getDepartmentObjectiveDetail(
 export const createDepartmentObjective = async (data: {
   companyId: number;
   departmentId: number;
-  companyKrId: number; // This is the Company KR ID
+  companyKrId: number;
   cycleId?: number;
   executionMode: OkrExecutionMode;
   title?: string;
   description?: string;
   createdBy: string;
+  contributesToScore?: boolean;
+  contributesToValue?: boolean;
 }) => {
-  // Resolve the head of the department
-  const department = await prisma.department.findUnique({
-    where: { id: data.departmentId },
-    select: { head: { select: { employee_id: true } } },
-  });
-
-  const targetUserId = department?.head?.employee_id;
-  if (!targetUserId) {
-    throw new Error(
-      "This department does not have a designated head. Please assign a department head first.",
-    );
-  }
-
-  const contributor = await prisma.krContributor.findFirst({
+  // 1. Find the correct contributor assignment for this department and Company KR
+  let assignment = await prisma.krContributor.findFirst({
     where: {
-      company_id: data.companyId,
       company_kr_id: data.companyKrId,
-      user_id: targetUserId,
-    },
-    include: {
-      companyKr: {
-        include: { objective: { select: { cycle_id: true } } },
+      company_id: data.companyId,
+      user: {
+        employee: {
+          employments: {
+            some: {
+              department_id: data.departmentId,
+              is_active: true,
+            },
+          },
+        },
       },
     },
   });
 
-  if (!contributor) {
+  // Fallback: If not found, try to resolve by department head
+  if (!assignment && data.departmentId) {
+    const heads = await resolveDepartmentHeadEmployeeIds(data.companyId, [data.departmentId]);
+    if (heads.length > 0) {
+      assignment = await prisma.krContributor.findFirst({
+        where: {
+          user_id: heads[0],
+          company_kr_id: data.companyKrId,
+          company_id: data.companyId,
+        },
+      });
+    }
+  }
+
+  // Final Fallback to creator (for individual assignments)
+  if (!assignment) {
+    assignment = await prisma.krContributor.findFirst({
+      where: {
+        user_id: data.createdBy,
+        company_kr_id: data.companyKrId,
+        company_id: data.companyId,
+      },
+    });
+  }
+
+  if (!assignment) {
     throw new Error(
-      `Cannot create a Department Objective. The Company KR has not been assigned to the department head (${targetUserId}).`,
+      "Cannot create a Department Objective. The Company KR has not been assigned to this department or its head.",
     );
   }
 
-  const isAdoption = data.executionMode === "DIRECT_ADOPTION";
-  const finalTitle = isAdoption
-    ? contributor.companyKr?.title || ""
-    : data.title || contributor.companyKr?.title || "";
-  const finalDescription = isAdoption
-    ? contributor.companyKr?.description || `Directly adopting: ${finalTitle}`
-    : data.description || contributor.companyKr?.description;
-
-  if (data.executionMode === "CUSTOMIZED") {
-    validateTitleAndDescription(finalTitle, finalDescription || undefined);
-  }
-
-  // Check if objective already exists for this contributor
+  // 2. Check if an objective already exists for this assignment
   const existingObjective = await prisma.employeeObjective.findUnique({
-    where: { kr_contributor_id: contributor.id },
+    where: { kr_contributor_id: assignment.id },
   });
 
-  let objective;
   if (!existingObjective) {
-    // Create new objective
-    objective = await prisma.employeeObjective.create({
+
+
+    await validateDepartmentPlanningStart(data.companyId, data.companyKrId);
+
+    const companyKR = await prisma.companyKeyResult.findFirst({
+      where: { id: data.companyKrId, company_id: data.companyId },
+      include: { objective: { select: { cycle_id: true } } },
+    });
+    if (!companyKR) throw new Error("Company key result not found.");
+
+    const isAdoption = data.executionMode === "DIRECT_ADOPTION";
+    const finalTitle = isAdoption
+      ? companyKR.title || ""
+      : data.title || companyKR.title || "";
+    const finalDescription = isAdoption
+      ? companyKR.description || `Directly adopting: ${finalTitle}`
+      : data.description || companyKR.description;
+
+    if (data.executionMode === "CUSTOMIZED") {
+      validateTitleAndDescription(finalTitle, finalDescription || undefined);
+    }
+
+    const created = await prisma.employeeObjective.create({
       data: {
         company_id: data.companyId,
-        cycle_id:
-          data.cycleId || contributor.companyKr?.objective.cycle_id || 0,
-        user_id: contributor.user_id,
-        kr_contributor_id: contributor.id,
-        chosen_parent_kr_id: contributor.company_kr_id,
+        cycle_id: companyKR.objective.cycle_id,
+        department_id: data.departmentId,
+        user_id: assignment.user_id, // Ownership goes to the contributor
         title: finalTitle,
         description: finalDescription,
         status_code: "draft",
+        chosen_parent_kr_id: data.companyKrId,
+        kr_contributor_id: assignment.id,
         created_by: data.createdBy,
       },
     });
 
-    // Update contributor status
-    await prisma.krContributor.update({
-      where: { id: contributor.id },
-      data: { status_code: "active" },
+    await logActivity({
+      companyId: data.companyId,
+      entityType: "EMPLOYEE_OBJECTIVE",
+      entityId: created.id,
+      actorId: data.createdBy,
+      action: isAdoption ? "department_adopted" : "department_customized",
+      description: `Department Objective created via ${data.executionMode} for Company KR #${data.companyKrId}`,
     });
-  } else {
-    // Update existing objective
-    if (
-      existingObjective.status_code !== "draft" &&
-      existingObjective.status_code !== "assigned"
-    ) {
-      throw new Error(
-        "Cannot modify an objective that is already submitted or published.",
-      );
+
+    return created;
+  }
+
+  if (existingObjective.status_code === "assigned") {
+    const isAdoption = data.executionMode === "DIRECT_ADOPTION";
+    const companyKR = await prisma.companyKeyResult.findFirst({
+      where: { id: data.companyKrId },
+    });
+
+    const finalTitle = isAdoption
+      ? companyKR?.title || ""
+      : data.title || companyKR?.title || "";
+    const finalDescription = isAdoption
+      ? companyKR?.description || `Directly adopting: ${finalTitle}`
+      : data.description || companyKR?.description;
+
+    if (data.executionMode === "CUSTOMIZED") {
+      validateTitleAndDescription(finalTitle, finalDescription || undefined);
     }
 
-    objective = await prisma.employeeObjective.update({
+    const updated = await prisma.employeeObjective.update({
       where: { id: existingObjective.id },
       data: {
         title: finalTitle,
         description: finalDescription,
+        // execution_mode removed from EmployeeObjective in schema
         status_code: "draft",
       },
     });
+
+    await logActivity({
+      companyId: data.companyId,
+      entityType: "EMPLOYEE_OBJECTIVE",
+      entityId: updated.id,
+      actorId: data.createdBy,
+      action: isAdoption ? "department_adopted" : "department_customized",
+      description: `Department Objective created via ${data.executionMode} for Company KR #${data.companyKrId}`,
+    });
+
+    return updated;
+  } else if (existingObjective.status_code === "draft") {
+    if (data.executionMode === "CUSTOMIZED") {
+      const newTitle = data.title || existingObjective.title;
+      const newDescription =
+        data.description ?? existingObjective.description ?? undefined;
+      validateTitleAndDescription(newTitle, newDescription);
+      // Verify department
+      const department = await prisma.department.findFirst({
+        where: { id: data.departmentId, company_id: data.companyId },
+        select: { id: true },
+      });
+      if (!department) {
+        throw new Error("Department not found in this company.");
+      }
+
+      const updated = await prisma.employeeObjective.update({
+        where: { id: existingObjective.id },
+        data: {
+          // execution_mode removed
+          title: newTitle,
+        },
+      });
+
+      await logActivity({
+        companyId: data.companyId,
+        entityType: "EMPLOYEE_OBJECTIVE",
+        entityId: updated.id,
+        actorId: data.createdBy,
+        action: "department_customized",
+        description: `Department Objective updated from existing draft for Company KR #${data.companyKrId}`,
+      });
+
+      return updated;
+    }
+    return existingObjective;
   }
 
-  await logActivity({
-    companyId: data.companyId,
-    entityType: "EMPLOYEE_OBJECTIVE",
-    entityId: objective.id,
-    actorId: data.createdBy,
-    action: isAdoption ? "department_adopted" : "department_customized",
-    description: `Department Objective created via ${data.executionMode} for Company KR #${contributor.company_kr_id}`,
-  });
-
-  return objective;
+  throw new Error(
+    "Cannot modify an objective that is already submitted or published.",
+  );
 };
 
 export async function adoptCompanyKR(
@@ -358,21 +604,10 @@ export async function adoptCompanyKR(
 ) {
   const department = await prisma.department.findFirst({
     where: { id: departmentId, company_id: companyId },
-    select: {
-      id: true,
-      head_user_id: true,
-      head: { select: { employee_id: true } },
-    },
+    select: { id: true },
   });
   if (!department) {
     throw new Error("Department not found in this company.");
-  }
-
-  const targetUserId = department.head?.employee_id;
-  if (!targetUserId) {
-    throw new Error(
-      "This department does not have a designated head. Please assign a department head first.",
-    );
   }
 
   const kr = await prisma.companyKeyResult.findFirst({
@@ -385,64 +620,56 @@ export async function adoptCompanyKR(
 
   await validateDepartmentPlanningStart(companyId, companyKrId);
 
-  // Check if assigned to the department head
-  const assignment = await prisma.krContributor.findFirst({
+  const existing = await prisma.employeeObjective.findFirst({
     where: {
-      user_id: targetUserId,
-      company_kr_id: companyKrId,
+      user_id: actorId,
+      chosen_parent_kr_id: companyKrId,
       company_id: companyId,
     },
   });
 
-  if (!assignment) {
-    throw new Error(
-      `Cannot adopt Company KR. It must first be assigned to the department head (${targetUserId}).`,
-    );
-  }
-
-  const existing = await prisma.employeeObjective.findUnique({
-    where: { kr_contributor_id: assignment.id },
-  });
-
-  let objective;
   if (!existing) {
-    objective = await prisma.employeeObjective.create({
+    const isAssigned = await prisma.krContributor.findFirst({
+      where: {
+        user_id: actorId,
+        company_kr_id: companyKrId,
+        company_id: companyId,
+      },
+    });
+    if (!isAssigned) {
+      throw new Error(
+        "Cannot adopt Company KR. It must first be assigned to you.",
+      );
+    }
+
+    const created = await prisma.employeeObjective.create({
       data: {
         company_id: companyId,
         cycle_id: kr.objective.cycle_id,
-        user_id: targetUserId,
+        user_id: actorId,
         title: kr.title,
         description: kr.description || `Adopted from company KR: ${kr.title}`,
         status_code: "draft",
         chosen_parent_kr_id: companyKrId,
-        kr_contributor_id: assignment.id,
+        kr_contributor_id: isAssigned.id,
         created_by: actorId,
       },
     });
-
-    await prisma.krContributor.update({
-      where: { id: assignment.id },
-      data: { status_code: "active" },
-    });
-  } else {
-    if (
-      existing.status_code !== "draft" &&
-      existing.status_code !== "assigned"
-    ) {
-      throw new Error(
-        "This company key result has already been adopted and is beyond draft status.",
-      );
-    }
-
-    objective = await prisma.employeeObjective.update({
-      where: { id: existing.id },
-      data: {
-        title: kr.title,
-        description: kr.description || `Adopted from company KR: ${kr.title}`,
-        status_code: "draft",
-      },
-    });
+    return created;
   }
+
+  if (existing.status_code !== "draft" && existing.status_code !== "assigned") {
+    throw new Error("You have already adopted this company key result.");
+  }
+
+  const updated = await prisma.employeeObjective.update({
+    where: { id: existing.id },
+    data: {
+      title: kr.title,
+      description: kr.description || `Adopted from company KR: ${kr.title}`,
+      status_code: "draft",
+    },
+  });
 
   await logActivity({
     companyId,
@@ -450,25 +677,21 @@ export async function adoptCompanyKR(
     entityId: companyKrId,
     actorId,
     action: "department_adopted",
-    description: `Department #${departmentId} adopted company KR "${kr.title}" for head ${targetUserId}`,
-    metadata: { department_id: departmentId, user_id: targetUserId },
+    description: `Department #${departmentId} adopted company KR "${kr.title}"`,
+    metadata: { department_id: departmentId },
   });
 
   await logActivity({
     companyId,
     entityType: "EMPLOYEE_OBJECTIVE",
-    entityId: objective.id,
+    entityId: updated.id,
     actorId,
     action: "department_objective_created",
     description: `Department objective created via adoption of company KR "${kr.title}"`,
-    metadata: {
-      company_kr_id: companyKrId,
-      department_id: departmentId,
-      user_id: targetUserId,
-    },
+    metadata: { company_kr_id: companyKrId, department_id: departmentId },
   });
 
-  return objective;
+  return updated;
 }
 
 export async function publishDepartmentObjective(
@@ -502,7 +725,6 @@ interface CreateDeptKRInput {
   weightPercent?: number;
   contributesToScore?: boolean;
   contributesToValue?: boolean;
-  isDirect?: boolean;
   isMandatory?: boolean;
   contributorUserId?: string;
   contributorUserIds?: string[];
@@ -566,7 +788,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
   await validateMetricRequirement(
     input.companyId,
     input.metricDefinitionId,
-    input.isDirect ?? input.contributesToValue,
+    input.contributesToValue,
   );
 
   let metricId = input.metricDefinitionId;
@@ -651,7 +873,7 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
       input.companyId,
       parentKr?.metric_definition_id,
       metricId,
-      input.isDirect ?? input.contributesToValue ?? true,
+      input.contributesToValue ?? true,
     );
   }
 
@@ -678,7 +900,6 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
       input.employeeObjectiveId,
       "DEPARTMENT",
       normalizedWeightPercent,
-      input.isDirect ?? input.contributesToScore ?? true,
     );
   }
 
@@ -693,7 +914,8 @@ export async function createDepartmentKR(input: CreateDeptKRInput) {
         unit_of_measure: input.unitOfMeasure,
         target_value: input.targetValue,
         weight_percent: normalizedWeightPercent,
-        is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore ?? true,
+        contributes_to_objective_score: input.contributesToScore ?? true,
+        contributes_to_objective_value: input.contributesToValue ?? true,
         is_mandatory_for_completion: input.isMandatory ?? false,
         status_code: "draft",
         created_by: input.createdBy,
@@ -813,29 +1035,26 @@ export async function updateDepartmentKR(
     );
   }
 
-  if (input.metricDefinitionId || input.isDirect !== undefined || input.contributesToValue !== undefined) {
+  if (input.metricDefinitionId || input.contributesToValue !== undefined) {
     const metricToCheck =
       input.metricDefinitionId !== undefined
         ? input.metricDefinitionId
         : kr.metric_definition_id;
     const valueContrib =
-      input.isDirect !== undefined
-        ? input.isDirect
-        : input.contributesToValue !== undefined
-          ? input.contributesToValue
-          : kr.is_direct;
+      input.contributesToValue !== undefined
+        ? input.contributesToValue
+        : kr.contributes_to_objective_value;
     await validateMetricRequirement(companyId, metricToCheck, valueContrib);
   }
 
   if (
     normalizedWeightPercent !== undefined &&
-    (input.isDirect ?? input.contributesToScore ?? kr.is_direct)
+    (input.contributesToScore ?? kr.contributes_to_objective_score)
   ) {
     await checkWeightLimit(
       kr.employee_objective_id,
       "DEPARTMENT",
       normalizedWeightPercent,
-      input.isDirect ?? input.contributesToScore ?? kr.is_direct,
       id,
     );
   }
@@ -849,7 +1068,8 @@ export async function updateDepartmentKR(
       unit_of_measure: input.unitOfMeasure,
       target_value: input.targetValue,
       weight_percent: normalizedWeightPercent,
-      is_direct: input.isDirect ?? input.contributesToValue ?? input.contributesToScore,
+      contributes_to_objective_score: input.contributesToScore,
+      contributes_to_objective_value: input.contributesToValue,
       is_mandatory_for_completion: input.isMandatory,
     },
     include: { metricDefinition: true },
@@ -868,7 +1088,7 @@ export async function listDepartmentKRs(
     orderBy: { created_at: "asc" },
     include: {
       metricDefinition: true,
-      _count: { select: { monthPlanItems: true } },
+      _count: { select: { monthlyPlans: true } },
     },
   });
 
@@ -899,566 +1119,11 @@ export async function listDepartmentKRs(
 
   return krs.map((kr) => ({
     ...kr,
-    current_value: kr.current_value,
+    current_value: kr.final_value,
     latest_approval_log: latestLogByKrId.get(kr.id) ?? null,
   }));
 }
 
-interface CreateMonthPlanInput {
-  companyId: number;
-  employeeKrId: number;
-  monthNumber: number;
-  description: string;
-  metricDefinitionId?: number;
-  targetValue?: number;
-  currentValue?: number;
-  weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
-  isDirect?: boolean;
-  createdBy: string;
-  actorRole?: string;
-}
-
-export async function createMonthPlan(input: CreateMonthPlanInput) {
-  const deptKr = await prisma.employeeKeyResult.findFirst({
-    where: { id: input.employeeKrId, company_id: input.companyId },
-    include: { employeeObjective: true },
-  });
-  if (!deptKr) throw new Error("Department key result not found.");
-
-  if (input.monthNumber < 1 || input.monthNumber > 3) {
-    throw new Error("month_number must be between 1 and 3.");
-  }
-
-  await validatePlanningCadence(
-    input.companyId,
-    deptKr.employeeObjective.cycle_id,
-    undefined, // departmentId logic needed if required
-    "MONTHLY",
-    input.actorRole,
-  );
-
-  await validateMonthSequence(
-    input.companyId,
-    input.employeeKrId,
-    input.monthNumber,
-    "DEPARTMENT",
-  );
-
-  const measurement = await computeMeasurementSnapshot({
-    companyId: input.companyId,
-    cycleId: deptKr.employeeObjective.cycle_id,
-    departmentId: undefined, // departmentId logic
-    targetValue: input.targetValue,
-    currentValue: input.currentValue,
-  });
-
-  const existing = await prisma.employeeMonthPlan.findUnique({
-    where: {
-      month_number_employee_objective_id: {
-        month_number: input.monthNumber,
-        employee_objective_id: deptKr.employee_objective_id,
-      },
-    },
-  });
-
-  let plan;
-  if (existing) {
-    plan = await prisma.employeeMonthPlan.update({
-      where: { id: existing.id },
-      data: {
-        description: input.description,
-        // EmployeeMonthPlan doesn't have metric_definition_id, target_value etc. in header
-        // It has them in EmployeeMonthPlanItem
-      } as any,
-    });
-    await logActivity({
-      companyId: input.companyId,
-      entityType: "EMPLOYEE_MONTH_PLAN",
-      entityId: plan.id,
-      actorId: input.createdBy,
-      action: "month_plan_updated",
-      description: `Month ${input.monthNumber} plan updated for department KR "${deptKr.title}"`,
-      metadata: {
-        employee_kr_id: input.employeeKrId,
-        month_number: input.monthNumber,
-      },
-    });
-  } else {
-    plan = await prisma.employeeMonthPlan.create({
-      data: {
-        company_id: input.companyId,
-        employee_objective_id: deptKr.employee_objective_id,
-        month_number: input.monthNumber,
-        title: `Plan for Month ${input.monthNumber}`,
-        description: input.description,
-        target_value: input.targetValue,
-        status_code: "draft",
-        created_by: input.createdBy,
-      } as any,
-    });
-
-    // Create the item
-    await prisma.employeeMonthPlanItem.create({
-      data: {
-        company_id: input.companyId,
-        employee_month_plan_id: plan.id,
-        employee_kr_id: input.employeeKrId,
-        target_value: measurement.targetValue || 0,
-        current_value: measurement.currentValue,
-        note: input.description,
-      },
-    });
-    await logActivity({
-      companyId: input.companyId,
-      entityType: "EMPLOYEE_MONTH_PLAN",
-      entityId: plan.id,
-      actorId: input.createdBy,
-      action: "month_plan_created",
-      description: `Month ${input.monthNumber} plan created for department KR "${deptKr.title}"`,
-      metadata: {
-        employee_kr_id: input.employeeKrId,
-        month_number: input.monthNumber,
-      },
-    });
-  }
-
-  await tryRollupDepartmentKr(
-    input.employeeKrId,
-    "department month plan upsert",
-  );
-
-  return plan;
-}
-
-export async function listMonthPlans(employeeKrId: number, companyId: number) {
-  const kr = await prisma.employeeKeyResult.findUnique({
-    where: { id: employeeKrId },
-    select: { employee_objective_id: true },
-  });
-  if (!kr) throw new Error("Key result not found.");
-
-  return prisma.employeeMonthPlan.findMany({
-    where: {
-      employee_objective_id: kr.employee_objective_id,
-      company_id: companyId,
-    },
-    include: { items: { where: { employee_kr_id: employeeKrId } } },
-    orderBy: { month_number: "asc" },
-  });
-}
-
-export interface CreateWeeklyPlanInput {
-  companyId: number;
-  employeeKrId: number;
-  weekNumber: number;
-  description: string;
-  metricDefinitionId?: number;
-  targetValue?: number;
-  currentValue?: number;
-  weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
-  isDirect?: boolean;
-  createdBy: string;
-  actorRole?: string;
-}
-
-export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
-  const deptKr = await prisma.employeeKeyResult.findFirst({
-    where: { id: input.employeeKrId, company_id: input.companyId },
-    include: { employeeObjective: true },
-  });
-  if (!deptKr) throw new Error("Department key result not found.");
-
-  if (input.weekNumber < 1 || input.weekNumber > 13) {
-    throw new Error("week_number must be between 1 and 13.");
-  }
-
-  await validatePlanningCadence(
-    input.companyId,
-    deptKr.employeeObjective.cycle_id,
-    undefined, // departmentId logic
-    "WEEKLY",
-    input.actorRole,
-  );
-
-  const monthPlan = await prisma.employeeMonthPlan.findFirst({
-    where: {
-      employee_objective_id: deptKr.employee_objective_id,
-      month_number: Math.ceil(input.weekNumber / 4), // Simple mapping
-    },
-  });
-  if (!monthPlan)
-    throw new Error("Month plan must exist before creating weekly plan.");
-
-  if (input.weekNumber > 1) {
-    const prev = await prisma.weeklyPlan.findFirst({
-      where: {
-        employee_kr_id: input.employeeKrId,
-        employee_month_plan_id: monthPlan.id,
-        week_number: input.weekNumber - 1,
-      },
-    });
-    if (!prev) {
-      throw new Error(
-        `Week ${input.weekNumber - 1} plan must exist before creating week ${input.weekNumber}.`,
-      );
-    }
-  }
-
-  const existing = await prisma.weeklyPlan.findFirst({
-    where: {
-      employee_kr_id: input.employeeKrId,
-      employee_month_plan_id: monthPlan.id,
-      week_number: input.weekNumber,
-    },
-  });
-
-  let plan;
-  const measurement = await computeMeasurementSnapshot({
-    companyId: input.companyId,
-    cycleId: deptKr.employeeObjective.cycle_id,
-    departmentId: undefined, // departmentId
-    targetValue: input.targetValue,
-    currentValue: input.currentValue,
-  });
-
-  if (existing) {
-    plan = await prisma.weeklyPlan.update({
-      where: { id: existing.id },
-      data: {
-        description: input.description,
-        metric_definition_id: input.metricDefinitionId,
-        target_value: measurement.targetValue,
-        current_value: measurement.currentValue,
-        weight_percent: input.weightPercent,
-        confidence_level: measurement.confidenceLevel as any,
-        is_direct: input.isDirect ?? true,
-      } as any,
-    });
-    await logActivity({
-      companyId: input.companyId,
-      entityType: "WEEKLY_PLAN",
-      entityId: plan.id,
-      actorId: input.createdBy,
-      action: "weekly_plan_updated",
-      description: `Week ${input.weekNumber} plan updated for department KR "${deptKr.title}"`,
-      metadata: {
-        employee_kr_id: input.employeeKrId,
-        week_number: input.weekNumber,
-      },
-    });
-  } else {
-    plan = await prisma.weeklyPlan.create({
-      data: {
-        company_id: input.companyId,
-        employee_kr_id: input.employeeKrId,
-        employee_month_plan_id: monthPlan.id,
-        week_number: input.weekNumber,
-        title: `Week ${input.weekNumber} plan`,
-        description: input.description,
-        metric_definition_id: input.metricDefinitionId,
-        target_value: measurement.targetValue,
-        current_value: measurement.currentValue,
-        weight_percent: input.weightPercent,
-        confidence_level: measurement.confidenceLevel as any,
-        is_direct: input.isDirect ?? true,
-        status_code: "draft",
-        created_by: input.createdBy,
-      } as any,
-    });
-    await logActivity({
-      companyId: input.companyId,
-      entityType: "WEEKLY_PLAN",
-      entityId: plan.id,
-      actorId: input.createdBy,
-      action: "weekly_plan_created",
-      description: `Week ${input.weekNumber} plan created for department KR "${deptKr.title}"`,
-      metadata: {
-        employee_kr_id: input.employeeKrId,
-        week_number: input.weekNumber,
-      },
-    });
-  }
-
-  await tryRollupDepartmentKr(
-    input.employeeKrId,
-    "department weekly plan upsert",
-  );
-
-  return plan;
-}
-
-export async function listWeeklyPlans(employeeKrId: number, companyId: number) {
-  return prisma.weeklyPlan.findMany({
-    where: { employee_kr_id: employeeKrId, company_id: companyId },
-    orderBy: { week_number: "asc" },
-    include: {
-      tasks: {
-        include: {
-          dailyPlans: { orderBy: { created_at: "asc" } },
-          _count: { select: { dailyPlans: true } },
-        },
-      },
-    },
-  });
-}
-
-export interface CreateDepartmentDailyPlanInput {
-  companyId: number;
-  weeklyTaskId: number;
-  title: string;
-  weeklyTaskRef?: string;
-  completionDay:
-    | "MONDAY"
-    | "TUESDAY"
-    | "WEDNESDAY"
-    | "THURSDAY"
-    | "FRIDAY"
-    | "SATURDAY"
-    | "SUNDAY";
-  description?: string;
-  metricDefinitionId?: number;
-  targetValue?: number;
-  currentValue?: number;
-  weightPercent?: number;
-  contributesToParentScore?: boolean;
-  contributesToParentValue?: boolean;
-  isDirect?: boolean;
-  createdBy: string;
-  actorRole?: string;
-}
-
-export async function createDepartmentDailyPlan(
-  input: CreateDepartmentDailyPlanInput,
-) {
-  // if (!input.weeklyTaskRef || input.weeklyTaskRef.trim().length === 0) {
-  //   throw new Error("weekly_task_ref is required for daily plans.");
-  // }
-
-  if (!input.completionDay) {
-    throw new Error("completion_day is required for daily plans.");
-  }
-
-  const task = await prisma.weeklyTask.findFirst({
-    where: { id: input.weeklyTaskId, company_id: input.companyId },
-    include: {
-      weeklyPlan: {
-        include: {
-          employeeKr: {
-            include: {
-              employeeObjective: {
-                select: { cycle_id: true, department_id: true },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!task) {
-    throw new Error("Department weekly task not found.");
-  }
-  const weeklyPlan = task.weeklyPlan;
-
-  await validatePlanningCadence(
-    input.companyId,
-    weeklyPlan.employeeKr.employeeObjective.cycle_id,
-    weeklyPlan.employeeKr.employeeObjective.department_id ?? undefined,
-    "DAILY",
-    input.actorRole,
-  );
-
-  const measurement = await computeMeasurementSnapshot({
-    companyId: input.companyId,
-    cycleId: weeklyPlan.employeeKr.employeeObjective.cycle_id,
-    departmentId:
-      weeklyPlan.employeeKr.employeeObjective.department_id ?? undefined,
-    targetValue: input.targetValue,
-    currentValue: input.currentValue,
-  });
-
-  const dailyPlan = await prisma.dailyPlan.create({
-    data: {
-      company_id: input.companyId,
-      weekly_task_id: input.weeklyTaskId,
-      title: input.title,
-      weekly_task_ref: input.weeklyTaskRef,
-      completion_day: input.completionDay as any,
-      description: input.description,
-      metric_definition_id: input.metricDefinitionId,
-      target_value: measurement.targetValue,
-      current_value: measurement.currentValue,
-      weight_percent: input.weightPercent,
-      progress_percent: measurement.progressPercent,
-      confidence_level: measurement.confidenceLevel as any,
-      is_direct: input.isDirect ?? true,
-      status_code: "pending",
-      created_by: input.createdBy,
-    } as any,
-  });
-
-  await logActivity({
-    companyId: input.companyId,
-    entityType: "DAILY_PLAN",
-    entityId: dailyPlan.id,
-    actorId: input.createdBy,
-    action: "department_daily_plan_created",
-    description: `Department daily plan '${dailyPlan.title}' created for week task ${task.id}`,
-    metadata: {
-      weekly_task_id: input.weeklyTaskId,
-      week_number: weeklyPlan.week_number,
-    },
-  });
-
-  await tryRollupDepartmentKr(
-    weeklyPlan.employee_kr_id,
-    "department daily plan creation",
-  );
-
-  return dailyPlan;
-}
-
-export async function updateDepartmentDailyPlan(
-  id: number,
-  companyId: number,
-  input: {
-    title?: string;
-    weeklyTaskRef?: string;
-    completionDay?:
-      | "MONDAY"
-      | "TUESDAY"
-      | "WEDNESDAY"
-      | "THURSDAY"
-      | "FRIDAY"
-      | "SATURDAY"
-      | "SUNDAY";
-    description?: string;
-    statusCode?: string;
-    metricDefinitionId?: number;
-    targetValue?: number;
-    currentValue?: number;
-    weightPercent?: number;
-    contributesToParentScore?: boolean;
-    contributesToParentValue?: boolean;
-    isDirect?: boolean;
-  },
-) {
-  const dailyPlan = await prisma.dailyPlan.findFirst({
-    where: { id, company_id: companyId },
-    include: {
-      weeklyTask: {
-        include: {
-          weeklyPlan: {
-            include: {
-              employeeKr: {
-                include: {
-                  employeeObjective: {
-                    select: { cycle_id: true, department_id: true },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  if (!dailyPlan) {
-    throw new Error("Department daily plan not found.");
-  }
-
-  const measurement = await computeMeasurementSnapshot({
-    companyId,
-    cycleId: dailyPlan.weeklyTask.weeklyPlan.employeeKr.employeeObjective.cycle_id,
-    departmentId:
-      dailyPlan.weeklyTask.weeklyPlan.employeeKr.employeeObjective.department_id ??
-      undefined,
-    targetValue:
-      input.targetValue !== undefined
-        ? input.targetValue
-        : dailyPlan.target_value
-          ? Number(dailyPlan.target_value)
-          : null,
-    currentValue:
-      input.currentValue !== undefined
-        ? input.currentValue
-        : dailyPlan.current_value
-          ? Number(dailyPlan.current_value)
-          : null,
-  });
-
-  const updated = await prisma.dailyPlan.update({
-    where: { id },
-    data: {
-      title: input.title,
-      weekly_task_ref: input.weeklyTaskRef,
-      completion_day: input.completionDay as any,
-      description: input.description,
-      status_code: input.statusCode,
-      metric_definition_id: input.metricDefinitionId,
-      target_value: measurement.targetValue,
-      current_value: measurement.currentValue,
-      weight_percent: input.weightPercent,
-      progress_percent: measurement.progressPercent,
-      confidence_level: measurement.confidenceLevel as any,
-      is_direct: input.isDirect,
-      completed_at: input.statusCode === "completed" ? new Date() : undefined,
-    } as any,
-  });
-
-  await tryRollupDepartmentKr(
-    dailyPlan.weeklyTask.weeklyPlan.employee_kr_id,
-    "department daily plan update",
-  );
-
-  return updated;
-}
-
-export async function deleteDepartmentDailyPlan(id: number, companyId: number) {
-  const dailyPlan = await prisma.dailyPlan.findFirst({
-    where: { id, company_id: companyId },
-    include: {
-      weeklyTask: {
-        include: {
-          weeklyPlan: {
-            select: { employee_kr_id: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!dailyPlan) {
-    throw new Error("Department daily plan not found.");
-  }
-
-  await prisma.dailyPlan.delete({ where: { id } });
-
-  await tryRollupDepartmentKr(
-    dailyPlan.weeklyTask.weeklyPlan.employee_kr_id,
-    "department daily plan delete",
-  );
-
-  return { deleted: true };
-}
-
-export async function listDepartmentDailyPlans(
-  weeklyTaskId: number,
-  companyId: number,
-) {
-  return prisma.dailyPlan.findMany({
-    where: {
-      company_id: companyId,
-      weekly_task_id: weeklyTaskId,
-    },
-    orderBy: { created_at: "asc" },
-  });
-}
 
 export async function publishDepartmentKeyResult(
   id: number,
@@ -1475,7 +1140,7 @@ export async function publishDepartmentKeyResult(
 
   await validateStatusTransition({
     companyId,
-    entityType: "EMPLOYEE_KR",
+    entityType: "DEPARTMENT_KR",
     fromStatus: kr.status_code,
     toStatus: "published",
   });
@@ -1526,7 +1191,6 @@ export async function approveDepartmentKeyResult(
   id: number,
   companyId: number,
   actorId: string,
-  userRole: string,
   action?: string,
   comments?: string,
 ) {
@@ -1550,10 +1214,9 @@ export async function approveDepartmentKeyResult(
 
     await validateStatusTransition({
       companyId,
-      entityType: "EMPLOYEE_KR",
+      entityType: "DEPARTMENT_KR",
       fromStatus: kr.status_code,
       toStatus: "approved",
-      userRole,
     });
 
     const updated = await prisma.employeeKeyResult.update({
@@ -1567,7 +1230,7 @@ export async function approveDepartmentKeyResult(
     await prisma.okrApprovalLog.create({
       data: {
         company_id: companyId,
-        entity_type: "EMPLOYEE_KR" as any,
+        entity_type: "DEPARTMENT_KR" as any,
         entity_id: id,
         approver_id: actorId,
         action: "APPROVED" as any,
@@ -1584,35 +1247,13 @@ export async function approveDepartmentKeyResult(
       description: `Department key result "${updated.title}" approved`,
     });
 
-    // Cascade approval UP to the parent Objective if it's pending
-    if (updated.employee_objective_id) {
-      const parentObj = await prisma.employeeObjective.findUnique({
-        where: { id: updated.employee_objective_id },
-      });
-      if (
-        parentObj &&
-        ["submitted", "pending_approval"].includes(parentObj.status_code)
-      ) {
-        await approveDepartmentObjective(
-          parentObj.id,
-          companyId,
-          actorId,
-          userRole,
-          comments
-            ? `${comments} (Auto-approved via KR #${id})`
-            : `Automatically approved via KR #${id}`,
-          "approved",
-        );
-      }
-    }
-
     return updated;
   }
 
   // Rejection / changes-requested path
   await validateStatusTransition({
     companyId,
-    entityType: "EMPLOYEE_KR",
+    entityType: "DEPARTMENT_KR",
     fromStatus: kr.status_code,
     toStatus: "draft",
   });
@@ -1627,7 +1268,7 @@ export async function approveDepartmentKeyResult(
   await prisma.okrApprovalLog.create({
     data: {
       company_id: companyId,
-      entity_type: "EMPLOYEE_KR" as any,
+      entity_type: "DEPARTMENT_KR" as any,
       entity_id: id,
       approver_id: actorId,
       action: "CHANGES_REQUESTED" as any,
@@ -1668,7 +1309,7 @@ export async function submitDepartmentKeyResult(
 
   await validateStatusTransition({
     companyId,
-    entityType: "EMPLOYEE_KR",
+    entityType: "DEPARTMENT_KR",
     fromStatus: kr.status_code,
     toStatus: "submitted",
   });
@@ -1697,11 +1338,18 @@ export async function submitDepartmentObjective(
 ) {
   const objective = await prisma.employeeObjective.findFirst({
     where: { id, company_id: companyId },
-    select: { cycle_id: true },
+    select: { cycle_id: true, department_id: true },
   });
   if (!objective) throw new Error("Department objective not found.");
 
-  return submitDepartmentPlan(companyId, objective.cycle_id, id, actorId);
+  return approvalService.submitForApproval({
+    companyId,
+    cycleId: objective.cycle_id,
+    submitterId: actorId,
+    departmentId: objective.department_id || undefined,
+    entityId: id,
+    type: "QUARTERLY_PLANNING",
+  });
 }
 
 export async function approveDepartmentObjective(
@@ -1709,8 +1357,6 @@ export async function approveDepartmentObjective(
   companyId: number,
   actorId: string,
   userRole: string,
-  comments?: string,
-  targetStatus: string = "published",
 ) {
   const objective = await prisma.employeeObjective.findFirst({
     where: { id, company_id: companyId },
@@ -1724,8 +1370,6 @@ export async function approveDepartmentObjective(
     id,
     actorId,
     userRole,
-    comments,
-    targetStatus,
   );
 }
 
@@ -1735,20 +1379,26 @@ export async function bulkSubmitDepartment(
   companyId: number,
   actorId: string,
 ) {
-  let submittedObjectives = 0;
-  let submittedKeyResults = 0;
-
-  for (const id of objectiveIds || []) {
-    await submitDepartmentObjective(id, companyId, actorId);
-    submittedObjectives++;
+  if (objectiveIds.length === 0) {
+    throw new Error("No objectives selected for submission.");
   }
 
-  for (const id of krIds || []) {
-    await submitDepartmentKeyResult(id, companyId, actorId);
-    submittedKeyResults++;
-  }
+  // Find cycleId and departmentId from the first objective
+  const firstObj = await prisma.employeeObjective.findFirst({
+    where: { id: objectiveIds[0], company_id: companyId },
+    select: { cycle_id: true, department_id: true },
+  });
 
-  return { submittedObjectives, submittedKeyResults };
+  if (!firstObj) throw new Error("Objective not found.");
+
+  // Use the unified approval service for bulk submission
+  return approvalService.submitForApproval({
+    companyId,
+    cycleId: firstObj.cycle_id,
+    submitterId: actorId,
+    departmentId: firstObj.department_id || undefined,
+    type: "QUARTERLY_PLANNING",
+  });
 }
 
 export async function bulkApproveDepartment(
@@ -1769,238 +1419,366 @@ export async function bulkApproveDepartment(
   }
 
   for (const id of krIds || []) {
-    await approveDepartmentKeyResult(
-      id,
-      companyId,
-      actorId,
-      userRole,
-      action,
-      comments,
-    );
+    await approveDepartmentKeyResult(id, companyId, actorId, action, comments);
     approvedKeyResults++;
   }
 
   return { approvedObjectives, approvedKeyResults };
 }
 
-// ─── Department Unified Approvals ────────────────────────────────────────────────
-
-export async function listPendingDepartmentApprovals(
+export async function approveDepartmentMonthPlan(
+  id: number,
   companyId: number,
-  cycleId: number,
-  departmentId?: number,
-) {
-  // Get all department heads in the given scope
-  const departments = await prisma.department.findMany({
-    where: {
-      company_id: companyId,
-      ...(departmentId ? { id: departmentId } : {}),
-    },
-    include: { head: true },
-  });
-
-  const headIds = departments
-    .map((d) => d.head?.employee_id)
-    .filter((id): id is string => id !== null && id !== undefined);
-
-  if (headIds.length === 0) {
-    return {
-      pending_objectives: [],
-      pending_krs: [],
-      pending_month_plans: [],
-      pending_weekly_plans: [],
-      pending_daily_plans: [],
-    };
-  }
-
-  const [
-    pending_objectives,
-    pending_krs,
-    pending_month_plans,
-    pending_weekly_plans,
-    pending_daily_plans,
-  ] = await Promise.all([
-    prisma.employeeObjective.findMany({
-      where: {
-        company_id: companyId,
-        cycle_id: cycleId,
-        status_code: { in: ["submitted", "pending_approval"] },
-        user_id: { in: headIds },
-      },
-      include: {
-        user: { select: { employee: { select: { full_name: true } } } },
-      },
-    }),
-    prisma.employeeKeyResult.findMany({
-      where: {
-        company_id: companyId,
-        status_code: { in: ["submitted", "pending_approval"] },
-        employeeObjective: {
-          cycle_id: cycleId,
-          user_id: { in: headIds },
-        },
-      },
-      include: {
-        employeeObjective: {
-          select: { user: { select: { employee: { select: { full_name: true } } } } },
-        },
-      },
-    }),
-    prisma.employeeMonthPlan.findMany({
-      where: {
-        company_id: companyId,
-        status_code: { in: ["submitted", "pending_approval"] },
-        employeeObjective: {
-          cycle_id: cycleId,
-          user_id: { in: headIds },
-        },
-      },
-      include: {
-        employeeObjective: {
-          select: { user: { select: { employee: { select: { full_name: true } } } } },
-        },
-      },
-    }),
-    prisma.weeklyPlan.findMany({
-      where: {
-        company_id: companyId,
-        status_code: { in: ["submitted", "pending_approval"] },
-        employeeKr: {
-          employeeObjective: {
-            cycle_id: cycleId,
-            user_id: { in: headIds },
-          },
-        },
-      },
-      include: {
-        employeeKr: {
-          select: {
-            employeeObjective: {
-              select: { user: { select: { employee: { select: { full_name: true } } } } },
-            },
-          },
-        },
-      },
-    }),
-    prisma.dailyPlan.findMany({
-      where: {
-        company_id: companyId,
-        status_code: { in: ["submitted", "pending_approval"] },
-        weeklyTask: {
-          weeklyPlan: {
-            employeeKr: {
-              employeeObjective: {
-                cycle_id: cycleId,
-                user_id: { in: headIds },
-              },
-            },
-          },
-        },
-      },
-      include: {
-        weeklyTask: {
-          select: {
-            weeklyPlan: {
-              select: {
-                employeeKr: {
-                  select: {
-                    employeeObjective: {
-                      select: { user: { select: { employee: { select: { full_name: true } } } } },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    }),
-  ]);
-
-  return {
-    pending_objectives: pending_objectives.map((o) => ({
-      ...o,
-      employee_name: o.user?.employee?.full_name || "Unknown",
-    })),
-    pending_krs: pending_krs.map((k) => ({
-      ...k,
-      employee_name: k.employeeObjective?.user?.employee?.full_name || "Unknown",
-    })),
-    pending_month_plans: pending_month_plans.map((m) => ({
-      ...m,
-      employee_name: m.employeeObjective?.user?.employee?.full_name || "Unknown",
-    })),
-    pending_weekly_plans: pending_weekly_plans.map((w) => ({
-      ...w,
-      employee_name: w.employeeKr?.employeeObjective?.user?.employee?.full_name || "Unknown",
-    })),
-  };
-}
-
-export async function bulkApproveDepartmentItems(
-  objectiveIds: number[],
-  krIds: number[],
-  monthPlanIds: number[],
-  weeklyPlanIds: number[],
-  dailyPlanIds: number[],
-  companyId: number,
-  approverId: string,
-  action: "APPROVED" | "CHANGES_REQUESTED" | "PUBLISHED",
+  actorId: string,
+  action?: string,
   comments?: string,
 ) {
-  const failed: { entity_type: string; entity_id: number; reason: string }[] = [];
-  let processed = 0;
+  const plan = await prisma.employeeMonthPlan.findFirst({
+    where: { id, company_id: companyId },
+  });
+  if (!plan) throw new Error("Department month plan not found.");
 
-  const processList = async (
-    ids: number[],
-    entityType: "EMPLOYEE_OBJECTIVE" | "EMPLOYEE_KR" | "EMPLOYEE_MONTH_PLAN" | "WEEKLY_PLAN" | "DAILY_PLAN",
-  ) => {
-    for (const id of ids) {
-      try {
-        await processApprovalAction({
-          companyId,
-          entityType,
-          entityId: id,
-          action,
-          approverId,
-          comments,
-        });
-        processed++;
-      } catch (err: any) {
-        failed.push({
-          entity_type: entityType,
-          entity_id: id,
-          reason: err?.message || "Unknown error",
-        });
-      }
-    }
-  };
+  const isRejection = action === "CHANGES_REQUESTED" || action === "REJECTED";
+  const targetStatus = isRejection ? "DRAFT" : "APPROVED";
 
-  await processList(objectiveIds, "EMPLOYEE_OBJECTIVE");
-  await processList(krIds, "EMPLOYEE_KR");
-  await processList(monthPlanIds, "EMPLOYEE_MONTH_PLAN");
-  await processList(weeklyPlanIds, "WEEKLY_PLAN");
-  await processList(dailyPlanIds, "DAILY_PLAN");
+  await validateStatusTransition({
+    companyId,
+    entityType: "EMPLOYEE_MONTH_PLAN",
+    fromStatus: plan.plan_status as any,
+    toStatus: targetStatus.toLowerCase(),
+  });
 
-  return { processed, failed };
+  const updated = await prisma.employeeMonthPlan.update({
+    where: { id },
+    data: {
+      plan_status: targetStatus as any,
+      approved_at: isRejection ? undefined : new Date(),
+    },
+  });
+
+  await prisma.okrApprovalLog.create({
+    data: {
+      company_id: companyId,
+      entity_type: "EMPLOYEE_MONTH_PLAN" as any,
+      entity_id: id,
+      approver_id: actorId,
+      action: (isRejection ? "REJECTED" : "APPROVED") as any,
+      comments: comments || null,
+    },
+  });
+
+  return updated;
+}
+
+export async function approveDepartmentWeeklyPlan(
+  id: number,
+  companyId: number,
+  actorId: string,
+  action?: string,
+  comments?: string,
+) {
+  const plan = await prisma.weeklyPlan.findFirst({
+    where: { id, company_id: companyId },
+  });
+  if (!plan) throw new Error("Weekly plan not found.");
+
+  const isRejection = action === "CHANGES_REQUESTED" || action === "REJECTED";
+  const targetStatus = isRejection ? "DRAFT" : "APPROVED";
+
+  await validateStatusTransition({
+    companyId,
+    entityType: "WEEKLY_PLAN",
+    fromStatus: plan.plan_status as any,
+    toStatus: targetStatus.toLowerCase(),
+  });
+
+  const updated = await prisma.weeklyPlan.update({
+    where: { id },
+    data: {
+      plan_status: targetStatus as any,
+      approved_at: isRejection ? undefined : new Date(),
+    },
+  });
+
+  await prisma.okrApprovalLog.create({
+    data: {
+      company_id: companyId,
+      entity_type: "WEEKLY_PLAN" as any,
+      entity_id: id,
+      approver_id: actorId,
+      action: (isRejection ? "REJECTED" : "APPROVED") as any,
+      comments: comments || null,
+    },
+  });
+
+  return updated;
+}
+
+export async function approveDepartmentDailyPlan(
+  id: number,
+  companyId: number,
+  actorId: string,
+  action?: string,
+  comments?: string,
+) {
+  const plan = await prisma.dailyPlan.findFirst({
+    where: { id, company_id: companyId },
+  });
+  if (!plan) throw new Error("Daily plan not found.");
+
+  const isRejection = action === "CHANGES_REQUESTED" || action === "REJECTED";
+  const targetStatus = isRejection ? "DRAFT" : "APPROVED";
+
+  const updated = await prisma.dailyPlan.update({
+    where: { id },
+    data: {
+      status: (isRejection ? "PENDING" : "COMPLETED") as any,
+    },
+  });
+
+  await prisma.okrApprovalLog.create({
+    data: {
+      company_id: companyId,
+      entity_type: "DAILY_PLAN" as any,
+      entity_id: id,
+      approver_id: actorId,
+      action: (isRejection ? "REJECTED" : "APPROVED") as any,
+      comments: comments || null,
+    },
+  });
+
+  return updated;
 }
 
 export async function approveDepartmentItem(
-  entityType: "EMPLOYEE_OBJECTIVE" | "EMPLOYEE_KR" | "EMPLOYEE_MONTH_PLAN" | "WEEKLY_PLAN" | "DAILY_PLAN",
+  entityType: string,
   entityId: number,
   companyId: number,
-  approverId: string,
-  action: "APPROVED" | "CHANGES_REQUESTED" | "PUBLISHED",
+  actorId: string,
+  action: string,
   comments?: string,
+  userRole: string = "MANAGER",
 ) {
-  await processApprovalAction({
-    companyId,
-    entityType,
-    entityId,
-    action,
-    approverId,
-    comments,
-  });
-  return { success: true };
+  switch (entityType) {
+    case "EMPLOYEE_OBJECTIVE":
+    case "DEPARTMENT_OBJECTIVE":
+      return approveDepartmentObjective(entityId, companyId, actorId, userRole);
+    case "EMPLOYEE_KR":
+    case "DEPARTMENT_KR":
+      return approveDepartmentKeyResult(
+        entityId,
+        companyId,
+        actorId,
+        action,
+        comments,
+      );
+    case "EMPLOYEE_MONTH_PLAN":
+      return approveDepartmentMonthPlan(
+        entityId,
+        companyId,
+        actorId,
+        action,
+        comments,
+      );
+    case "WEEKLY_PLAN":
+      return approveDepartmentWeeklyPlan(
+        entityId,
+        companyId,
+        actorId,
+        action,
+        comments,
+      );
+    case "DAILY_PLAN":
+      return approveDepartmentDailyPlan(
+        entityId,
+        companyId,
+        actorId,
+        action,
+        comments,
+      );
+    default:
+      throw new Error(`Unsupported entity type: ${entityType}`);
+  }
 }
 
+export async function bulkApproveDepartmentItems(
+  items: { type: string; id: number }[],
+  companyId: number,
+  actorId: string,
+  action: string,
+  comments?: string,
+  userRole: string = "MANAGER",
+) {
+  const results = [];
+  for (const item of items) {
+    try {
+      const res = await approveDepartmentItem(
+        item.type,
+        item.id,
+        companyId,
+        actorId,
+        action,
+        comments,
+        userRole,
+      );
+      results.push({ id: item.id, type: item.type, success: true, data: res });
+    } catch (error: any) {
+      results.push({
+        id: item.id,
+        type: item.type,
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+  return results;
+}
+
+// ─────────────────── Planning Functions (Month, Weekly, Daily) ───────────────────
+
+export async function createMonthPlan(data: any) {
+  const {
+    companyId,
+    employeeKrId,
+    monthNumber,
+    description,
+    title,
+    weightPercent,
+    createdBy,
+  } = data;
+
+  const kr = await prisma.employeeKeyResult.findUnique({
+    where: { id: employeeKrId },
+    include: { employeeObjective: true },
+  });
+  if (!kr) throw new Error("Key result not found.");
+
+  const month = await prisma.employeeMonthPlan.create({
+    data: {
+      company_id: companyId,
+      cycle_id: kr.employeeObjective.cycle_id,
+      employee_kr_id: employeeKrId,
+      owner_id: kr.employeeObjective.user_id,
+      month_number: monthNumber,
+      title: title || `Month ${monthNumber}`,
+      description: description || null,
+      weight_pct: weightPercent ? new Prisma.Decimal(weightPercent) : new Prisma.Decimal(0),
+      plan_status: "DRAFT",
+      created_by: createdBy,
+    },
+  });
+
+  await tryRollupDepartmentKr(employeeKrId, "month plan creation");
+  return month;
+}
+
+export async function listMonthPlans(employeeKrId: number, companyId: number) {
+  return prisma.employeeMonthPlan.findMany({
+    where: { employee_kr_id: employeeKrId, company_id: companyId },
+    orderBy: { month_number: "asc" },
+  });
+}
+
+export async function createWeeklyPlan(data: any) {
+  const {
+    companyId,
+    monthPlanId,
+    weekNumber,
+    title,
+    weightPercent,
+    createdBy,
+  } = data;
+
+  const month = await prisma.employeeMonthPlan.findUnique({
+    where: { id: monthPlanId },
+  });
+  if (!month) throw new Error("Monthly plan not found.");
+
+  const week = await prisma.weeklyPlan.create({
+    data: {
+      company_id: companyId,
+      employee_month_plan_id: monthPlanId,
+      owner_id: month.owner_id,
+      week_number: weekNumber,
+      title: title || `Week ${weekNumber}`,
+      weight_pct: weightPercent ? new Prisma.Decimal(weightPercent) : new Prisma.Decimal(0),
+      plan_status: "DRAFT",
+      created_by: createdBy,
+    },
+  });
+
+  return week;
+}
+
+export async function listWeeklyPlans(monthPlanId: number, companyId: number) {
+  return prisma.weeklyPlan.findMany({
+    where: { employee_month_plan_id: monthPlanId, company_id: companyId },
+    orderBy: { week_number: "asc" },
+  });
+}
+
+export async function createDepartmentDailyPlan(
+  weeklyPlanId: number,
+  companyId: number,
+  data: any,
+) {
+  const week = await prisma.weeklyPlan.findUnique({
+    where: { id: weeklyPlanId },
+  });
+  if (!week) throw new Error("Weekly plan not found.");
+
+  return prisma.dailyPlan.create({
+    data: {
+      company_id: companyId,
+      weekly_plan_id: weeklyPlanId,
+      owner_id: week.owner_id,
+      completion_day: data.completionDay,
+      title: data.title,
+      description: data.description || null,
+      metric_definition_id: data.metricDefinitionId || null,
+      target_value: data.targetValue ? new Prisma.Decimal(data.targetValue) : null,
+      current_value: data.currentValue ? new Prisma.Decimal(data.currentValue) : new Prisma.Decimal(0),
+      contribute_to_score: data.contributesToParentScore ?? true,
+      contribute_to_value: data.contributesToParentValue ?? true,
+      status: "PENDING",
+      created_by: data.createdBy || week.owner_id,
+    },
+  });
+}
+
+export async function updateDepartmentDailyPlan(
+  id: number,
+  companyId: number,
+  data: any,
+) {
+  return prisma.dailyPlan.update({
+    where: { id, company_id: companyId },
+    data: {
+      title: data.title,
+      description: data.description,
+      completion_day: data.completionDay,
+      metric_definition_id: data.metricDefinitionId,
+      target_value: data.targetValue ? new Prisma.Decimal(data.targetValue) : undefined,
+      current_value: data.currentValue ? new Prisma.Decimal(data.currentValue) : undefined,
+      status: data.status,
+      contribute_to_score: data.contributesToParentScore,
+      contribute_to_value: data.contributesToParentValue,
+    },
+  });
+}
+
+export async function deleteDepartmentDailyPlan(id: number, companyId: number) {
+  return prisma.dailyPlan.delete({
+    where: { id, company_id: companyId },
+  });
+}
+
+export async function listDepartmentDailyPlans(
+  weeklyPlanId: number,
+  companyId: number,
+) {
+  return prisma.dailyPlan.findMany({
+    where: { weekly_plan_id: weeklyPlanId, company_id: companyId },
+    orderBy: { created_at: "asc" },
+  });
+}

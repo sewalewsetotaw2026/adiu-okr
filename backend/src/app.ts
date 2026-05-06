@@ -165,9 +165,10 @@ function isDomainValidationError(message: string): boolean {
     "at most",
     "weight",
     "confidence level",
-    "weekly_task_ref",
     "completion_day",
     "does not match",
+    "please wait",
+    "not yet planned",
   ];
 
   return domainSignals.some((signal) => normalized.includes(signal));

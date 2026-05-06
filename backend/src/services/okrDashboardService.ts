@@ -5,6 +5,7 @@ import {
   getFinancialBreakdown,
   getCompletionStatus,
 } from "src/services/okrRollupService";
+import { logActivity } from "src/services/okrActivityLogService";
 
 function pickLatestConfidenceSignal(
   signals: Array<{ confidence_level: string | null; observed_at: Date }>,
@@ -68,11 +69,7 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
   const totalKRs = objectives.reduce((sum, o) => sum + o.keyResults.length, 0);
 
   const progressValues = objectives
-    .map((o) => {
-      const tgt = o.target_value ? Number(o.target_value) : 0;
-      const cur = o.current_value ? Number(o.current_value) : 0;
-      return tgt > 0 ? (cur / tgt) * 100 : 0;
-    });
+    .map((o) => Number(o.final_score || 0));
   const avgScore =
     progressValues.length > 0
       ? new Decimal(
@@ -80,13 +77,30 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
         ).toDecimalPlaces(2)
       : new Decimal(0);
 
+  const indirectScores = objectives
+    .filter((o: any) => o.indirect_score)
+    .map((o: any) => o.indirect_score as Decimal);
+  const avgIndirectScore =
+    indirectScores.length > 0
+      ? indirectScores
+          .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
+          .div(indirectScores.length)
+      : new Decimal(0);
+
   const totalValue = objectives.reduce(
-    (sum, o) => sum.add(o.current_value ?? new Decimal(0)),
+    (sum, o) => sum.add(o.final_value ?? new Decimal(0)),
+    new Decimal(0),
+  );
+  const totalIndirectValue = objectives.reduce(
+    (sum: Decimal, o: any) =>
+      sum.add(
+        o.indirect_value ? new Decimal(o.indirect_value) : new Decimal(0),
+      ),
     new Decimal(0),
   );
 
   const completedObjectives = objectives.filter(
-    (o) => o.progress_percent && o.progress_percent.gte(100),
+    (o) => o.final_score && o.final_score.gte(100),
   ).length;
 
   const deptObjectiveCount = await prisma.employeeObjective.count({
@@ -104,12 +118,12 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
         take: 1,
         select: { confidence_level: true, created_at: true },
       },
-      weeklyPlans: {
+      monthlyPlans: {
         select: {
-          confidence_level: true,
-          updated_at: true,
-          tasks: {
+          weeklyPlans: {
             select: {
+              confidence_level: true,
+              updated_at: true,
               dailyPlans: {
                 select: { confidence_level: true, updated_at: true },
               },
@@ -123,25 +137,25 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
     },
   });
 
-  const latestSignals = employeeKrs.map((kr) => {
+  const latestSignals = employeeKrs.map((kr: any) => {
     const signals: Array<{
       confidence_level: string | null;
       observed_at: Date;
     }> = [];
 
-    for (const p of kr.progressUpdates) {
+    for (const p of kr.progressUpdates || []) {
       signals.push({
         confidence_level: p.confidence_level,
         observed_at: p.created_at,
       });
     }
-    for (const w of kr.weeklyPlans) {
-      signals.push({
-        confidence_level: w.confidence_level,
-        observed_at: w.updated_at,
-      });
-      for (const task of w.tasks) {
-        for (const ms of task.dailyPlans) {
+    for (const m of kr.monthlyPlans || []) {
+      for (const w of m.weeklyPlans || []) {
+        signals.push({
+          confidence_level: w.confidence_level,
+          observed_at: w.updated_at,
+        });
+        for (const ms of w.dailyPlans || []) {
           signals.push({
             confidence_level: ms.confidence_level,
             observed_at: ms.updated_at,
@@ -149,7 +163,7 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
         }
       }
     }
-    for (const s of kr.subtasks) {
+    for (const s of kr.subtasks || []) {
       signals.push({
         confidence_level: s.confidence_level,
         observed_at: s.updated_at,
@@ -175,19 +189,19 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
       completedCompanyObjectives: completedObjectives,
       avgCompanyScore: avgScore,
       totalCompanyValue: totalValue,
+      avgCompanyIndirectScore: avgIndirectScore,
+      totalCompanyIndirectValue: totalIndirectValue,
       totalDepartmentObjectives: deptObjectiveCount,
     },
     confidenceDistribution,
     objectives: objectives.map((o) => ({
       id: o.id,
       title: o.title,
-      score: (() => {
-        const tgt = o.target_value ? Number(o.target_value) : 0;
-        const cur = o.current_value ? Number(o.current_value) : 0;
-        return tgt > 0 ? Number(((cur / tgt) * 100).toFixed(2)) : 0;
-      })(),
-      value: o.current_value,
-      target_value: o.target_value,
+      score: Number(o.final_score || 0),
+      value: o.final_value,
+      target_value: 100, // Company Objectives don't have target_value in some contexts, defaulting to 100
+      indirectScore: (o as any).indirect_score,
+      indirectValue: (o as any).indirect_value,
       status: o.status_code,
       krCount: o.keyResults.length,
       departmentCount: o.keyResults.reduce(
@@ -195,6 +209,19 @@ export async function getCeoDashboard(companyId: number, cycleId: number) {
         0,
       ),
     })),
+    recentSnapshots: await prisma.okrScoreSnapshot.findMany({
+      where: {
+        company_id: companyId,
+        cycle_id: cycleId,
+        scope_level: "COMPANY",
+      },
+      orderBy: { snapshot_date: "desc" },
+      take: 10,
+    }),
+    archiveId: (await prisma.quarterArchive.findUnique({
+      where: { company_id_cycle_id: { company_id: companyId, cycle_id: cycleId } },
+      select: { id: true }
+    }))?.id || null
   };
 }
 
@@ -209,9 +236,8 @@ export async function getDepartmentComparison(
     where: { company_id: companyId, cycle_id: cycleId },
     select: {
       id: true,
-      progress_percent: true,
-      target_value: true,
-      current_value: true,
+      final_score: true,
+      final_value: true,
       user: {
         select: {
           employee: {
@@ -226,8 +252,8 @@ export async function getDepartmentComparison(
       },
       keyResults: {
         select: {
-          progress_percent: true,
-          current_value: true,
+          final_score: true,
+          final_value: true,
           is_mandatory_for_completion: true,
         },
       },
@@ -256,11 +282,7 @@ export async function getDepartmentComparison(
   const departments = Array.from(deptMap.values()).map((dept) => {
     const allKRs = dept.objectives.flatMap((o: any) => o.keyResults);
     const progressValues = dept.objectives
-      .map((o: any) => {
-        const tgt = o.target_value ? Number(o.target_value) : 0;
-        const cur = o.current_value ? Number(o.current_value) : 0;
-        return tgt > 0 ? (cur / tgt) * 100 : 0;
-      });
+      .map((o: any) => Number(o.final_score || 0));
     const avgScore =
       progressValues.length > 0
         ? new Decimal(
@@ -269,12 +291,30 @@ export async function getDepartmentComparison(
         : new Decimal(0);
     const totalValue = allKRs.reduce(
       (sum: Decimal, kr: any) =>
-        sum.add(kr.current_value ? new Decimal(kr.current_value) : new Decimal(0)),
+        sum.add(kr.final_value ? new Decimal(kr.final_value) : new Decimal(0)),
       new Decimal(0),
     );
+    const objectiveIndirectScores = dept.objectives
+      .filter((o: any) => o.indirect_score)
+      .map((o: any) => new Decimal(o.indirect_score));
+    const avgIndirectScore =
+      objectiveIndirectScores.length > 0
+        ? objectiveIndirectScores
+            .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
+            .div(objectiveIndirectScores.length)
+        : new Decimal(0);
+
+    const totalIndirectValue = allKRs.reduce(
+      (sum: Decimal, kr: any) =>
+        sum.add(
+          kr.indirect_value ? new Decimal(kr.indirect_value) : new Decimal(0),
+        ),
+      new Decimal(0),
+    );
+
     const totalKRs = allKRs.length;
     const completedKRs = allKRs.filter(
-      (kr: any) => kr.progress_percent && new Decimal(kr.progress_percent).gte(100),
+      (kr: any) => kr.final_score && new Decimal(kr.final_score).gte(100),
     ).length;
     const completionRate = totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0;
 
@@ -286,6 +326,8 @@ export async function getDepartmentComparison(
       completedKRs,
       avgScore,
       totalValue,
+      avgIndirectScore,
+      totalIndirectValue,
       completionRate,
     };
   });
@@ -334,14 +376,18 @@ export async function getCompanyOkrGallery(companyId: number, cycleId: number) {
       id: obj.id,
       title: obj.title,
       description: obj.description,
-      score: obj.progress_percent,
-      value: obj.current_value,
+      score: obj.final_score,
+      value: obj.final_value,
+      indirectScore: (obj as any).indirect_score,
+      indirectValue: (obj as any).indirect_value,
       status: obj.status_code,
       keyResults: obj.keyResults.map((kr: any) => ({
         id: kr.id,
         title: kr.title,
-        score: kr.progress_percent,
-        value: kr.current_value,
+        score: kr.final_score,
+        value: kr.final_value,
+        indirectScore: kr.indirect_score,
+        indirectValue: kr.indirect_value,
         target: kr.target_value,
         unit: kr.unit_of_measure,
         metricName: kr.metricDefinition?.name,
@@ -350,8 +396,8 @@ export async function getCompanyOkrGallery(companyId: number, cycleId: number) {
         departmentObjectives: (kr.employeeObjectives || []).map((d: any) => ({
           id: d.id,
           title: d.title,
-          score: d.progress_percent,
-          value: d.current_value,
+          score: d.final_score,
+          value: d.final_value,
           status: d.status_code,
           departmentId: d.user?.employee?.employments[0]?.department_id,
         })),
@@ -390,13 +436,19 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
     where: {
       company_id: companyId,
       confidence_level: { in: ["AT_RISK", "OFF_TRACK"] },
-      employeeKr: { employeeObjective: { cycle_id: cycleId } },
+      monthPlan: {
+        employeeKr: { employeeObjective: { cycle_id: cycleId } },
+      },
     },
     include: {
-      employeeKr: {
+      monthPlan: {
         include: {
-          employeeObjective: {
-            select: { user_id: true, title: true },
+          employeeKr: {
+            include: {
+              employeeObjective: {
+                select: { user_id: true, title: true },
+              },
+            },
           },
         },
       },
@@ -426,12 +478,16 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
     where: {
       company_id: companyId,
       confidence_level: { in: ["AT_RISK", "OFF_TRACK"] },
-      weeklyTask: { weeklyPlan: { employeeKr: { employeeObjective: { cycle_id: cycleId } } } },
+      weeklyPlan: {
+        monthPlan: {
+          employeeKr: { employeeObjective: { cycle_id: cycleId } },
+        },
+      },
     },
     include: {
-      weeklyTask: {
+      weeklyPlan: {
         include: {
-          weeklyPlan: {
+          monthPlan: {
             include: {
               employeeKr: {
                 include: {
@@ -454,7 +510,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: u.id,
       employeeKrId: u.employeeKr?.id,
       employeeKrTitle: u.employeeKr?.title,
-      score: u.employeeKr?.progress_percent,
+      score: u.employeeKr?.final_score,
       target: u.employeeKr?.target_value,
       confidenceLevel: u.confidence_level,
       blockers: u.blockers,
@@ -475,17 +531,17 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       objectiveTitle: null,
       lastUpdated: m.updated_at,
     })),
-    ...atRiskWeeklyPlans.map((w) => ({
+    ...atRiskWeeklyPlans.map((w: any) => ({
       sourceType: "WEEKLY_PLAN",
       sourceId: w.id,
-      employeeKrId: w.employeeKr?.id,
-      employeeKrTitle: w.employeeKr?.title,
-      score: w.employeeKr?.progress_percent,
+      employeeKrId: w.monthPlan?.employeeKr?.id,
+      employeeKrTitle: w.monthPlan?.employeeKr?.title,
+      score: w.monthPlan?.employeeKr?.final_score,
       target: w.target_value,
       confidenceLevel: w.confidence_level,
       blockers: w.blockers,
-      userId: w.employeeKr?.employeeObjective?.user_id,
-      objectiveTitle: w.employeeKr?.employeeObjective?.title,
+      userId: w.monthPlan?.employeeKr?.employeeObjective?.user_id,
+      objectiveTitle: w.monthPlan?.employeeKr?.employeeObjective?.title,
       lastUpdated: w.updated_at,
     })),
     ...atRiskSubtasks.map((s) => ({
@@ -493,7 +549,7 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
       sourceId: s.id,
       employeeKrId: s.employeeKr?.id,
       employeeKrTitle: s.employeeKr?.title,
-      score: s.employeeKr?.progress_percent,
+      score: s.employeeKr?.final_score,
       target: s.target_value,
       confidenceLevel: s.confidence_level,
       blockers: null,
@@ -504,14 +560,14 @@ export async function getAtRiskSummary(companyId: number, cycleId: number) {
     ...atRiskDailyPlans.map((m) => ({
       sourceType: "DAILY_PLAN",
       sourceId: m.id,
-      employeeKrId: m.weeklyTask?.weeklyPlan?.employeeKr?.id,
-      employeeKrTitle: m.weeklyTask?.weeklyPlan?.employeeKr?.title,
-      score: m.weeklyTask?.weeklyPlan?.employeeKr?.progress_percent,
+      employeeKrId: (m as any).weeklyPlan?.employeeKr?.id,
+      employeeKrTitle: (m as any).weeklyPlan?.employeeKr?.title,
+      score: (m as any).weeklyPlan?.employeeKr?.final_score,
       target: m.target_value,
       confidenceLevel: m.confidence_level,
       blockers: null,
-      userId: m.weeklyTask?.weeklyPlan?.employeeKr?.employeeObjective?.user_id,
-      objectiveTitle: m.weeklyTask?.weeklyPlan?.employeeKr?.employeeObjective?.title,
+      userId: (m as any).weeklyPlan?.employeeKr?.employeeObjective?.user_id,
+      objectiveTitle: (m as any).weeklyPlan?.employeeKr?.employeeObjective?.title,
       lastUpdated: m.updated_at,
     })),
   ].sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
@@ -532,19 +588,26 @@ export async function generateSnapshot(
   cycleId: number,
   actorId: string,
 ) {
-  await refreshFullRollup(companyId, cycleId);
+  // NOTE: We intentionally do NOT call refreshFullRollup here — it runs inside
+  // a heavy transaction that can timeout when called as a background job.
+  // The snapshot captures whatever scores are currently in the DB.
+  // Use the "Refresh Rollup" button first if you want up-to-date scores.
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // Fetch company objectives with their KR count in one query
   const companyObjectives = await prisma.companyObjective.findMany({
     where: { company_id: companyId, cycle_id: cycleId },
-    include: { keyResults: true },
+    select: {
+      final_score: true,
+      _count: { select: { keyResults: true } },
+    },
   });
 
   const companyScores = companyObjectives
-    .filter((o) => o.progress_percent)
-    .map((o) => o.progress_percent!);
+    .filter((o) => o.final_score)
+    .map((o) => o.final_score!);
   const companyAvg =
     companyScores.length > 0
       ? companyScores
@@ -552,7 +615,7 @@ export async function generateSnapshot(
           .div(companyScores.length)
       : new Decimal(0);
 
-  await prisma.okrScoreSnapshot.create({
+  const companySnapshot = await prisma.okrScoreSnapshot.create({
     data: {
       company_id: companyId,
       cycle_id: cycleId,
@@ -562,59 +625,112 @@ export async function generateSnapshot(
       score_value: companyAvg,
       total_objectives: companyObjectives.length,
       total_key_results: companyObjectives.reduce(
-        (s, o) => s + o.keyResults.length,
+        (s, o) => s + o._count.keyResults,
         0,
       ),
     },
   });
 
-  const departments = await prisma.employment.findMany({
-    where: { company_id: companyId, is_active: true },
+  // Fetch all active department IDs for this company
+  const deptRows = await prisma.employment.findMany({
+    where: { company_id: companyId, is_active: true, department_id: { not: null } },
     select: { department_id: true },
     distinct: ["department_id"],
   });
+  const deptIds = deptRows
+    .map((r) => r.department_id)
+    .filter((id): id is number => id !== null);
 
-  for (const dept of departments) {
-    const deptObjs = await prisma.employeeObjective.findMany({
-      where: {
+  // Fetch all employee objectives for this cycle in one query, grouped by dept
+  const allDeptObjs = await prisma.employeeObjective.findMany({
+    where: { company_id: companyId, cycle_id: cycleId },
+    select: {
+      final_score: true,
+      user: {
+        select: {
+          employee: {
+            select: {
+              employments: {
+                where: { is_active: true, department_id: { in: deptIds } },
+                select: { department_id: true },
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Group objectives by department
+  const deptObjMap = new Map<number, { scores: Decimal[]; count: number }>();
+  for (const obj of allDeptObjs) {
+    const deptId = obj.user?.employee?.employments[0]?.department_id;
+    if (!deptId) continue;
+    if (!deptObjMap.has(deptId)) {
+      deptObjMap.set(deptId, { scores: [], count: 0 });
+    }
+    const entry = deptObjMap.get(deptId)!;
+    entry.count++;
+    if (obj.final_score) entry.scores.push(obj.final_score);
+  }
+
+  // Build all department snapshot rows and insert in a single createMany
+  const deptSnapshotData = deptIds
+    .filter((deptId) => deptObjMap.has(deptId))
+    .map((deptId) => {
+      const entry = deptObjMap.get(deptId)!;
+      const avg =
+        entry.scores.length > 0
+          ? entry.scores
+              .reduce((s, v) => s.add(v), new Decimal(0))
+              .div(entry.scores.length)
+          : new Decimal(0);
+      return {
         company_id: companyId,
         cycle_id: cycleId,
-        user: {
-          employee: {
-            employments: { some: { department_id: dept.department_id, is_active: true } }
-          }
-        }
-      },
+        entity_type: "EMPLOYEE_OBJECTIVE" as const,
+        scope_level: "DEPARTMENT" as const,
+        department_id: deptId,
+        snapshot_date: today,
+        score_value: avg,
+        total_objectives: entry.count,
+      };
     });
-    const deptScores = deptObjs
-      .filter((o) => o.progress_percent)
-      .map((o) => o.progress_percent!);
-    const deptAvg =
-      deptScores.length > 0
-        ? deptScores
-            .reduce((s, v) => s.add(v), new Decimal(0))
-            .div(deptScores.length)
-        : new Decimal(0);
 
-    await prisma.okrScoreSnapshot.create({
+  if (deptSnapshotData.length > 0) {
+    await prisma.okrScoreSnapshot.createMany({ data: deptSnapshotData });
+  }
+
+  // Ensure a QuarterArchive record exists so it shows up in Archive Management
+  const cycle = await prisma.okrCycle.findUnique({ where: { id: cycleId } });
+  let archive = await prisma.quarterArchive.findUnique({
+    where: { company_id_cycle_id: { company_id: companyId, cycle_id: cycleId } },
+  });
+
+  if (!archive) {
+    archive = await prisma.quarterArchive.create({
       data: {
         company_id: companyId,
         cycle_id: cycleId,
-        entity_type: "EMPLOYEE_OBJECTIVE",
-        scope_level: "DEPARTMENT",
-        department_id: dept.department_id,
-        snapshot_date: today,
-        score_value: deptAvg,
-        total_objectives: deptObjs.length,
+        quarter_name:
+          cycle?.quarter_label || cycle?.name || `Quarter #${cycleId}`,
+        status: "COMPLETED",
+        archived_by: actorId,
       },
     });
   }
 
-  return {
-    snapshotDate: today,
-    companyAvgScore: companyAvg,
-    departmentsSnapshotted: departments.length,
-  };
+  await logActivity({
+    companyId,
+    entityType: "CYCLE",
+    entityId: cycleId,
+    actorId,
+    action: "snapshot_generated",
+    description: `Manually triggered OKR snapshot generated for cycle ${cycleId}`,
+  });
+
+  return { snapshot: companySnapshot, deptCount: deptSnapshotData.length, archiveId: archive.id };
 }
 
 /**
@@ -662,17 +778,18 @@ export async function getManagerExecutionDashboard(
     if (options.weekNumber) {
       const weekPlan = await prisma.weeklyPlan.findFirst({
         where: {
-          employeeKr: { employeeObjective: { cycle_id: cycleId } },
+          monthPlan: { cycle_id: cycleId },
           week_number: options.weekNumber,
-          created_by: emp.id,
+          owner_id: emp.id,
         },
       });
       if (weekPlan) hasPlan = true;
     } else if (options.monthNumber) {
       const monthPlan = await prisma.employeeMonthPlan.findFirst({
         where: {
-          employeeObjective: { cycle_id: cycleId },
-          created_by: emp.id,
+          cycle_id: cycleId,
+          owner_id: emp.id,
+          month_number: options.monthNumber,
         },
       });
       if (monthPlan) hasPlan = true;
@@ -698,5 +815,189 @@ export async function getManagerExecutionDashboard(
       completionRate: (plannedCount / reportingIds.length) * 100,
     },
     laggards,
+  };
+}
+
+/**
+ * Employee Overview Dashboard — Key insights for an individual employee.
+ */
+export async function getEmployeeOverview(
+  userId: string,
+  companyId: number,
+  cycleId: number,
+) {
+  // 1. Quarterly Objectives & Progress
+  const objectives = await prisma.employeeObjective.findMany({
+    where: { user_id: userId, company_id: companyId, cycle_id: cycleId },
+    include: {
+      keyResults: {
+        include: {
+          progressUpdates: {
+            orderBy: { created_at: "desc" },
+            take: 1,
+            select: { confidence_level: true },
+          },
+        },
+      },
+    },
+  });
+
+  const totalObjectives = objectives.length;
+  // EmployeeKeyResult has no progress_pct — use final_score on KRs if set,
+  // otherwise fall back to the objective-level final_score.
+  const allKRsForProgress = objectives.flatMap((o) => o.keyResults);
+  const krsWithScore = allKRsForProgress.filter((kr) => kr.final_score != null);
+  const avgProgress =
+    krsWithScore.length > 0
+      ? krsWithScore.reduce((sum, kr) => sum + Number(kr.final_score ?? 0), 0) /
+        krsWithScore.length
+      : totalObjectives > 0
+        ? objectives.reduce((sum, o) => sum + Number(o.final_score ?? 0), 0) /
+          totalObjectives
+        : 0;
+
+  // 2. Planning Compliance
+  const monthlyPlans = await prisma.employeeMonthPlan.count({
+    where: { owner_id: userId, cycle_id: cycleId },
+  });
+
+  const weeklyPlans = await prisma.weeklyPlan.count({
+    where: {
+      owner_id: userId,
+      monthPlan: { cycle_id: cycleId },
+    },
+  });
+
+  const dailyPlans = await prisma.dailyPlan.count({
+    where: {
+      owner_id: userId,
+      weeklyPlan: { monthPlan: { cycle_id: cycleId } },
+    },
+  });
+
+  // 3. Recent Feedback (Top 5)
+  const objectiveIds = objectives.map((o) => o.id);
+  const krIds = objectives.flatMap((o) => o.keyResults.map((kr) => kr.id));
+
+  const recentComments = await prisma.okrComment.findMany({
+    where: {
+      company_id: companyId,
+      OR: [
+        { entity_type: "EMPLOYEE_OBJECTIVE", entity_id: { in: objectiveIds } },
+        { entity_type: "EMPLOYEE_KR", entity_id: { in: krIds } },
+      ],
+    },
+    orderBy: { created_at: "desc" },
+    take: 5,
+  });
+
+  // 2. Resolve Authors (Robust resolution for both Employee ID and User ID)
+  const authorIds = [...new Set(recentComments.map((c) => c.author_id))];
+  
+  // Fetch directly from Employee table for those that are Employee IDs
+  const directEmployees = await prisma.employee.findMany({
+    where: { id: { in: authorIds } },
+    select: { id: true, full_name: true, profile_picture_url: true },
+  });
+
+  // For others, they might be User IDs. Fetch from AppUser and include Employee
+  const foundDirectIds = new Set(directEmployees.map(e => e.id));
+  const potentialUserIds = authorIds
+    .filter(id => !foundDirectIds.has(id))
+    .map(id => parseInt(id))
+    .filter(id => !isNaN(id));
+
+  const appUsers = potentialUserIds.length > 0 
+    ? await prisma.appUser.findMany({
+        where: { id: { in: potentialUserIds } },
+        include: { employee: { select: { full_name: true, profile_picture_url: true } } }
+      })
+    : [];
+
+  const authorMap: Record<string, { full_name: string; profile_picture_url?: string | null }> = {};
+  
+  directEmployees.forEach(e => {
+    authorMap[e.id] = { full_name: e.full_name, profile_picture_url: e.profile_picture_url };
+  });
+  
+  appUsers.forEach(u => {
+    authorMap[u.id.toString()] = { 
+      full_name: u.employee?.full_name || u.email || "System", 
+      profile_picture_url: u.employee?.profile_picture_url 
+    };
+  });
+
+  // Build quick lookup maps so each comment can resolve its entity title
+  const objectiveMap: Record<number, string> = {};
+  objectives.forEach((o) => { objectiveMap[o.id] = o.title; });
+  const krMap: Record<number, { title: string; objectiveTitle: string }> = {};
+  objectives.forEach((o) =>
+    o.keyResults.forEach((kr) => {
+      krMap[kr.id] = { title: kr.title, objectiveTitle: o.title };
+    }),
+  );
+
+  const formattedComments = recentComments.map((c) => {
+    const author = authorMap[c.author_id];
+    let entityTitle: string | null = null;
+    let parentTitle: string | null = null;
+    if (c.entity_type === "EMPLOYEE_KR") {
+      entityTitle = krMap[c.entity_id]?.title ?? null;
+      parentTitle = krMap[c.entity_id]?.objectiveTitle ?? null;
+    } else if (c.entity_type === "EMPLOYEE_OBJECTIVE") {
+      entityTitle = objectiveMap[c.entity_id] ?? null;
+    }
+    return {
+      id: c.id,
+      comment: c.content,
+      createdAt: c.created_at,
+      entityType: c.entity_type,
+      entityTitle,
+      parentTitle,
+      reviewerName: author?.full_name || "System",
+      reviewerAvatar: author?.profile_picture_url,
+    };
+  });
+
+  // 4. KR Confidence Distribution
+  const allKRs = objectives.flatMap((o) => o.keyResults);
+  const confidenceSignals = allKRs.map((kr) => {
+    const latestUpdate = kr.progressUpdates[0];
+    return latestUpdate?.confidence_level || null;
+  });
+
+  const confidenceStats = {
+    on_track: confidenceSignals.filter((s) => s === "ON_TRACK").length,
+    at_risk: confidenceSignals.filter((s) => s === "AT_RISK").length,
+    off_track: confidenceSignals.filter((s) => s === "OFF_TRACK").length,
+    not_reported: confidenceSignals.filter((s) => !s).length,
+  };
+
+  // 5. Adoption Stats
+  // chosen_parent_kr_id or chosen_parent_employee_kr_id being set means cascaded from a company/dept KR.
+  // Every EmployeeObjective has kr_contributor_id (non-nullable), so that field cannot be used.
+  const adoptedObjectivesCount = objectives.filter(
+    (o) => o.chosen_parent_kr_id != null || o.chosen_parent_employee_kr_id != null,
+  ).length;
+  const personalObjectivesCount = totalObjectives - adoptedObjectivesCount;
+
+  return {
+    cycleId,
+    summary: {
+      avgProgress: Number(avgProgress.toFixed(2)),
+      totalObjectives,
+      totalKRs: allKRs.length,
+      planningCompliance: {
+        monthlyPlans,
+        weeklyPlans,
+        dailyPlans,
+      },
+    },
+    confidenceStats,
+    recentComments: formattedComments,
+    adoption: {
+      adopted: adoptedObjectivesCount,
+      personal: personalObjectivesCount,
+    },
   };
 }

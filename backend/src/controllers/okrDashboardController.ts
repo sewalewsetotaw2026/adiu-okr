@@ -175,37 +175,100 @@ export async function getCompletionStatusCtrl(req: Request, res: Response) {
 // ─── Trigger Full Rollup ──────────────────────────────────────────────────────
 
 export async function triggerRollupRefresh(req: Request, res: Response) {
+  const companyId = req.user!.company_id;
+  const cycleId = Number(req.body.cycle_id);
+  if (!cycleId)
+    return res
+      .status(400)
+      .json({ status: "fail", message: "cycle_id is required." });
+
+  // Respond immediately — rollup is CPU/DB-heavy and would exceed the 30s client timeout.
+  res.status(202).json({
+    status: "success",
+    message: "Rollup refresh started. Dashboard data will update shortly.",
+  });
+
+  // Run in background after response is sent.
+  refreshFullRollup(companyId, cycleId).catch((err) => {
+    console.error(`[RollupRefresh] cycle=${cycleId} failed:`, err.message);
+  });
+}
+
+// ─── Generate Snapshot ────────────────────────────────────────────────────────
+
+export async function generateSnapshotCtrl(req: Request, res: Response) {
+  const companyId = req.user!.company_id;
+  const cycleId = Number(req.body.cycle_id);
+  const actorId = req.user!.user_id;
+  if (!cycleId)
+    return res
+      .status(400)
+      .json({ status: "fail", message: "cycle_id is required." });
+
+  // Respond immediately — snapshot runs a full rollup + DB writes per dept and would exceed client timeout.
+  res.status(202).json({
+    status: "success",
+    message: "Snapshot generation started. It will appear in Snapshot History shortly.",
+  });
+
+  // Run in background after response is sent.
+  dashboardService
+    .generateSnapshot(companyId, cycleId, actorId)
+    .catch((err) => {
+      console.error(`[GenerateSnapshot] cycle=${cycleId} failed:`, err.message);
+    });
+}
+
+// ─── Get Snapshots ──────────────────────────────────────────────────────────
+
+export async function getSnapshotsCtrl(req: Request, res: Response) {
   try {
     const companyId = req.user!.company_id;
-    const cycleId = Number(req.body.cycle_id);
+    const cycleId = Number(req.query.cycle_id);
     if (!cycleId)
       return res
         .status(400)
         .json({ status: "fail", message: "cycle_id is required." });
 
-    const data = await refreshFullRollup(companyId, cycleId);
+    const data = await prisma.okrScoreSnapshot.findMany({
+      where: {
+        company_id: companyId,
+        cycle_id: cycleId,
+        scope_level: "COMPANY",
+      },
+      orderBy: { snapshot_date: "asc" },
+    });
     return res.json({ status: "success", data });
   } catch (err: any) {
     return res.status(500).json({ status: "error", message: err.message });
   }
 }
 
-// ─── Generate Snapshot ────────────────────────────────────────────────────────
+// ─── Employee Overview ────────────────────────────────────────────────────────
 
-export async function generateSnapshotCtrl(req: Request, res: Response) {
+export async function getEmployeeOverview(req: Request, res: Response) {
   try {
+    // EmployeeObjective.user_id references AppUser.employee_id (not AppUser.id)
+    // Plans (monthlyPlan/weeklyPlan/dailyPlan) owner_id also stores employee_id.
+    const employeeId = req.user!.employee_id;
     const companyId = req.user!.company_id;
-    const cycleId = Number(req.body.cycle_id);
-    const actorId = req.user!.user_id;
-    if (!cycleId)
+    const cycleId = Number(req.query.cycle_id);
+
+    if (!cycleId) {
       return res
         .status(400)
         .json({ status: "fail", message: "cycle_id is required." });
+    }
+    if (!employeeId) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "No employee profile linked to this account." });
+    }
 
-    const data = await dashboardService.generateSnapshot(
+    const data = await dashboardService.getEmployeeOverview(
+      employeeId,
       companyId,
       cycleId,
-      actorId,
     );
     return res.json({ status: "success", data });
   } catch (err: any) {

@@ -185,12 +185,9 @@ export const createKeyResult = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
-      is_direct,
       is_mandatory,
       assign_user_ids,
       assign_department_ids,
-      assignUserIds,
-      assignDepartmentIds,
     } = req.body;
 
     if (!title)
@@ -209,10 +206,9 @@ export const createKeyResult = async (
       weightPercent: weight_percent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
-      isDirect: is_direct,
       isMandatory: is_mandatory,
-      assignUserIds: assign_user_ids || assignUserIds,
-      assignDepartmentIds: assign_department_ids || assignDepartmentIds,
+      assignUserIds: assign_user_ids,
+      assignDepartmentIds: assign_department_ids,
       createdBy: req.user!.user_id,
     });
 
@@ -247,12 +243,9 @@ export const updateKeyResult = async (
       weight_percent,
       contributes_to_score,
       contributes_to_value,
-      is_direct,
       is_mandatory,
       assign_user_ids,
       assign_department_ids,
-      assignUserIds,
-      assignDepartmentIds,
     } = req.body;
 
     const kr = await companyService.updateKeyResult(id, req.user!.company_id, {
@@ -264,10 +257,9 @@ export const updateKeyResult = async (
       weightPercent: weight_percent,
       contributesToScore: contributes_to_score,
       contributesToValue: contributes_to_value,
-      isDirect: is_direct,
       isMandatory: is_mandatory,
-      assignUserIds: assign_user_ids || assignUserIds,
-      assignDepartmentIds: assign_department_ids || assignDepartmentIds,
+      assignUserIds: assign_user_ids,
+      assignDepartmentIds: assign_department_ids,
     });
 
     res.status(200).json({ status: "success", data: kr });
@@ -349,40 +341,35 @@ export const assignUsers = async (
 ) => {
   try {
     const krId = parsePositiveInt(req.params.id);
-    const { user_ids, department_ids, userIds, departmentIds } = req.body;
+    const { user_ids } = req.body;
     if (krId === null) {
       return res
         .status(400)
         .json({ status: "fail", message: "id must be a positive integer." });
     }
 
-    const finalUserIds = user_ids || userIds;
-    const finalDeptIds = department_ids || departmentIds;
-
-    const hasUsers =
-      finalUserIds && Array.isArray(finalUserIds) && finalUserIds.length > 0;
-    const hasDepts =
-      finalDeptIds && Array.isArray(finalDeptIds) && finalDeptIds.length > 0;
-
-    if (!hasUsers && !hasDepts) {
-      return res.status(400).json({
-        status: "fail",
-        message: "user_ids or department_ids array is required.",
-      });
+    if (!user_ids || !Array.isArray(user_ids) || user_ids.length === 0) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "user_ids array is required." });
     }
 
-    const normalizedUserIds = hasUsers
-      ? finalUserIds
-          .map((id: unknown) => String(id).trim())
-          .filter((id: string) => id.length > 0)
-      : [];
+    const normalizedUserIds = user_ids
+      .map((id: unknown) => String(id).trim())
+      .filter((id) => id.length > 0);
+
+    if (normalizedUserIds.length === 0) {
+      return res.status(400).json({
+        status: "fail",
+        message: "user_ids must contain valid user identifiers.",
+      });
+    }
 
     const results = await companyService.assignUsers(
       krId,
       req.user!.company_id,
       normalizedUserIds,
       req.user!.user_id,
-      finalDeptIds,
     );
 
     res.status(200).json({ status: "success", data: results });
@@ -395,6 +382,58 @@ export const assignUsers = async (
   }
 };
 
+export const assignDepartments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const krId = parsePositiveInt(req.params.id);
+    const { department_ids } = req.body;
+    if (krId === null) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "id must be a positive integer." });
+    }
+
+    if (!Array.isArray(department_ids) || department_ids.length === 0) {
+      return res.status(400).json({
+        status: "fail",
+        message: "department_ids array is required.",
+      });
+    }
+
+    const departmentIds = department_ids
+      .map((id: unknown) => Number(id))
+      .filter((id: number) => Number.isFinite(id) && id > 0);
+
+    if (departmentIds.length === 0) {
+      return res.status(400).json({
+        status: "fail",
+        message: "department_ids must contain valid numeric IDs.",
+      });
+    }
+
+    const results = await companyService.assignDepartments(
+      krId,
+      req.user!.company_id,
+      departmentIds,
+      req.user!.user_id,
+    );
+
+    res.status(200).json({ status: "success", data: results });
+  } catch (error: any) {
+    if (error.message?.includes("not found"))
+      return res.status(404).json({ status: "fail", message: error.message });
+    if (
+      error.message?.includes("department") ||
+      error.message?.includes("head")
+    )
+      return res.status(400).json({ status: "fail", message: error.message });
+    next(error);
+  }
+};
+
 export const listAvailableCompanyKRs = async (
   req: Request,
   res: Response,
@@ -402,19 +441,12 @@ export const listAvailableCompanyKRs = async (
 ) => {
   try {
     let cycleId = parseInt(req.query.cycle_id as string);
-    const queryUserId = req.query.user_id as string;
-    const departmentId = parseInt(req.query.department_id as string);
-
-    let userId = queryUserId || (req.user as any)?.employee_id || req.user?.user_id;
-
-    if (!userId && departmentId) {
-      const heads = await companyService.resolveDepartmentHeads(req.user!.company_id, [departmentId]);
-      if (heads.length > 0) {
-        userId = heads[0];
-      }
-    }
-
-    if (!userId) {
+    const userId = req.query.user_id as string | undefined;
+    const departmentIdRaw = req.query.department_id as string | undefined;
+    const departmentId = departmentIdRaw
+      ? parseInt(departmentIdRaw)
+      : undefined;
+    if (!userId && !departmentId) {
       return res.status(400).json({
         status: "fail",
         message: "user_id or department_id query param required.",
@@ -437,6 +469,7 @@ export const listAvailableCompanyKRs = async (
       req.user!.company_id,
       cycleId,
       userId,
+      departmentId,
     );
     res.status(200).json({
       status: "success",

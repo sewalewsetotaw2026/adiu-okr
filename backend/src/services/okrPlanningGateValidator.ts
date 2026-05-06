@@ -42,7 +42,7 @@ export async function validateMonthSequence(
   if (layer === "DEPARTMENT") {
     const previousMonth = await prisma.employeeMonthPlan.findFirst({
       where: {
-        employeeObjective: { chosen_parent_kr_id: parentKrId },
+        employeeKr: { employeeObjective: { chosen_parent_kr_id: parentKrId } },
         month_number: expectedPreviousMonth,
       },
     });
@@ -183,9 +183,13 @@ export async function validateWeekSequence(
 ) {
   if (weekNumber === 1) return; // week 1 always allowed
 
-  // Check if weekNumber - 1 exists
+  // Check if weekNumber - 1 exists. Weekly plans are now children of monthly plans,
+  // so traverse via monthPlan.employee_kr_id.
   const prevWeek = await prisma.weeklyPlan.findFirst({
-    where: { employee_kr_id: employeeKrId, week_number: weekNumber - 1 },
+    where: {
+      week_number: weekNumber - 1,
+      monthPlan: { employee_kr_id: employeeKrId },
+    },
   });
 
   if (!prevWeek) {

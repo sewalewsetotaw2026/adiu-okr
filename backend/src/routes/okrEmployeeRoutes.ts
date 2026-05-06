@@ -15,31 +15,11 @@ import {
   submitEmployeeKeyResult,
   bulkSubmitEmployee,
   bulkPublishEmployee,
-  bulkSubmitEmployeePlanning,
-  bulkPublishEmployeePlanning,
   selectExecutionMode,
-  createEmployeeMonthPlan,
-  createEmployeeKRMonthPlan,
-  updateEmployeeMonthPlan,
-  deleteEmployeeMonthPlan,
-  listEmployeeMonthPlans,
-  listEmployeeKRMonthPlans,
-  addMonthPlanItem,
-  removeMonthPlanItem,
-  createWeeklyPlan,
-  createWeeklyPlans,
-  updateWeeklyPlan,
-  deleteWeeklyPlan,
-  listWeeklyPlans,
   createSubtask,
   updateSubtask,
   deleteSubtask,
   listSubtasks,
-  createDailyPlan,
-  createDailyPlans,
-  updateDailyPlan,
-  deleteDailyPlan,
-  listDailyPlans,
   submitProgressUpdate,
   listProgressHistory,
 } from "src/controllers/okrEmployeeController";
@@ -69,8 +49,10 @@ router.patch("/objectives/:id/publish", publishEmployeeObjective);
 // ─── Bulk Actions ─────────────────────────────────────────────────────────────
 router.patch("/bulk-submit", bulkSubmitEmployee);
 router.patch("/bulk-publish", bulkPublishEmployee);
-router.patch("/bulk-submit-plans", bulkSubmitEmployeePlanning);
-router.patch("/bulk-publish-plans", bulkPublishEmployeePlanning);
+// /bulk-submit-plans and /bulk-publish-plans removed in the OKR Planning Overhaul.
+// Period-level approval lives at:
+//   POST /api/v1/okr/monthly-plans/submit-period
+//   POST /api/v1/okr/weekly-plans/submit-period
 
 // ─── Employee Key Results ─────────────────────────────────────────────────────
 router.post("/objectives/:id/key-results", createEmployeeKR);
@@ -80,37 +62,20 @@ router.delete("/key-results/:id", deleteEmployeeKR);
 router.patch("/key-results/:id/submit", submitEmployeeKeyResult);
 router.patch("/key-results/:id/publish", publishEmployeeKeyResult);
 router.patch("/key-results/:id/execution-mode", selectExecutionMode);
-router.post("/key-results/:id/month-plans", createEmployeeKRMonthPlan);
-router.get("/key-results/:id/month-plans", listEmployeeKRMonthPlans);
 
-// ─── Employee Month Plans ─────────────────────────────────────────────────────
-router.post("/objectives/:id/month-plans", createEmployeeMonthPlan);
-router.get("/objectives/:id/month-plans", listEmployeeMonthPlans);
-router.put("/month-plans/:id", updateEmployeeMonthPlan);
-router.delete("/month-plans/:id", deleteEmployeeMonthPlan);
-router.post("/month-plans/:id/items", addMonthPlanItem);
-router.delete("/month-plans/:id/items/:itemId", removeMonthPlanItem);
+// ─── Legacy planning endpoints REMOVED ────────────────────────────────────
+// The following endpoints were removed in the OKR Planning Overhaul (Phase 8):
+//   POST /okr/employee/objectives/:id/month-plans (wrong parent: Objective)
+//   POST /okr/employee/key-results/:id/weekly-plans (wrong parent: KR)
+//   POST /okr/employee/month-plans/:id/items
+//   GET/PUT/DELETE /okr/employee/month-plans, weekly-plans, daily-plans
+// Use the corrected routes mounted under /api/v1/okr (see okrPlanningRoutes).
 
-// ─── Weekly Plans ─────────────────────────────────────────────────────────────
-router.post("/key-results/:id/weekly-plans", createWeeklyPlan);
-router.get("/key-results/:id/weekly-plans", listWeeklyPlans);
-router.post("/month-plans/:id/weekly-plans", createWeeklyPlans);
-router.put("/weekly-plans/:id", updateWeeklyPlan);
-router.delete("/weekly-plans/:id", deleteWeeklyPlan);
-
-// ─── Subtasks ─────────────────────────────────────────────────────────────────
+// ─── Subtasks ──────────────────────────────────────────────────────────────────────
 router.post("/key-results/:id/subtasks", createSubtask);
 router.get("/key-results/:id/subtasks", listSubtasks);
 router.put("/subtasks/:id", updateSubtask);
 router.delete("/subtasks/:id", deleteSubtask);
-
-// ─── Daily Plans ───────────────────────────────────────────────────────────────
-router.post("/weekly-plans/batch/daily-plans", createDailyPlans);
-router.post("/weekly-plans/:id/daily-plans", createDailyPlan);
-router.get("/weekly-plans/:id/daily-plans", listDailyPlans);
-router.put("/daily-plans/:id", updateDailyPlan);
-router.patch("/daily-plans/:id", updateDailyPlan);
-router.delete("/daily-plans/:id", deleteDailyPlan);
 
 // ─── Progress Updates ─────────────────────────────────────────────────────────
 router.post("/key-results/:id/progress", submitProgressUpdate);

@@ -18,8 +18,10 @@ function pickLatestConfidenceSignal(
 async function getManagedEmployeeIds(
   managerId: string,
   companyId: number,
-  recursive: boolean = true,
+  options?: { directOnly?: boolean },
 ) {
+  const directOnly = options?.directOnly ?? true; // Default: 1-level hierarchy
+
   // Total ID Resolution for Manager
   const manager = await prisma.appUser.findFirst({
     where: { id: Number(managerId), company_id: companyId },
@@ -32,16 +34,19 @@ async function getManagedEmployeeIds(
     managerIds.push(manager.employee_id);
   }
 
-  let allTargetManagerIds = [...managerIds];
+  let allTargetManagerIds: string[];
 
-  if (recursive) {
-    // Fetch recursive subordinates
+  if (directOnly) {
+    // Strict 1-level hierarchy: only direct reports
+    allTargetManagerIds = [...managerIds];
+  } else {
+    // Recursive subordinates (for dashboards, admin views)
     const subordinateIds = await getAllSubordinateIds(
       manager?.employee_id || managerId,
       companyId,
     );
     allTargetManagerIds = Array.from(
-      new Set([...allTargetManagerIds, ...subordinateIds]),
+      new Set([...managerIds, ...subordinateIds]),
     );
   }
 
@@ -56,29 +61,17 @@ async function getManagedEmployeeIds(
       employee: {
         select: { id: true, full_name: true },
       },
-      department: {
-        select: { name: true },
-      },
-      jobTitle: {
-        select: { title: true },
-      },
     },
   });
 
-  // Deduplicate by employee_id to avoid multiple active employments causing duplicates
-  const uniqueEmployees = new Map();
+  // Deduplicate by employee_id (Account ID or Employee ID string)
+  const map = new Map<string, { id: string; full_name: string }>();
   for (const emp of employments) {
-    if (emp.employee && !uniqueEmployees.has(emp.employee_id)) {
-      uniqueEmployees.set(emp.employee_id, {
-        id: emp.employee.id,
-        full_name: emp.employee.full_name,
-        department_name: emp.department?.name || "No Department",
-        job_title: emp.jobTitle?.title || "No Job Title",
-      });
+    if (!map.has(emp.employee_id)) {
+      map.set(emp.employee_id, emp.employee);
     }
   }
-
-  return Array.from(uniqueEmployees.values());
+  return Array.from(map.values());
 }
 
 // ─── Subordinate Job Titles ───────────────────────────────────────────────────
@@ -130,6 +123,44 @@ export async function listSubordinatePositions(
   }));
 }
 
+// ─── Team Health Summary ──────────────────────────────────────────────────────
+
+export async function getTeamHealthSummary(
+  managerId: string,
+  companyId: number,
+) {
+  const managed = await getManagedEmployeeIds(managerId, companyId, {
+    directOnly: false,
+  });
+  const managedIds = managed.map((e) => e.id);
+
+  if (managedIds.length === 0) {
+    return { hasUnsubmittedPlans: false };
+  }
+
+  const activeCycle = await prisma.okrCycle.findFirst({
+    where: { company_id: companyId, status: "OPEN" },
+    select: { id: true },
+    orderBy: { start_date: "desc" },
+  });
+
+  if (!activeCycle) {
+    return { hasUnsubmittedPlans: false };
+  }
+
+  const pendingObjective = await prisma.employeeObjective.findFirst({
+    where: {
+      company_id: companyId,
+      cycle_id: activeCycle.id,
+      user_id: { in: managedIds },
+      status_code: { in: ["submitted", "pending_approval"] },
+    },
+    select: { id: true },
+  });
+
+  return { hasUnsubmittedPlans: !!pendingObjective };
+}
+
 // ─── Team Execution Summary ───────────────────────────────────────────────────
 
 export async function getTeamExecutionSummary(
@@ -137,15 +168,48 @@ export async function getTeamExecutionSummary(
   companyId: number,
   cycleId: number,
 ) {
-  const managedEmployees = await getManagedEmployeeIds(managerId, companyId);
+  const planCountSelect = {
+    monthlyPlans: true,
+    subtasks: true,
+    progressUpdates: true,
+  } as any;
+
+  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
+    directOnly: false,
+  });
   const managedIds = managedEmployees.map((e) => e.id);
 
   if (managedIds.length === 0) {
     return { cycle_id: cycleId, team_size: 0, team: [] };
   }
 
+  // Fetch employment details (job_title, department) for each managed employee
+  const employments = await prisma.employment.findMany({
+    where: {
+      company_id: companyId,
+      is_active: true,
+      employee_id: { in: managedIds },
+    },
+    include: {
+      jobTitle: { select: { title: true } },
+      department: { select: { name: true } },
+    },
+  });
+  const employmentByEmployeeId = new Map<
+    string,
+    { job_title: string; department_name: string }
+  >();
+  for (const emp of employments) {
+    if (!employmentByEmployeeId.has(emp.employee_id)) {
+      employmentByEmployeeId.set(emp.employee_id, {
+        job_title: emp.jobTitle?.title ?? "No Title",
+        department_name: emp.department?.name ?? "No Department",
+      });
+    }
+  }
+
   // Get all employee objectives for these managed employees
-  const objectives = await prisma.employeeObjective.findMany({
+  const objectives = (await prisma.employeeObjective.findMany({
     where: {
       company_id: companyId,
       cycle_id: cycleId,
@@ -155,23 +219,18 @@ export async function getTeamExecutionSummary(
       keyResults: {
         include: {
           _count: {
-            select: {
-              monthPlanItems: true,
-              weeklyPlans: true,
-              subtasks: true,
-              progressUpdates: true,
-            },
+            select: planCountSelect,
           },
-          weeklyPlans: {
+          monthlyPlans: {
             select: {
-              week_number: true,
-              progress_percent: true,
-              target_value: true,
-              current_value: true,
-              confidence_level: true,
-              updated_at: true,
-              tasks: {
+              month_number: true,
+              progress_pct: true,
+              weeklyPlans: {
                 select: {
+                  week_number: true,
+                  progress_pct: true,
+                  confidence_level: true,
+                  updated_at: true,
                   dailyPlans: {
                     select: { confidence_level: true, updated_at: true },
                   },
@@ -189,35 +248,29 @@ export async function getTeamExecutionSummary(
           },
         },
       },
-      monthPlans: {
-        select: {
-          month_number: true,
-          progress_percent: true,
-          target_value: true,
-          current_value: true,
-        },
-      },
     },
-  });
+  })) as any[];
 
   // Aggregate per employee
   const teamSummary = managedEmployees.map((employee) => {
     const empObjectives = objectives.filter((o) => o.user_id === employee.id);
-    const allKRs = empObjectives.flatMap((o) => o.keyResults);
+    const allKRs = empObjectives.flatMap((o: any) => o.keyResults);
 
     const totalKRs = allKRs.length;
-    const draftKRs = allKRs.filter((kr) => kr.status_code === "draft").length;
-    const activeKRs = allKRs.filter((kr) =>
+    const draftKRs = allKRs.filter(
+      (kr: any) => kr.status_code === "draft",
+    ).length;
+    const activeKRs = allKRs.filter((kr: any) =>
       ["approved", "published", "in_progress"].includes(kr.status_code),
     ).length;
     const totalProgressUpdates = allKRs.reduce(
-      (sum, kr) => sum + kr._count.progressUpdates,
+      (sum: number, kr: any) => sum + kr._count.progressUpdates,
       0,
     );
 
     // Latest confidence per KR from all measurable entities
     const latestUpdates = allKRs
-      .map((kr) => {
+      .map((kr: any) => {
         const signals: Array<{
           confidence_level: string | null;
           observed_at: Date;
@@ -229,13 +282,13 @@ export async function getTeamExecutionSummary(
             observed_at: p.created_at,
           });
         }
-        for (const w of kr.weeklyPlans) {
-          signals.push({
-            confidence_level: w.confidence_level,
-            observed_at: w.updated_at,
-          });
-          for (const task of w.tasks) {
-            for (const ms of task.dailyPlans) {
+        for (const mp of kr.monthlyPlans) {
+          for (const w of mp.weeklyPlans) {
+            signals.push({
+              confidence_level: w.confidence_level,
+              observed_at: w.updated_at,
+            });
+            for (const ms of w.dailyPlans) {
               signals.push({
                 confidence_level: ms.confidence_level,
                 observed_at: ms.updated_at,
@@ -255,86 +308,97 @@ export async function getTeamExecutionSummary(
       .filter(Boolean);
 
     const confidenceCounts = {
-      on_track: latestUpdates.filter((u) => u === "ON_TRACK").length,
-      at_risk: latestUpdates.filter((u) => u === "AT_RISK").length,
-      off_track: latestUpdates.filter((u) => u === "OFF_TRACK").length,
+      on_track: latestUpdates.filter((u: any) => u === "ON_TRACK").length,
+      at_risk: latestUpdates.filter((u: any) => u === "AT_RISK").length,
+      off_track: latestUpdates.filter((u: any) => u === "OFF_TRACK").length,
     };
 
-    const weeklyProgressAgg: Record<number, { sum: number, count: number }> = {};
-    const monthlyProgressAgg: Record<number, { sum: number, count: number }> = {};
+    // Quarterly progress (average final_score across all employee objectives)
+    const progress =
+      empObjectives.length > 0
+        ? empObjectives.reduce(
+            (s: number, o: any) => s + Number(o.final_score ?? 0),
+            0,
+          ) / empObjectives.length
+        : 0;
 
-    empObjectives.forEach((o) => {
-      // Monthly aggregation
-      o.monthPlans.forEach((mp) => {
-        const mNum = mp.month_number;
-        let val = 0;
-        if (mp.progress_percent != null) {
-          val = Number(mp.progress_percent.toString());
-        } else {
-          const tgt = Number(mp.target_value?.toString() ?? "0");
-          const cur = Number(mp.current_value?.toString() ?? "0");
-          if (tgt > 0) val = (cur / tgt) * 100;
+    // Quarterly indirect progress
+    const indirect_progress =
+      empObjectives.length > 0
+        ? empObjectives.reduce(
+            (s: number, o: any) => s + Number(o.indirect_score ?? 0),
+            0,
+          ) / empObjectives.length
+        : 0;
+
+    // Build monthly_progress map: { [month_number]: avg progress_pct across all KRs' monthly plans }
+    const monthlyMap: Record<number, { sum: number; count: number }> = {};
+    for (const kr of allKRs) {
+      for (const mp of kr.monthlyPlans) {
+        const m = Number(mp.month_number);
+        if (!monthlyMap[m]) monthlyMap[m] = { sum: 0, count: 0 };
+        monthlyMap[m].sum += Number(mp.progress_pct ?? 0);
+        monthlyMap[m].count += 1;
+      }
+    }
+    const monthly_progress: Record<number, number> = {};
+    for (const [m, { sum, count }] of Object.entries(monthlyMap)) {
+      monthly_progress[Number(m)] =
+        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+    }
+
+    // Build weekly_progress map: { [week_number]: avg progress_pct across all weekly plans }
+    const weeklyMap: Record<number, { sum: number; count: number }> = {};
+    for (const kr of allKRs) {
+      for (const mp of kr.monthlyPlans) {
+        for (const wp of mp.weeklyPlans) {
+          const w = Number(wp.week_number);
+          if (!weeklyMap[w]) weeklyMap[w] = { sum: 0, count: 0 };
+          weeklyMap[w].sum += Number(wp.progress_pct ?? 0);
+          weeklyMap[w].count += 1;
         }
-        if (!monthlyProgressAgg[mNum]) monthlyProgressAgg[mNum] = { sum: 0, count: 0 };
-        monthlyProgressAgg[mNum].sum += val;
-        monthlyProgressAgg[mNum].count += 1;
-      });
-    });
+      }
+    }
+    const weekly_progress: Record<number, number> = {};
+    for (const [w, { sum, count }] of Object.entries(weeklyMap)) {
+      weekly_progress[Number(w)] =
+        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+    }
 
-    allKRs.forEach((kr) => {
-      // Weekly aggregation
-      kr.weeklyPlans.forEach((wp: any) => {
-        const wNum = wp.week_number;
-        let val = 0;
-        if (wp.progress_percent != null) {
-          val = Number(wp.progress_percent.toString());
-        } else {
-          const tgt = Number(wp.target_value?.toString() ?? "0");
-          const cur = Number(wp.current_value?.toString() ?? "0");
-          if (tgt > 0) val = (cur / tgt) * 100;
-        }
-        if (!weeklyProgressAgg[wNum]) weeklyProgressAgg[wNum] = { sum: 0, count: 0 };
-        weeklyProgressAgg[wNum].sum += val;
-        weeklyProgressAgg[wNum].count += 1;
-      });
-    });
-
-    const weekly_progress = Object.fromEntries(
-      Object.entries(weeklyProgressAgg).map(([w, data]) => [w, data.count > 0 ? data.sum / data.count : 0])
-    );
-    const monthly_progress = Object.fromEntries(
-      Object.entries(monthlyProgressAgg).map(([m, data]) => [m, data.count > 0 ? data.sum / data.count : 0])
-    );
+    const empInfo = employmentByEmployeeId.get(employee.id) ?? {
+      job_title: "No Title",
+      department_name: "No Department",
+    };
 
     return {
       id: employee.id,
       employee_id: employee.id,
       employee_name: employee.full_name,
-      department_name: (employee as any).department_name || "No Department",
-      job_title: (employee as any).job_title || "No Job Title",
+      job_title: empInfo.job_title,
+      department_name: empInfo.department_name,
       objective_title: empObjectives[0]?.title ?? "—",
       objectives_count: empObjectives.length,
       objectives_status: {
-        draft: empObjectives.filter((o) => o.status_code === "draft").length,
-        submitted: empObjectives.filter((o) => o.status_code === "submitted")
+        draft: empObjectives.filter((o: any) => o.status_code === "draft")
           .length,
-        approved: empObjectives.filter((o) => o.status_code === "approved")
+        submitted: empObjectives.filter(
+          (o: any) => o.status_code === "submitted",
+        ).length,
+        approved: empObjectives.filter((o: any) => o.status_code === "approved")
           .length,
-        published: empObjectives.filter((o) => o.status_code === "published")
-          .length,
+        published: empObjectives.filter(
+          (o: any) => o.status_code === "published",
+        ).length,
       },
       total_krs: totalKRs,
       draft_krs: draftKRs,
       active_krs: activeKRs,
-      progress:
-        empObjectives.length > 0
-          ? empObjectives.reduce((s, o) => s + Number(o.progress_percent ?? 0), 0) /
-          empObjectives.length
-          : 0,
-      weekly_progress,
-      weeklyProgress: weekly_progress, // alias
+      progress,
+      indirect_progress,
       monthly_progress,
-      monthlyProgress: monthly_progress, // alias
+      weekly_progress,
+      indirect_monthly_progress: {},
+      indirect_weekly_progress: {},
       progress_updates_count: totalProgressUpdates,
       confidence: confidenceCounts,
       is_blocked:
@@ -357,49 +421,47 @@ export async function listPendingApprovals(
   cycleId: number,
   role?: string,
 ) {
-  const managedEmployees = await getManagedEmployeeIds(
-    managerId,
-    companyId,
-    false,
-  );
+  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
+    directOnly: false,
+  });
   const managedIds = managedEmployees.map((e) => e.id);
 
   // Get pending employee objectives (status = "submitted")
   const pendingObjectives =
     managedIds.length > 0
       ? await prisma.employeeObjective.findMany({
-        where: {
-          company_id: companyId,
-          cycle_id: cycleId,
-          user_id: { in: managedIds },
-          status_code: { in: ["submitted", "pending_approval"] },
-        },
-        include: {
-          keyResults: {
-            select: { id: true, title: true, status_code: true },
+          where: {
+            company_id: companyId,
+            cycle_id: cycleId,
+            user_id: { in: managedIds },
+            status_code: { in: ["submitted", "pending_approval"] },
           },
-        },
-      })
+          include: {
+            keyResults: {
+              select: { id: true, title: true, status_code: true },
+            },
+          },
+        })
       : [];
 
   // Get pending employee KRs (submitted for approval)
   const pendingKRs =
     managedIds.length > 0
       ? await prisma.employeeKeyResult.findMany({
-        where: {
-          company_id: companyId,
-          status_code: { in: ["submitted", "pending_approval"] },
-          employeeObjective: {
-            cycle_id: cycleId,
-            user_id: { in: managedIds },
+          where: {
+            company_id: companyId,
+            status_code: { in: ["submitted", "pending_approval"] },
+            employeeObjective: {
+              cycle_id: cycleId,
+              user_id: { in: managedIds },
+            },
           },
-        },
-        include: {
-          employeeObjective: {
-            select: { id: true, user_id: true, title: true },
+          include: {
+            employeeObjective: {
+              select: { id: true, user_id: true, title: true },
+            },
           },
-        },
-      })
+        })
       : [];
 
   const pendingObjectiveIds = pendingObjectives.map((o) => o.id);
@@ -407,79 +469,43 @@ export async function listPendingApprovals(
 
   // Get pending month plans for managed employees
   const pendingMonthPlans =
-    managedIds.length > 0
+    pendingObjectiveIds.length > 0
       ? await prisma.employeeMonthPlan.findMany({
-        where: {
-          company_id: companyId,
-          status_code: { in: ["submitted", "pending_approval"] },
-          employeeObjective: {
-            user_id: { in: managedIds },
-            cycle_id: cycleId,
-          },
-        },
-        include: {
-          employeeObjective: {
-            select: { id: true, user_id: true, title: true },
-          },
-        },
-      })
+          where: {
+            company_id: companyId,
+            status_code: { in: ["submitted", "pending_approval"] },
+            ...({ employee_objective_id: { in: pendingObjectiveIds } } as any),
+          } as any,
+        })
       : [];
 
   // Get pending weekly plans for managed employees
   const pendingWeeklyPlans =
-    managedIds.length > 0
+    pendingKrIds.length > 0
       ? await prisma.weeklyPlan.findMany({
-        where: {
-          company_id: companyId,
-          status_code: { in: ["submitted", "pending_approval"] },
-          employeeKr: {
-            employeeObjective: {
-              user_id: { in: managedIds },
-              cycle_id: cycleId,
-            },
+          where: {
+            company_id: companyId,
+            monthPlan: { employee_kr_id: { in: pendingKrIds } },
+            plan_status: "SUBMITTED",
           },
-        },
-        include: {
-          employeeKr: {
-            select: { id: true, title: true, employeeObjective: { select: { user_id: true } } },
-          },
-        },
-      })
+          include: { monthPlan: { select: { employee_kr_id: true } } },
+        })
       : [];
+
+  const pendingWeeklyPlanIds = pendingWeeklyPlans.map((w) => w.id);
 
   // Get pending daily plans for managed employees
   const pendingDailyPlans =
-    managedIds.length > 0
+    pendingWeeklyPlanIds.length > 0
       ? await prisma.dailyPlan.findMany({
-        where: {
-          company_id: companyId,
-          status_code: { in: ["submitted", "pending_approval"] },
-          weeklyTask: {
-            weeklyPlan: {
-              employeeKr: {
-                employeeObjective: {
-                  user_id: { in: managedIds },
-                  cycle_id: cycleId,
-                },
-              },
-            },
+          where: {
+            company_id: companyId,
+            weekly_plan_id: { in: pendingWeeklyPlanIds },
+            // Daily plans don't have a submission lifecycle in the new schema;
+            // surface in-progress / pending tasks for visibility.
+            status: { in: ["PENDING", "IN_PROGRESS"] },
           },
-        },
-        include: {
-          weeklyTask: {
-            include: {
-              weeklyPlan: {
-                select: {
-                  id: true,
-                  employeeKr: {
-                    select: { id: true, title: true, employeeObjective: { select: { user_id: true } } },
-                  },
-                },
-              },
-            },
-          },
-        },
-      })
+        })
       : [];
 
   // Create employee name map for easy lookup
@@ -488,6 +514,19 @@ export async function listPendingApprovals(
   // CEO/Admin review queue for Department Objectives (Legacy)
   // Replaced by Employee Objectives for Department Heads in the new model.
   const pendingDepartmentObjectives: any[] = [];
+
+  const objectiveUserMap = new Map(
+    pendingObjectives.map((o) => [o.id, o.user_id]),
+  );
+  const krUserMap = new Map(
+    pendingKRs.map((kr) => [kr.id, kr.employeeObjective.user_id]),
+  );
+  const weeklyUserMap = new Map(
+    pendingWeeklyPlans.map((w: any) => [
+      w.id,
+      krUserMap.get(w.monthPlan?.employee_kr_id) ?? "",
+    ]),
+  );
 
   return {
     pending_objectives: pendingObjectives.map((o) => ({
@@ -503,22 +542,24 @@ export async function listPendingApprovals(
     pending_month_plans: pendingMonthPlans.map((plan) => ({
       ...plan,
       employee_name:
-        nameMap.get(plan.employeeObjective?.user_id || "") ||
-        plan.employeeObjective?.user_id ||
+        nameMap.get(
+          objectiveUserMap.get((plan as any).employee_objective_id) || "",
+        ) ||
+        objectiveUserMap.get((plan as any).employee_objective_id) ||
         "—",
     })),
-    pending_weekly_plans: pendingWeeklyPlans.map((plan) => ({
+    pending_weekly_plans: pendingWeeklyPlans.map((plan: any) => ({
       ...plan,
       employee_name:
-        nameMap.get(plan.employeeKr?.employeeObjective?.user_id || "") ||
-        plan.employeeKr?.employeeObjective?.user_id ||
+        nameMap.get(krUserMap.get(plan.monthPlan?.employee_kr_id) || "") ||
+        krUserMap.get(plan.monthPlan?.employee_kr_id) ||
         "—",
     })),
     pending_daily_plans: pendingDailyPlans.map((plan) => ({
       ...plan,
       employee_name:
-        nameMap.get(plan.weeklyTask?.weeklyPlan?.employeeKr?.employeeObjective?.user_id || "") ||
-        plan.weeklyTask?.weeklyPlan?.employeeKr?.employeeObjective?.user_id ||
+        nameMap.get(weeklyUserMap.get(plan.weekly_plan_id) || "") ||
+        weeklyUserMap.get(plan.weekly_plan_id) ||
         "—",
     })),
     pending_department_objectives: pendingDepartmentObjectives,
@@ -577,7 +618,7 @@ export async function listPendingEmployeeObjectivesByDepartment(
     orderBy: { updated_at: "desc" },
     include: {
       contributor: {
-        select: { id: true, department_kr_id: true, role_type: true },
+        select: { id: true, role_type: true },
       },
       keyResults: {
         select: { id: true, title: true, status_code: true },
@@ -934,24 +975,6 @@ export async function processApprovalAction(input: ApprovalActionInput) {
         published_at: input.action === "PUBLISHED" ? new Date() : undefined,
       },
     });
-
-    // Cascade approval down to all child KRs
-    await prisma.employeeKeyResult.updateMany({
-      where: { 
-        employee_objective_id: input.entityId,
-        status_code: { in: ["draft", "submitted", "pending_approval"] } 
-      },
-      data: {
-        status_code: newStatus,
-        approved_by:
-          input.action === "APPROVED" || input.action === "PUBLISHED"
-            ? input.approverId
-            : undefined,
-        published_by:
-          input.action === "PUBLISHED" ? input.approverId : undefined,
-        published_at: input.action === "PUBLISHED" ? new Date() : undefined,
-      },
-    });
   } else if (input.entityType === "EMPLOYEE_KR") {
     const kr = await prisma.employeeKeyResult.findFirst({
       where: { id: input.entityId, company_id: input.companyId },
@@ -978,28 +1001,6 @@ export async function processApprovalAction(input: ApprovalActionInput) {
         published_at: input.action === "PUBLISHED" ? new Date() : undefined,
       },
     });
-
-    // Cascade approval UP to the parent Objective if it's pending (especially for adopted KRs)
-    if (kr.employee_objective_id) {
-      const parentObj = await prisma.employeeObjective.findUnique({
-        where: { id: kr.employee_objective_id }
-      });
-      if (parentObj && ["draft", "submitted", "pending_approval"].includes(parentObj.status_code)) {
-        await prisma.employeeObjective.update({
-          where: { id: parentObj.id },
-          data: {
-            status_code: newStatus,
-            approved_by:
-              input.action === "APPROVED" || input.action === "PUBLISHED"
-                ? input.approverId
-                : undefined,
-            published_by:
-              input.action === "PUBLISHED" ? input.approverId : undefined,
-            published_at: input.action === "PUBLISHED" ? new Date() : undefined,
-          },
-        });
-      }
-    }
   } else if (input.entityType === "EMPLOYEE_MONTH_PLAN") {
     const plan = await prisma.employeeMonthPlan.findFirst({
       where: { id: input.entityId, company_id: input.companyId },
@@ -1009,20 +1010,18 @@ export async function processApprovalAction(input: ApprovalActionInput) {
     await validateStatusTransition({
       companyId: input.companyId,
       entityType: "EMPLOYEE_MONTH_PLAN",
-      fromStatus: plan.status_code,
+      fromStatus: plan.plan_status,
       toStatus: newStatus,
     });
 
     await prisma.employeeMonthPlan.update({
       where: { id: input.entityId },
       data: {
-        status_code: newStatus,
-        approved_by:
+        plan_status: newStatus.toUpperCase() as any,
+        approved_at:
           input.action === "APPROVED" || input.action === "PUBLISHED"
-            ? input.approverId
+            ? new Date()
             : undefined,
-        published_by:
-          input.action === "PUBLISHED" ? input.approverId : undefined,
         published_at: input.action === "PUBLISHED" ? new Date() : undefined,
       },
     });
@@ -1035,20 +1034,18 @@ export async function processApprovalAction(input: ApprovalActionInput) {
     await validateStatusTransition({
       companyId: input.companyId,
       entityType: "WEEKLY_PLAN",
-      fromStatus: plan.status_code,
+      fromStatus: plan.plan_status,
       toStatus: newStatus,
     });
 
     await prisma.weeklyPlan.update({
       where: { id: input.entityId },
       data: {
-        status_code: newStatus,
-        approved_by:
+        plan_status: newStatus.toUpperCase() as any,
+        approved_at:
           input.action === "APPROVED" || input.action === "PUBLISHED"
-            ? input.approverId
+            ? new Date()
             : undefined,
-        published_by:
-          input.action === "PUBLISHED" ? input.approverId : undefined,
         published_at: input.action === "PUBLISHED" ? new Date() : undefined,
       },
     });
@@ -1061,14 +1058,14 @@ export async function processApprovalAction(input: ApprovalActionInput) {
     await validateStatusTransition({
       companyId: input.companyId,
       entityType: "DAILY_PLAN",
-      fromStatus: plan.status_code,
+      fromStatus: plan.status,
       toStatus: newStatus,
     });
 
     await prisma.dailyPlan.update({
       where: { id: input.entityId },
       data: {
-        status_code: newStatus,
+        status: newStatus.toUpperCase() as any,
       },
     });
   } else {
@@ -1108,392 +1105,425 @@ export async function processApprovalAction(input: ApprovalActionInput) {
   };
 }
 
-// ─── Planning Compliance Report ──────────────────────────────────────────────
+type PlanningInsightScope = "organization" | "department";
 
-export async function getPlanningComplianceReport(params: {
-  managerId: string;
+type MemberPlanningInsight = {
+  employee_user_id: string;
+  employee_id: string;
+  employee_name: string;
+  department_id: number | null;
+  department_name: string;
+  objective_count: number;
+  objective_status: {
+    draft: number;
+    submitted: number;
+    approved: number;
+    published: number;
+  };
+  kr_count: number;
+  monthly_plan_count: number;
+  weekly_plan_count: number;
+  daily_plan_count: number;
+  progress_update_count: number;
+  has_set_monthly_plan: boolean;
+  has_set_weekly_plan: boolean;
+  has_set_daily_plan: boolean;
+  has_updated_progress: boolean;
+  last_progress_at: Date | null;
+};
+
+function normalizeRole(role?: string | null): string {
+  return (role || "").toLowerCase();
+}
+
+export async function getPlanningInsights(params: {
+  requesterUserId: string;
   companyId: number;
   cycleId: number;
-  monthNumber?: number;
-  weekNumber?: number;
-  isAdmin?: boolean;
+  role?: string;
+  scope: PlanningInsightScope;
+  departmentId?: number;
+  forceOrganizationView?: boolean;
 }) {
-  const { managerId, companyId, cycleId, monthNumber, weekNumber, isAdmin } = params;
+  const planCountSelect = {
+    monthlyPlans: true,
+    progressUpdates: true,
+  } as any;
 
-  let managedIds: string[] = [];
-  
-  if (isAdmin) {
-    // Admins see everyone in the company
-    const allEmployees = await prisma.employee.findMany({
-      where: { company_id: companyId, appUsers: { some: { is_active: true } } },
-      select: { id: true }
-    });
-    managedIds = allEmployees.map(e => e.id);
-  } else {
-    // Managers see only direct reports for this specific compliance view
-    const manager = await prisma.appUser.findFirst({
-      where: { id: Number(managerId), company_id: companyId },
-      select: { employee_id: true },
-    });
-    const managerTargetId = manager?.employee_id || managerId;
+  const requester = await prisma.appUser.findFirst({
+    where: { id: Number(params.requesterUserId), company_id: params.companyId },
+    select: { id: true, employee_id: true },
+  });
 
-    const directReports = await prisma.employment.findMany({
-      where: {
-        company_id: companyId,
-        manager_id: managerTargetId,
-        is_active: true,
+  if (!requester) {
+    return {
+      cycle_id: params.cycleId,
+      scope: params.scope,
+      totals: {
+        members: 0,
+        objectives: 0,
+        krs: 0,
+        monthly_plans: 0,
+        weekly_plans: 0,
+        daily_plans: 0,
+        progress_updates: 0,
       },
-      select: { employee_id: true },
-    });
-    managedIds = directReports.map((e) => e.employee_id);
+      highlights: {
+        set_monthly_plan: [],
+        missing_monthly_plan: [],
+        set_weekly_plan: [],
+        missing_weekly_plan: [],
+        set_daily_plan: [],
+        missing_daily_plan: [],
+        updated_progress: [],
+        missing_progress_update: [],
+      },
+      members: [],
+    };
   }
 
-  if (managedIds.length === 0) {
-    return { objectives: [], monthly: [], weekly: [], daily: [] };
-  }
+  const requesterIds = [String(requester.id)];
+  if (requester.employee_id) requesterIds.push(String(requester.employee_id));
 
-  // 1. Objectives Compliance
-  const employments = await prisma.employment.findMany({
-    where: { employee_id: { in: managedIds } },
-    select: {
-      employee_id: true,
-      employee: { select: { id: true, full_name: true } },
-      department_id: true,
-      department: { select: { name: true } },
+  const requesterEmployment = await prisma.employment.findMany({
+    where: {
+      company_id: params.companyId,
       is_active: true,
+      employee_id: { in: requesterIds },
     },
-    orderBy: { is_active: "desc" },
+    select: { department_id: true },
+  });
+  const requesterDepartmentIds = requesterEmployment
+    .map((e) => e.department_id)
+    .filter((id): id is number => Number.isFinite(id));
+
+  const subordinateIds = await getAllSubordinateIds(
+    requester.employee_id || String(requester.id),
+    params.companyId,
+  );
+  const managerScopeIds = Array.from(
+    new Set([...requesterIds, ...subordinateIds]),
+  );
+
+  const role = normalizeRole(params.role);
+  const isOrganizationRole =
+    ["admin", "hr", "ceo", "super admin", "superadmin"].includes(role) ||
+    params.forceOrganizationView === true;
+
+  const employmentWhere: any = {
+    company_id: params.companyId,
+    is_active: true,
+  };
+
+  if (params.scope === "organization") {
+    if (!isOrganizationRole) {
+      employmentWhere.OR = [
+        { manager_id: { in: managerScopeIds } },
+        requesterDepartmentIds.length > 0
+          ? { department_id: { in: requesterDepartmentIds } }
+          : undefined,
+      ].filter(Boolean);
+    }
+  } else {
+    const constraints: any[] = [
+      { manager_id: { in: managerScopeIds } },
+      requesterDepartmentIds.length > 0
+        ? { department_id: { in: requesterDepartmentIds } }
+        : undefined,
+    ].filter(Boolean);
+
+    if (params.departmentId && Number.isFinite(params.departmentId)) {
+      constraints.push({ department_id: Number(params.departmentId) });
+    }
+    employmentWhere.AND = [{ OR: constraints }];
+  }
+
+  const employments = await prisma.employment.findMany({
+    where: employmentWhere,
+    include: {
+      employee: { select: { id: true, full_name: true } },
+      department: { select: { id: true, name: true } },
+    },
+    orderBy: [
+      { department: { name: "asc" } },
+      { employee: { full_name: "asc" } },
+    ],
   });
 
-  const empDeptMap = new Map();
+  const memberByEmployeeId = new Map<
+    string,
+    {
+      employee_user_id: string;
+      employee_id: string;
+      employee_name: string;
+      department_id: number | null;
+      department_name: string;
+    }
+  >();
+
   for (const e of employments) {
-    const existing = empDeptMap.get(e.employee_id);
-    // Priority: 1. Active with Dept, 2. Inactive with Dept, 3. Active without Dept, 4. Inactive without Dept
-    if (!existing || (!existing.department_id && e.department_id) || (e.is_active && !existing.is_active && e.department_id)) {
-      empDeptMap.set(e.employee_id, {
-        id: e.employee_id,
-        name: e.employee.full_name,
-        department_id: e.department_id,
-        department_name: e.department?.name || "No Department",
-        is_active: e.is_active,
+    if (!memberByEmployeeId.has(e.employee_id)) {
+      memberByEmployeeId.set(e.employee_id, {
+        employee_user_id: String(e.employee.id),
+        employee_id: e.employee_id,
+        employee_name: e.employee.full_name,
+        department_id: e.department?.id ?? null,
+        department_name: e.department?.name ?? "Unassigned",
       });
     }
   }
 
-  // Ensure all managedIds are present in the map even if they have no employment record
-  const allEmployees = await prisma.employee.findMany({
-    where: { id: { in: managedIds } },
-    select: { id: true, full_name: true },
-  });
-  for (const emp of allEmployees) {
-    if (!empDeptMap.has(emp.id)) {
-      empDeptMap.set(emp.id, {
-        id: emp.id,
-        name: emp.full_name,
-        department_id: null,
-        department_name: "No Department",
-        is_active: false,
-      });
-    }
+  const members = Array.from(memberByEmployeeId.values());
+  const memberUserIds = members.map((m) => m.employee_user_id);
+
+  if (memberUserIds.length === 0) {
+    return {
+      cycle_id: params.cycleId,
+      scope: params.scope,
+      totals: {
+        members: 0,
+        objectives: 0,
+        krs: 0,
+        monthly_plans: 0,
+        weekly_plans: 0,
+        daily_plans: 0,
+        progress_updates: 0,
+      },
+      highlights: {
+        set_monthly_plan: [],
+        missing_monthly_plan: [],
+        set_weekly_plan: [],
+        missing_weekly_plan: [],
+        set_daily_plan: [],
+        missing_daily_plan: [],
+        updated_progress: [],
+        missing_progress_update: [],
+      },
+      members: [],
+    };
   }
 
-  const objectives = await prisma.employeeObjective.findMany({
+  const objectives = (await prisma.employeeObjective.findMany({
     where: {
-      company_id: companyId,
-      cycle_id: cycleId,
-      user_id: { in: managedIds },
+      company_id: params.companyId,
+      cycle_id: params.cycleId,
+      user_id: { in: memberUserIds },
     },
     include: {
-      _count: { select: { keyResults: true } },
-    },
-  });
-
-  const objectiveCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const empObjectives = objectives.filter((o) => o.user_id === emp.id);
-    const isPlanned = empObjectives.length > 0;
-    
-    return {
-      employee_id: emp.id,
-      employee_name: emp.name,
-      department_id: emp.department_id,
-      department_name: emp.department_name,
-      objective_id: isPlanned ? empObjectives[0].id : null,
-      objective_title: isPlanned ? empObjectives[0].title : "Unassigned",
-      kr_count: isPlanned ? empObjectives.reduce((sum, o) => sum + o._count.keyResults, 0) : 0,
-      status_code: isPlanned ? empObjectives[0].status_code : "NOT_STARTED",
-      is_planned: isPlanned,
-    };
-  });
-
-  // 2. Monthly Compliance
-  const monthPlans = await prisma.employeeMonthPlan.findMany({
-    where: {
-      company_id: companyId,
-      employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
-      ...(monthNumber ? { month_number: monthNumber } : {})
-    },
-    include: {
-      employeeObjective: {
-        select: { user_id: true }
-      }
-    }
-  });
-
-  const monthlyCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const empMonthPlans = monthPlans.filter((mp) => mp.employeeObjective.user_id === emp.id);
-    const allPlannedMonths = Array.from(
-      new Set(empMonthPlans.map((mp) => mp.month_number))
-    );
-
-    return {
-      employee_id: emp.id,
-      employee_name: emp.name,
-      department_id: emp.department_id,
-      department_name: emp.department_name,
-      planned_months: allPlannedMonths,
-      has_month_plan: empMonthPlans.length > 0,
-    };
-  });
-
-  // 3. Weekly Compliance
-  const weeklyPlans = await prisma.weeklyPlan.findMany({
-    where: {
-      company_id: companyId,
-      employeeKr: {
-        employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
-      },
-      ...(weekNumber ? { week_number: weekNumber } : {}),
-    },
-    include: {
-      employeeKr: {
+      keyResults: {
         include: {
-          employeeObjective: {
-            include: {
-              user: { include: { employee: { select: { full_name: true } } } },
-            },
+          _count: {
+            select: planCountSelect,
           },
-        },
-      },
-    },
-  });
-
-  const weeklyCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const empWeeklyPlans = weeklyPlans.filter((wp) => wp.employeeKr.employeeObjective.user_id === emp.id);
-    const plannedWeeks = Array.from(new Set(empWeeklyPlans.map((wp) => wp.week_number)));
-
-    return {
-      employee_id: emp.id,
-      employee_name: emp.name,
-      department_id: emp.department_id,
-      department_name: emp.department_name,
-      weekly_plans: plannedWeeks.map((w) => ({ week_number: w })),
-    };
-  });
-
-  // 4. Daily Compliance
-  const targetWeeklyPlans = await prisma.weeklyPlan.findMany({
-    where: {
-      company_id: companyId,
-      employeeKr: {
-        employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
-      },
-      ...(weekNumber ? { week_number: weekNumber } : {}),
-    },
-    include: {
-      employeeKr: {
-        include: {
-          employeeObjective: {
-            include: {
-              user: { include: { employee: { select: { full_name: true } } } },
-            },
-          },
-        },
-      },
-      tasks: {
-        include: {
-          _count: { select: { dailyPlans: true } },
-        },
-      },
-    },
-  });
-
-  const dailyCompliance = targetWeeklyPlans.map((wp) => {
-    const dailyPlanCount = wp.tasks.reduce((sum, task) => sum + task._count.dailyPlans, 0);
-    const empInfo = empDeptMap.get(wp.employeeKr.employeeObjective.user_id);
-    return {
-      employee_id: wp.employeeKr.employeeObjective.user_id,
-      employee_name: empInfo?.name || "Unknown",
-      department_id: empInfo?.department_id,
-      department_name: empInfo?.department_name || "No Department",
-      weekly_plan_id: wp.id,
-      weekly_plan_title: wp.title || `Week ${wp.week_number}`,
-      week_number: wp.week_number,
-      daily_plan_count: dailyPlanCount,
-      status_code: wp.status_code,
-    };
-  });
-
-  // 5. Reporting Compliance
-  // To track rollup updates, we need the objective hierarchy
-  const cycleObjectivesForHierarchy = await prisma.employeeObjective.findMany({
-    where: { company_id: companyId, cycle_id: cycleId },
-    select: {
-      id: true,
-      user_id: true,
-      chosen_parent_employee_kr_id: true,
-      keyResults: { select: { id: true } }
-    }
-  });
-
-  const krOwnerMap = new Map<number, string>();
-  const krParentMap = new Map<number, number>(); // kr_id -> parent_kr_id
-  
-  for (const obj of cycleObjectivesForHierarchy) {
-    for (const kr of obj.keyResults) {
-      krOwnerMap.set(kr.id, obj.user_id);
-      if (obj.chosen_parent_employee_kr_id) {
-        krParentMap.set(kr.id, obj.chosen_parent_employee_kr_id);
-      }
-    }
-  }
-
-  const progressUpdates = await prisma.progressUpdate.findMany({
-    where: {
-      employeeKr: {
-        employeeObjective: { cycle_id: cycleId },
-      },
-    },
-    select: {
-      id: true,
-      created_at: true,
-      daily_plan_id: true,
-      week_number: true,
-      month_number: true,
-      employee_kr_id: true,
-      employeeKr: {
-        select: {
-          employeeObjective: { select: { user_id: true } },
-        },
-      },
-    },
-  });
-
-  const userUpdates = new Map<string, {
-    direct: any[],
-    indirect: any[],
-    weeklyCount: number,
-    dailyCount: number,
-    monthlyCount: number,
-    directCount: number,
-  }>();
-
-  for (const u of progressUpdates) {
-    const ownerId = u.employeeKr.employeeObjective.user_id;
-    
-    // Direct update
-    if (!userUpdates.has(ownerId)) {
-      userUpdates.set(ownerId, { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 });
-    }
-    const directStats = userUpdates.get(ownerId)!;
-    directStats.direct.push(u);
-    
-    if (u.week_number !== null && u.daily_plan_id === null) directStats.weeklyCount++;
-    else if (u.daily_plan_id !== null) directStats.dailyCount++;
-    else if (u.month_number !== null && u.week_number === null && u.daily_plan_id === null) directStats.monthlyCount++;
-    else if (u.week_number === null && u.month_number === null && u.daily_plan_id === null) directStats.directCount++;
-
-    // Indirect (Rollup) updates
-    let currentKrId = u.employee_kr_id;
-    let parentKrId = krParentMap.get(currentKrId);
-    const visited = new Set<number>();
-    
-    // Trace up the hierarchy to credit managers
-    while (parentKrId && !visited.has(parentKrId)) {
-      visited.add(parentKrId);
-      const parentOwnerId = krOwnerMap.get(parentKrId);
-      if (parentOwnerId && parentOwnerId !== ownerId) {
-        if (!userUpdates.has(parentOwnerId)) {
-          userUpdates.set(parentOwnerId, { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 });
-        }
-        userUpdates.get(parentOwnerId)!.indirect.push(u);
-      }
-      currentKrId = parentKrId;
-      parentKrId = krParentMap.get(currentKrId);
-    }
-  }
-
-  const dailyPlans = await prisma.dailyPlan.findMany({
-    where: {
-      weeklyTask: {
-        weeklyPlan: {
-          employeeKr: {
-            employeeObjective: { cycle_id: cycleId, user_id: { in: managedIds } },
-          },
-        },
-      },
-    },
-    select: {
-      id: true,
-      weeklyTask: {
-        select: {
-          weeklyPlan: {
+          monthlyPlans: {
             select: {
-              employeeKr: {
+              weeklyPlans: {
                 select: {
-                  employeeObjective: { select: { user_id: true } },
+                  updated_at: true,
+                  _count: { select: { dailyPlans: true } },
+                  dailyPlans: {
+                    select: { updated_at: true },
+                  },
                 },
               },
             },
           },
+          progressUpdates: {
+            select: { created_at: true },
+            orderBy: { created_at: "desc" },
+            take: 1,
+          },
         },
       },
     },
-  });
+  })) as any[];
 
-  const reportingCompliance = Array.from(empDeptMap.values()).map((emp) => {
-    const stats = userUpdates.get(emp.id) || { direct: [], indirect: [], weeklyCount: 0, dailyCount: 0, monthlyCount: 0, directCount: 0 };
-    const empUpdates = stats.direct;
-    const indirectUpdates = stats.indirect;
+  const byUser = new Map<string, MemberPlanningInsight>();
+  for (const m of members) {
+    byUser.set(m.employee_user_id, {
+      ...m,
+      objective_count: 0,
+      objective_status: { draft: 0, submitted: 0, approved: 0, published: 0 },
+      kr_count: 0,
+      monthly_plan_count: 0,
+      weekly_plan_count: 0,
+      daily_plan_count: 0,
+      progress_update_count: 0,
+      has_set_monthly_plan: false,
+      has_set_weekly_plan: false,
+      has_set_daily_plan: false,
+      has_updated_progress: false,
+      last_progress_at: null,
+    });
+  }
 
-    const empDailyPlans = dailyPlans.filter(
-      (dp: any) => dp.weeklyTask.weeklyPlan.employeeKr.employeeObjective.user_id === emp.id,
-    );
-    const dailyPlansWithProgressIds = new Set(
-      empUpdates.filter((u: any) => u.daily_plan_id !== null).map((u: any) => u.daily_plan_id),
-    );
+  for (const objective of objectives) {
+    const row = byUser.get(objective.user_id);
+    if (!row) continue;
 
-    const allUpdates = [...empUpdates, ...indirectUpdates];
+    row.objective_count += 1;
+    const status = String(objective.status_code || "").toLowerCase();
+    if (status in row.objective_status) {
+      (row.objective_status as any)[status] += 1;
+    }
 
-    return {
-      employee_id: emp.id,
-      employee_name: emp.name,
-      department_id: emp.department_id,
-      department_name: emp.department_name,
-      update_count: allUpdates.length,
-      breakdown: {
-        weekly: stats.weeklyCount,
-        daily: stats.dailyCount,
-        monthly: stats.monthlyCount,
-        direct: stats.directCount,
-        indirect: indirectUpdates.length,
-        daily_plan_total: empDailyPlans.length,
-        daily_plan_with_progress: dailyPlansWithProgressIds.size,
-      },
-      last_update:
-        allUpdates.length > 0
-          ? allUpdates.sort(
-              (a: any, b: any) => b.created_at.getTime() - a.created_at.getTime(),
-            )[0].created_at
-          : null,
-      has_updates: allUpdates.length > 0,
-    };
-  });
+    row.kr_count += objective.keyResults.length;
+    for (const kr of objective.keyResults) {
+      const allWeeklyPlans = kr.monthlyPlans.flatMap(
+        (mp: any) => mp.weeklyPlans,
+      );
+
+      row.monthly_plan_count += kr._count.monthlyPlans;
+      row.weekly_plan_count += allWeeklyPlans.length;
+      row.progress_update_count += kr._count.progressUpdates;
+      row.daily_plan_count += allWeeklyPlans.reduce(
+        (sum: number, wp: any) => sum + (wp._count?.dailyPlans || 0),
+        0,
+      );
+
+      if (kr._count.monthlyPlans > 0) row.has_set_monthly_plan = true;
+      if (allWeeklyPlans.length > 0) row.has_set_weekly_plan = true;
+      if (allWeeklyPlans.some((wp: any) => (wp._count?.dailyPlans || 0) > 0)) {
+        row.has_set_daily_plan = true;
+      }
+      if (kr._count.progressUpdates > 0) row.has_updated_progress = true;
+
+      const latestProgress = kr.progressUpdates[0]?.created_at ?? null;
+      if (
+        latestProgress &&
+        (!row.last_progress_at ||
+          latestProgress.getTime() > row.last_progress_at.getTime())
+      ) {
+        row.last_progress_at = latestProgress;
+      }
+
+      for (const wp of allWeeklyPlans) {
+        for (const dp of wp.dailyPlans) {
+          if (!row.last_progress_at || dp.updated_at > row.last_progress_at) {
+            row.last_progress_at = dp.updated_at;
+          }
+        }
+      }
+    }
+  }
+
+  const memberRows = Array.from(byUser.values());
+  const highlights = {
+    set_monthly_plan: memberRows
+      .filter((m) => m.has_set_monthly_plan)
+      .map((m) => m.employee_name),
+    missing_monthly_plan: memberRows
+      .filter((m) => !m.has_set_monthly_plan)
+      .map((m) => m.employee_name),
+    set_weekly_plan: memberRows
+      .filter((m) => m.has_set_weekly_plan)
+      .map((m) => m.employee_name),
+    missing_weekly_plan: memberRows
+      .filter((m) => !m.has_set_weekly_plan)
+      .map((m) => m.employee_name),
+    set_daily_plan: memberRows
+      .filter((m) => m.has_set_daily_plan)
+      .map((m) => m.employee_name),
+    missing_daily_plan: memberRows
+      .filter((m) => !m.has_set_daily_plan)
+      .map((m) => m.employee_name),
+    updated_progress: memberRows
+      .filter((m) => m.has_updated_progress)
+      .map((m) => m.employee_name),
+    missing_progress_update: memberRows
+      .filter((m) => !m.has_updated_progress)
+      .map((m) => m.employee_name),
+  };
+
+  const totals = {
+    members: memberRows.length,
+    objectives: memberRows.reduce((s, m) => s + m.objective_count, 0),
+    krs: memberRows.reduce((s, m) => s + m.kr_count, 0),
+    monthly_plans: memberRows.reduce((s, m) => s + m.monthly_plan_count, 0),
+    weekly_plans: memberRows.reduce((s, m) => s + m.weekly_plan_count, 0),
+    daily_plans: memberRows.reduce((s, m) => s + m.daily_plan_count, 0),
+    progress_updates: memberRows.reduce(
+      (s, m) => s + m.progress_update_count,
+      0,
+    ),
+  };
 
   return {
-    objectives: objectiveCompliance,
-    monthly: monthlyCompliance,
-    weekly: weeklyCompliance,
-    daily: dailyCompliance,
-    reporting: reportingCompliance,
+    cycle_id: params.cycleId,
+    scope: params.scope,
+    totals,
+    highlights,
+    members: memberRows,
+  };
+}
+
+export async function getPlanningCompliance(params: {
+  requesterUserId: string;
+  companyId: number;
+  cycleId: number;
+  monthNumber?: number;
+  weekNumber?: number;
+  role?: string;
+}) {
+  const insights = await getPlanningInsights({
+    requesterUserId: params.requesterUserId,
+    companyId: params.companyId,
+    cycleId: params.cycleId,
+    role: params.role,
+    scope: "organization",
+    forceOrganizationView: true, // Allow all users to see organization-wide compliance data
+  });
+
+  const memberRows = insights.members;
+
+  // Transform memberRows into the structure expected by the frontend
+  // The frontend expects: { objectives: [], monthly: [], weekly: [], daily: [], reporting: [] }
+
+  const objectives = memberRows.map((m) => ({
+    employee_id: m.employee_id,
+    employee_name: m.employee_name,
+    department_name: m.department_name,
+    is_planned:
+      m.objective_status.approved > 0 || m.objective_status.published > 0,
+  }));
+
+  const monthly = memberRows.map((m) => ({
+    employee_id: m.employee_id,
+    employee_name: m.employee_name,
+    department_name: m.department_name,
+    has_month_plan: m.monthly_plan_count > 0,
+  }));
+
+  const weekly = memberRows.map((m) => ({
+    employee_id: m.employee_id,
+    employee_name: m.employee_name,
+    department_name: m.department_name,
+    weekly_plans: m.weekly_plan_count > 0 ? [1] : [], // Frontend checks weekly_plans?.length > 0
+  }));
+
+  const reporting = memberRows.map((m) => ({
+    employee_id: m.employee_id,
+    employee_name: m.employee_name,
+    department_name: m.department_name,
+    update_count: m.progress_update_count + m.daily_plan_count,
+    last_update: m.last_progress_at,
+    breakdown: {
+      weekly: m.weekly_plan_count,
+      daily_plan_total: m.daily_plan_count,
+      daily_plan_with_progress: m.daily_plan_count,
+      monthly: m.monthly_plan_count,
+      direct: m.progress_update_count,
+      indirect: 0,
+    },
+  }));
+
+  return {
+    objectives,
+    monthly,
+    weekly,
+    daily: [], // Daily not used in the planning tab's source selection
+    reporting,
+    totals: insights.totals,
+    highlights: insights.highlights,
   };
 }

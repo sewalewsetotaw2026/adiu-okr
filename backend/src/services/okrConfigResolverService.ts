@@ -44,78 +44,49 @@ const DEFAULT_LEVEL_CONFIGURATION: LevelConfiguration = {
  * Precedence: QUARTER > DEPARTMENT > ROLE > ORGANIZATION > GLOBAL
  */
 export async function resolveConfigValue(params: ConfigResolutionParams) {
-  const { companyId, configKey, cycleId, departmentId, roleCode } = params;
+  const { companyId, configKey, cycleId, departmentId } = params;
 
-  const orConditions: any[] = [
-    { profile: { scope_type: "ORGANIZATION" } },
-    { profile: { scope_type: "GLOBAL" } },
-  ];
+  // Precedence: QUARTER > DEPARTMENT > ORGANIZATION > GLOBAL
+  const getPrecedenceScore = (scopeType: string) => {
+    switch (scopeType) {
+      case "QUARTER":     return 5;
+      case "DEPARTMENT":  return 4;
+      case "ROLE":        return 3;
+      case "ORGANIZATION":return 2;
+      case "GLOBAL":      return 1;
+      default:            return 0;
+    }
+  };
 
-  if (cycleId) {
-    orConditions.push({
-      cycle_id: cycleId,
-      profile: { scope_type: "QUARTER" },
-    });
-  }
-  if (departmentId) {
-    orConditions.push({
-      department_id: departmentId,
-      profile: { scope_type: "DEPARTMENT" },
-    });
-  }
-  if (roleCode) {
-    orConditions.push({ role_code: roleCode, profile: { scope_type: "ROLE" } });
-  }
-
+  // Fetch all active config values for this company + key in one direct query.
+  // Filter by scope in application code to avoid the broken nested-join.
   const values = await prisma.okrConfigValue.findMany({
     where: {
       company_id: companyId,
       config_key: configKey,
-      profile: {
-        is_active: true,
-        assignments: {
-          some: {
-            company_id: companyId,
-            is_active: true,
-            OR: orConditions,
-          },
-        },
-      },
+      profile: { company_id: companyId, is_active: true },
     },
-    include: {
-      profile: true,
-    },
+    include: { profile: true },
   });
 
   if (!values || values.length === 0) {
     return null;
   }
 
-  // Evaluate precedence
-  const getPrecedenceScore = (scopeType: string) => {
-    switch (scopeType) {
-      case "QUARTER":
-        return 5;
-      case "DEPARTMENT":
-        return 4;
-      case "ROLE":
-        return 3;
-      case "ORGANIZATION":
-        return 2;
-      case "GLOBAL":
-        return 1;
-      default:
-        return 0;
-    }
-  };
+  // Filter to only the relevant scopes given the provided context.
+  const allowed = new Set<string>(["GLOBAL", "ORGANIZATION"]);
+  if (cycleId) allowed.add("QUARTER");
+  if (departmentId) allowed.add("DEPARTMENT");
 
-  const sortedValues = values.sort((a, b) => {
-    const scoreA = getPrecedenceScore(a.profile.scope_type);
-    const scoreB = getPrecedenceScore(b.profile.scope_type);
-    return scoreB - scoreA; // Descending
+  const relevant = values.filter((v) => allowed.has(v.profile.scope_type));
+
+  const candidates = relevant.length > 0 ? relevant : values;
+
+  const sorted = candidates.sort((a, b) => {
+    return getPrecedenceScore(b.profile.scope_type) - getPrecedenceScore(a.profile.scope_type);
   });
 
-  return sortedValues[0].config_value_json;
+  return sorted[0].config_value_json;
 }
 
 function resolveCadence(
@@ -344,11 +315,27 @@ export async function isAutoPublishOnApprovalEnabled(
   cycleId?: number,
   departmentId?: number,
 ): Promise<boolean> {
-  const result = await resolveConfigValue({
+  // 1. Check the dedicated standalone key (set by applyDerivedSettings).
+  const standalone = await resolveConfigValue({
     companyId,
     configKey: "auto_publish_on_approval",
     cycleId,
     departmentId,
   });
-  return result ? (result as any).enabled === true : false;
+  if (standalone !== null && standalone !== undefined) {
+    return (standalone as any).enabled === true;
+  }
+
+  // 2. Fall back to the additional_configuration blob (set by upsertConfigurationMenu).
+  const blob = await resolveConfigValue({
+    companyId,
+    configKey: "additional_configuration",
+    cycleId,
+    departmentId,
+  });
+  if (blob !== null && blob !== undefined) {
+    return (blob as any).auto_publish_on_approval === true;
+  }
+
+  return false;
 }

@@ -63,6 +63,7 @@ export interface AdditionalConfiguration {
     min: number;
     max: number;
   };
+  auto_publish_on_approval: boolean;
 }
 
 export interface OkrConfigurationMenu {
@@ -87,7 +88,7 @@ const DEFAULT_MENU_CONFIGURATION: OkrConfigurationMenu = {
     allow_non_financial_metrics: true,
   },
   planning_cadence_rules: {
-    active_cadence: "MONTHLY",
+    active_cadence: "DAILY",
     rules: {
       MONTHLY: { allow_monthly: true, allow_weekly: false, allow_daily: false },
       WEEKLY: { allow_monthly: true, allow_weekly: true, allow_daily: false },
@@ -126,6 +127,7 @@ const DEFAULT_MENU_CONFIGURATION: OkrConfigurationMenu = {
       min: 2,
       max: 6,
     },
+    auto_publish_on_approval: true,
   },
 };
 
@@ -191,6 +193,119 @@ function toPercentage(value: unknown, fallback: number): number {
     return candidate;
   }
   return fallback;
+}
+
+function toCode(value: string): string {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Z0-9_]/g, "");
+}
+
+function toTitleCase(input: string): string {
+  return String(input || "")
+    .toLowerCase()
+    .split(/[_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function normalizeStatusDefinitions(value: unknown) {
+  const list = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.statuses)
+      ? value.statuses
+      : [];
+
+  const dedupe = new Set<string>();
+
+  return list
+    .map((item, index) => {
+      if (!isRecord(item)) return null;
+
+      const entityType = String(
+        item.entity_type || item.entityType || "COMPANY_OBJECTIVE",
+      )
+        .trim()
+        .toUpperCase();
+
+      const displayNameRaw = String(
+        item.display_name || item.display || item.name || "",
+      ).trim();
+      const statusCodeRaw = String(item.status_code || item.code || "").trim();
+
+      const normalizedCode = toCode(statusCodeRaw || displayNameRaw);
+      if (!normalizedCode) return null;
+
+      const displayName = displayNameRaw
+        ? toTitleCase(displayNameRaw)
+        : toTitleCase(normalizedCode);
+
+      const key = `${entityType}::${normalizedCode}`;
+      if (dedupe.has(key)) return null;
+      dedupe.add(key);
+
+      return {
+        id: item.id ? String(item.id) : undefined,
+        entity_type: entityType,
+        status_code: normalizedCode,
+        display_name: displayName,
+        is_initial: toBoolean(item.is_initial, false),
+        is_terminal: toBoolean(item.is_terminal, false),
+        sort_order: toPositiveInt(item.sort_order, index + 1),
+        is_active: toBoolean(item.is_active, true),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+}
+
+function normalizeStatusTransitions(value: unknown) {
+  const list = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.transitions)
+      ? value.transitions
+      : [];
+
+  const dedupe = new Set<string>();
+
+  return list
+    .map((item) => {
+      if (!isRecord(item)) return null;
+
+      const entityType = String(
+        item.entity_type || item.entityType || "COMPANY_OBJECTIVE",
+      )
+        .trim()
+        .toUpperCase();
+
+      const fromStatusCode = toCode(
+        String(item.from_status_code || item.from || ""),
+      );
+      const toStatusCode = toCode(String(item.to_status_code || item.to || ""));
+
+      if (!fromStatusCode || !toStatusCode || fromStatusCode === toStatusCode) {
+        return null;
+      }
+
+      const key = `${entityType}::${fromStatusCode}::${toStatusCode}`;
+      if (dedupe.has(key)) return null;
+      dedupe.add(key);
+
+      return {
+        id: item.id ? String(item.id) : undefined,
+        entity_type: entityType,
+        from_status_code: fromStatusCode,
+        to_status_code: toStatusCode,
+        requires_approval: toBoolean(item.requires_approval, false),
+        required_role: String(item.required_role || "")
+          .trim()
+          .toUpperCase(),
+        is_active: toBoolean(item.is_active, true),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 }
 
 function normalizePlanningApproach(value: unknown) {
@@ -429,6 +544,10 @@ function normalizeAdditionalConfiguration(
     confidence_level_mapping: confidence,
     allowed_objectives: allowedObjectives,
     allowed_krs: allowedKrs,
+    auto_publish_on_approval: toBoolean(
+      value.auto_publish_on_approval,
+      defaults.auto_publish_on_approval,
+    ),
   };
 }
 
@@ -594,6 +713,12 @@ async function applyDerivedSettings(
       "confidence_level_mapping",
       normalized.confidence_level_mapping,
     );
+    await upsertConfigValueByProfile(
+      companyId,
+      profileId,
+      "auto_publish_on_approval",
+      { enabled: normalized.auto_publish_on_approval },
+    );
   }
 }
 
@@ -611,6 +736,10 @@ function normalizeByKey(key: string, value: unknown) {
       return normalizeLevelConfiguration(value);
     case "additional_configuration":
       return normalizeAdditionalConfiguration(value);
+    case "status_definitions":
+      return normalizeStatusDefinitions(value);
+    case "status_transitions":
+      return normalizeStatusTransitions(value);
     case "min_company_objectives":
     case "max_company_objectives":
     case "min_krs_per_objective":
@@ -622,11 +751,20 @@ function normalizeByKey(key: string, value: unknown) {
 }
 
 async function getValueOrDefault(companyId: number, key: string) {
-  const raw = await resolveConfigValue({ companyId, configKey: key });
-  if (raw === null || raw === undefined) {
-    return null;
+  // Direct query bypasses the complex nested join in resolveConfigValue
+  // which can silently return null when the profile/assignment exists.
+  const row = await prisma.okrConfigValue.findFirst({
+    where: {
+      company_id: companyId,
+      config_key: key,
+      profile: { company_id: companyId, is_active: true },
+    },
+    orderBy: { id: "desc" },
+  });
+  if (row !== null && row !== undefined) {
+    return row.config_value_json;
   }
-  return raw;
+  return null;
 }
 
 export async function getConfigurationMenu(
@@ -769,6 +907,9 @@ export async function getConfigurationByKey(
           cadence:
             DEFAULT_MENU_CONFIGURATION.planning_cadence_rules.active_cadence,
         };
+      case "status_definitions":
+      case "status_transitions":
+        return [];
       default:
         return null;
     }

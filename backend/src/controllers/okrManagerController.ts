@@ -286,13 +286,12 @@ export const getPlanningComplianceReport = async (
       req.user!.role === "Super Admin" ||
       [1, 2].includes(req.user!.role_id);
 
-    const report = await mgrService.getPlanningComplianceReport({
-      managerId: req.user!.user_id,
+    const report = await mgrService.getPlanningCompliance({
+      requesterUserId: req.user!.user_id,
       companyId: req.user!.company_id,
       cycleId,
       monthNumber,
       weekNumber,
-      isAdmin,
     });
 
     res.status(200).json({ status: "success", data: report });
@@ -300,3 +299,102 @@ export const getPlanningComplianceReport = async (
     next(error);
   }
 };
+
+export const getPlanningInsights = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const cycleId = parseInt(req.query.cycle_id as string);
+
+    if (!cycleId) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "cycle_id query param required." });
+    }
+
+    const scopeRaw = String(req.query.scope || "department").toLowerCase();
+    const scope = scopeRaw === "organization" ? "organization" : "department";
+    const departmentIdRaw = req.query.department_id
+      ? Number(req.query.department_id)
+      : undefined;
+
+    if (
+      scope === "organization" &&
+      !["admin", "hr", "ceo", "super admin", "superadmin"].includes(
+        String(req.user?.role || "").toLowerCase(),
+      )
+    ) {
+      return res.status(403).json({
+        status: "fail",
+        message: "Only organization-level roles can access organization insights.",
+      });
+    }
+
+    const data = await mgrService.getPlanningInsights({
+      requesterUserId: req.user!.user_id,
+      companyId: req.user!.company_id,
+      cycleId,
+      role: req.user?.role,
+      scope,
+      departmentId:
+        departmentIdRaw && Number.isFinite(departmentIdRaw)
+          ? departmentIdRaw
+          : undefined,
+    });
+
+    res.status(200).json({ status: "success", data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTeamHealthSummary = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const data = await mgrService.getTeamHealthSummary(
+      req.user!.user_id,
+      req.user!.company_id,
+    );
+    res.status(200).json({ status: "success", data });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPlanningCompliance = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { cycle_id, month_number, week_number } = req.query;
+    if (!cycle_id) {
+      return res
+        .status(400)
+        .json({ status: "fail", message: "cycle_id query param required." });
+    }
+
+    const data = await mgrService.getPlanningCompliance({
+      requesterUserId: String(req.user!.user_id),
+      companyId: req.user!.company_id,
+      cycleId: Number(cycle_id),
+      monthNumber: month_number ? Number(month_number) : undefined,
+      weekNumber: week_number ? Number(week_number) : undefined,
+      role: req.user!.role,
+    });
+
+    res.status(200).json({ status: "success", data });
+  } catch (error: any) {
+    console.error(`[getPlanningCompliance] Error:`, error);
+    if (error.message?.includes("not found")) {
+      return res.status(404).json({ status: "fail", message: error.message });
+    }
+    next(error);
+  }
+};
+

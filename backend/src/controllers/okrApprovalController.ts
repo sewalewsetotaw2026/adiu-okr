@@ -11,7 +11,7 @@ export const submitForApproval = async (req: Request, res: Response, next: NextF
     const submission = await approvalService.submitForApproval({
       companyId: req.user!.company_id,
       cycleId: Number(cycle_id),
-      submitterId: req.user!.user_id,
+      submitterId: req.user!.employee_id || req.user!.user_id,
       departmentId: department_id ? Number(department_id) : undefined,
       type: type,
     });
@@ -34,7 +34,7 @@ export const addReviewComment = async (req: Request, res: Response, next: NextFu
       entityType: entity_type,
       entityId: Number(entity_id),
       comment: comment,
-      authorId: req.user!.user_id,
+      authorId: req.user!.employee_id || req.user!.user_id,
     });
 
     res.status(201).json({ status: "success", data: okrComment });
@@ -48,12 +48,136 @@ export const approveSubmission = async (req: Request, res: Response, next: NextF
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ status: "fail", message: "Valid numeric ID required." });
 
-    const result = await approvalService.approveSubmission(id, req.user!.user_id);
+    const result = await approvalService.approveSubmission(
+      id,
+      req.user!.employee_id || req.user!.user_id,
+      req.user!.company_id,
+    );
     res.status(200).json({ status: "success", data: result });
   } catch (error: any) {
-    if (error.message?.includes("Cannot approve")) {
+    if (error.message?.includes("Cannot approve") || error.message?.includes("Unauthorized")) {
       return res.status(400).json({ status: "fail", message: error.message });
     }
+    next(error);
+  }
+};
+
+export const rejectSubmission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ status: "fail", message: "Valid numeric ID required." });
+
+    const { reason } = req.body;
+    if (!reason?.trim()) {
+      return res.status(400).json({ status: "fail", message: "A reason is required for rejection." });
+    }
+
+    const result = await approvalService.rejectSubmission({
+      submissionId: id,
+      reviewerId: req.user!.employee_id || req.user!.user_id,
+      companyId: req.user!.company_id,
+      reason: reason,
+    });
+    res.status(200).json({ status: "success", data: result });
+  } catch (error: any) {
+    if (error.message?.includes("Unauthorized") || error.message?.includes("already rejected")) {
+      return res.status(400).json({ status: "fail", message: error.message });
+    }
+    next(error);
+  }
+};
+
+export const getSubmissionDetail = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ status: "fail", message: "Valid numeric ID required." });
+
+    const detail = await approvalService.getSubmissionDetail(id, req.user!.company_id);
+    res.status(200).json({ status: "success", data: detail });
+  } catch (error: any) {
+    if (error.message?.includes("not found")) {
+      return res.status(404).json({ status: "fail", message: error.message });
+    }
+    next(error);
+  }
+};
+
+export const listManagerSubmissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cycle_id, status, type, search, department_id } = req.query;
+    if (!cycle_id) {
+      return res.status(400).json({ status: "fail", message: "cycle_id is required." });
+    }
+
+    const submissions = await approvalService.listManagerSubmissions({
+      reviewerUserId: req.user!.employee_id || req.user!.user_id,
+      companyId: req.user!.company_id,
+      cycleId: Number(cycle_id),
+      status: status ? String(status) : undefined,
+      type: type ? (String(type) as any) : undefined,
+      search: search ? String(search) : undefined,
+      departmentId: department_id ? Number(department_id) : undefined,
+    });
+
+    res.status(200).json({ status: "success", data: submissions });
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+export const listAdminSubmissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { cycle_id, status, type, search, department_id } = req.query;
+    if (!cycle_id) {
+      return res.status(400).json({ status: "fail", message: "cycle_id is required." });
+    }
+
+    const submissions = await approvalService.listAdminSubmissions({
+      companyId: req.user!.company_id,
+      cycleId: Number(cycle_id),
+      status: status ? String(status) : undefined,
+      type: type ? (String(type) as any) : undefined,
+      search: search ? String(search) : undefined,
+      departmentId: department_id ? Number(department_id) : undefined,
+    });
+
+    res.status(200).json({ status: "success", data: submissions });
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+export const getEntityComments = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { entity_type, entity_id } = req.query;
+    if (!entity_type || !entity_id) {
+      return res.status(400).json({ status: "fail", message: "entity_type and entity_id are required query parameters." });
+    }
+
+    const comments = await approvalService.getEntityComments({
+      companyId: req.user!.company_id,
+      entityType: entity_type as any,
+      entityId: Number(entity_id),
+    });
+
+    res.status(200).json({ status: "success", data: comments });
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+
+export const getSubmissionComments = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ status: "fail", message: "Valid numeric ID required." });
+
+    const comments = await approvalService.getSubmissionComments({
+      companyId: req.user!.company_id,
+      submissionId: id,
+    });
+    res.status(200).json({ status: "success", data: comments });
+  } catch (error: any) {
     next(error);
   }
 };

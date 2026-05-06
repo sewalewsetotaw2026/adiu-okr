@@ -48,7 +48,7 @@ export const updateCycle = async (req: Request, res: Response, next: NextFunctio
     if (error.message?.includes("not found")) {
       return res.status(404).json({ status: "fail", message: error.message });
     }
-    if (error.message?.includes("Only DRAFT")) {
+    if (error.message?.includes("Only DRAFT or OPEN")) {
       return res.status(400).json({ status: "fail", message: error.message });
     }
     next(error);
@@ -86,7 +86,7 @@ export const openCycle = async (req: Request, res: Response, next: NextFunction)
     if (error.message?.includes("not found")) {
       return res.status(404).json({ status: "fail", message: error.message });
     }
-    if (error.message?.includes("already open") || error.message?.includes("Only DRAFT")) {
+    if (error.message?.includes("already open") || error.message?.includes("Only DRAFT or CLOSED")) {
       return res.status(400).json({ status: "fail", message: error.message });
     }
     next(error);

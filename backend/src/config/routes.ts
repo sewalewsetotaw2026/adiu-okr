@@ -122,7 +122,13 @@ import okrDashboardRoutes from "src/routes/okrDashboardRoutes";
 import okrArchiveRoutes from "src/routes/okrArchiveRoutes";
 import okrConfigRoutes from "src/routes/okrConfigRoutes";
 import okrApprovalRoutes from "src/routes/okrApprovalRoutes";
+import okrPlanningRoutes from "src/routes/okrPlanningRoutes";
+import okrChangeRequestRoutes from "src/routes/okrChangeRequestRoutes";
 router.use("/okr/approvals", okrApprovalRoutes);
+router.use("/okr/change-requests", okrChangeRequestRoutes);
+// New corrected planning hierarchy (monthly/weekly/daily). Must mount BEFORE
+// /okr/employee so its child paths take precedence over any legacy routes.
+router.use("/okr", okrPlanningRoutes);
 router.use("/okr/cycles", okrCycleRoutes);
 router.use("/okr/company", okrCompanyRoutes);
 router.use("/okr/department", okrDepartmentRoutes);

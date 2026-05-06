@@ -191,6 +191,63 @@ export const getDepartments = async (
   }
 };
 
+export const getDepartmentById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const companyId = req.user?.company_id;
+    const { id } = req.params;
+
+    if (!companyId) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Company ID not found in user session",
+      });
+    }
+
+    const department = await prisma.department.findFirst({
+      where: {
+        id: Number(id),
+        company_id: companyId,
+      },
+      select: {
+        id: true,
+        name: true,
+        company_id: true,
+        department_code: true,
+        head_user_id: true,
+        head: {
+          select: {
+            id: true,
+            employee: {
+              select: {
+                id: true,
+                full_name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!department) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Department not found",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: department,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateDepartment = async (
   req: Request,
   res: Response,
@@ -606,6 +663,46 @@ export const assignDepartmentHead = async (
             manager_id: dept.head.employee.id,
           },
         });
+      }
+
+      // d. Retroactively create krContributor records for the new department head
+      // for any CompanyKrDepartment entries where no contributor record exists yet.
+      if (dept.head?.employee?.id) {
+        const newHeadEmployeeId = dept.head.employee.id;
+
+        const deptKrAssignments = await tx.companyKrDepartment.findMany({
+          where: {
+            department_id: Number(departmentId),
+            company_id: companyId,
+          },
+          select: {
+            company_kr_id: true,
+            companyKr: { select: { created_by: true } },
+          },
+        });
+
+        for (const dka of deptKrAssignments) {
+          const existing = await tx.krContributor.findFirst({
+            where: {
+              company_kr_id: dka.company_kr_id,
+              company_id: companyId,
+              user_id: newHeadEmployeeId,
+            },
+          });
+
+          if (!existing) {
+            await tx.krContributor.create({
+              data: {
+                company_id: companyId,
+                company_kr_id: dka.company_kr_id,
+                user_id: newHeadEmployeeId,
+                role_type: "DEPARTMENT_HEAD",
+                status_code: "assigned",
+                assigned_by: dka.companyKr?.created_by ?? newHeadEmployeeId,
+              },
+            });
+          }
+        }
       }
 
       return dept;

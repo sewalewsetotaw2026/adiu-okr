@@ -43,9 +43,6 @@ export const login = async (
         is_active: true,
         onboarding_status: true,
         password_hash: true,
-        headedDepartments: {
-          select: { id: true },
-        },
         company: {
           select: {
             company_code: true,
@@ -53,7 +50,7 @@ export const login = async (
             is_deleted: true, // Select it to check below
             primary_color: true,
             secondary_color: true,
-            logo_url: true,
+            logo_url: true
           },
         },
         role: {
@@ -79,9 +76,12 @@ export const login = async (
             },
           },
         },
+        headedDepartments: {
+          select: { id: true },
+          take: 1,
+        },
       },
     });
-
 
     if (!user || !(await comparePassword(password, user.password_hash))) {
       return res.status(401).json({
@@ -130,13 +130,20 @@ export const login = async (
           role: (user as any).role,
           employee_id: user.employee_id,
           employee: (user as any).employee,
-          onboarding_status: user.onboarding_status,
           is_department_head: (user as any).headedDepartments?.length > 0,
+          headed_department_id: (user as any).headedDepartments?.[0]?.id,
+          is_manager: await prisma.employment.count({
+            where: {
+              manager_id: user.employee_id || "",
+              company_id: user.company_id,
+              is_active: true,
+            },
+          }) > 0,
+          onboarding_status: user.onboarding_status,
           permissions: await getUserPermissionMatrix(user.role_id),
         },
       },
     });
-
   } catch (error) {
     next(error);
   }
@@ -277,7 +284,6 @@ export const resetPassword = async (
         user: {
           include: {
             company: true,
-            headedDepartments: { select: { id: true } },
             employee: {
               include: {
                 employments: {
@@ -287,11 +293,14 @@ export const resetPassword = async (
                 },
               },
             },
+            headedDepartments: {
+              select: { id: true },
+              take: 1,
+            },
           },
         },
       },
     });
-
 
     if (!resetRecord) {
       return res.status(400).json({
@@ -357,13 +366,13 @@ export const resetPassword = async (
           employee_id: resetRecord.user.employee_id,
           onboarding_status: resetRecord.user.onboarding_status,
           department_id: primaryDeptId,
-          is_department_head: (resetRecord.user as any).headedDepartments?.length > 0,
           employee: resetRecord.user.employee,
+          is_department_head: (resetRecord.user as any).headedDepartments?.length > 0,
+          headed_department_id: (resetRecord.user as any).headedDepartments?.[0]?.id,
           permissions: await getUserPermissionMatrix(resetRecord.user.role_id),
         },
       },
     });
-
   } catch (error) {
     next(error);
   }
@@ -379,7 +388,6 @@ export const updatePassword = async (
     const user = await prisma.appUser.findUnique({
       where: { id: parseInt(req.user!.user_id) },
       include: {
-        headedDepartments: { select: { id: true } },
         employee: {
           include: {
             employments: {
@@ -389,9 +397,12 @@ export const updatePassword = async (
             },
           },
         },
+        headedDepartments: {
+          select: { id: true },
+          take: 1,
+        },
       },
     });
-
 
     if (!user) {
       return res.status(404).json({
@@ -440,13 +451,13 @@ export const updatePassword = async (
           employee_id: user.employee_id,
           onboarding_status: user.onboarding_status,
           department_id: primaryDeptId,
-          is_department_head: (user as any).headedDepartments?.length > 0,
           employee: user.employee,
+          is_department_head: (user as any).headedDepartments?.length > 0,
+          headed_department_id: (user as any).headedDepartments?.[0]?.id,
           permissions: await getUserPermissionMatrix(user.role_id),
         },
       },
     });
-
   } catch (error) {
     next(error);
   }

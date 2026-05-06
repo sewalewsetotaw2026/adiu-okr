@@ -108,13 +108,8 @@ const BASE_TRANSITIONS: Transition[] = [
 interface MetricDef {
   code: string;
   name: string;
-  category:
-    | "CURRENCY"
-    | "PERCENTAGE"
-    | "BINARY"
-    | "MILESTONE"
-    | "NUMERIC"
-    | "RATING";
+  category: "CURRENCY" | "PERCENTAGE" | "MILESTONE" | "NUMERIC" | "RATING";
+  category_label: string;
   unit_of_measure: string | null;
   is_financial: boolean;
   requires_target_value: boolean;
@@ -126,6 +121,7 @@ const METRIC_DEFINITIONS: MetricDef[] = [
     code: "ETB_CURRENCY",
     name: "Ethiopian Birr (Currency)",
     category: "CURRENCY",
+    category_label: "Currency",
     unit_of_measure: "ETB",
     is_financial: true,
     requires_target_value: true,
@@ -135,33 +131,28 @@ const METRIC_DEFINITIONS: MetricDef[] = [
     code: "PERCENTAGE",
     name: "Percentage",
     category: "PERCENTAGE",
+    category_label: "Percentage",
     unit_of_measure: "%",
     is_financial: false,
     requires_target_value: true,
     allows_binary_completion: false,
   },
   {
-    code: "BINARY",
-    name: "Binary (Yes/No)",
-    category: "BINARY",
+    code: "MILESTONE",
+    name: "Milestone",
+    category: "MILESTONE",
+    category_label: "Milestone",
     unit_of_measure: null,
     is_financial: false,
     requires_target_value: false,
     allows_binary_completion: true,
   },
-  {
-    code: "MILESTONE",
-    name: "Milestone",
-    category: "MILESTONE",
-    unit_of_measure: null,
-    is_financial: false,
-    requires_target_value: false,
-    allows_binary_completion: false,
-  },
+
   {
     code: "NUMERIC",
     name: "Numeric Count",
     category: "NUMERIC",
+    category_label: "Numeric",
     unit_of_measure: null,
     is_financial: false,
     requires_target_value: true,
@@ -171,6 +162,7 @@ const METRIC_DEFINITIONS: MetricDef[] = [
     code: "RATING",
     name: "Rating Scale",
     category: "RATING",
+    category_label: "Rating",
     unit_of_measure: null,
     is_financial: false,
     requires_target_value: true,
@@ -317,7 +309,7 @@ const CONFIG_VALUES: ConfigValue[] = [
   {
     config_key: "planning_cadence_rules",
     config_value_json: {
-      active_cadence: "MONTHLY",
+      active_cadence: "DAILY",
       rules: {
         MONTHLY: {
           allow_monthly: true,
@@ -332,7 +324,7 @@ const CONFIG_VALUES: ConfigValue[] = [
   },
   {
     config_key: "planning_cadence",
-    config_value_json: { cadence: "MONTHLY" },
+    config_value_json: { cadence: "DAILY" },
     value_type: "object",
   },
   {
@@ -412,7 +404,7 @@ const CONFIG_VALUES: ConfigValue[] = [
   },
   {
     config_key: "enable_daily_plans",
-    config_value_json: false,
+    config_value_json: true,
     value_type: "boolean",
   },
   {
@@ -522,6 +514,7 @@ async function seedOkrData() {
       update: {
         name: metric.name,
         category: metric.category,
+        category_label: metric.category_label,
         unit_of_measure: metric.unit_of_measure,
         is_financial: metric.is_financial,
         requires_target_value: metric.requires_target_value,
@@ -532,6 +525,7 @@ async function seedOkrData() {
         code: metric.code,
         name: metric.name,
         category: metric.category,
+        category_label: metric.category_label,
         unit_of_measure: metric.unit_of_measure,
         is_financial: metric.is_financial,
         requires_target_value: metric.requires_target_value,

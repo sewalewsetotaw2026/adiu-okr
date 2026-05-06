@@ -285,7 +285,7 @@ export async function listCompanyKrContributors(
           id: true,
           title: true,
           status_code: true,
-          progress_percent: true,
+          final_score: true,
           _count: { select: { keyResults: true } },
         },
       },
@@ -306,7 +306,7 @@ export async function listEmployeeKrContributors(
           id: true,
           title: true,
           status_code: true,
-          progress_percent: true,
+          final_score: true,
           _count: { select: { keyResults: true } },
         },
       },
@@ -341,7 +341,7 @@ export async function getDepartmentContributorSummary(
     },
     include: {
       user: { select: { employee: { select: { full_name: true } } } },
-      employeeObjectives: { select: { status_code: true, progress_percent: true } }
+      employeeObjectives: { select: { status_code: true, final_score: true } }
     }
   });
 
@@ -350,6 +350,6 @@ export async function getDepartmentContributorSummary(
     fullName: (c as any).user?.employee?.full_name ?? "Unknown",
     roleType: c.role_type,
     objectiveStatus: c.employeeObjectives?.status_code ?? "pending",
-    finalScore: c.employeeObjectives?.progress_percent ?? 0,
+    finalScore: c.employeeObjectives?.final_score ?? 0,
   }));
 }

@@ -23,9 +23,6 @@ CREATE TYPE "CelebrationType" AS ENUM ('BIRTHDAY', 'PROMOTION', 'ANNIVERSARY');
 CREATE TYPE "CelebrationVisibility" AS ENUM ('PUBLIC', 'PRIVATE');
 
 -- CreateEnum
-CREATE TYPE "OkrSubmissionType" AS ENUM ('OBJECTIVE_PLANNING', 'MONTHLY_PLAN', 'WEEKLY_PLAN');
-
--- CreateEnum
 CREATE TYPE "OkrCycleStatus" AS ENUM ('DRAFT', 'OPEN', 'CLOSED', 'ARCHIVED');
 
 -- CreateEnum
@@ -38,7 +35,7 @@ CREATE TYPE "OkrContributorRoleType" AS ENUM ('EMPLOYEE', 'TEAM_LEADER', 'MANAGE
 CREATE TYPE "OkrExecutionMode" AS ENUM ('DIRECT_ADOPTION', 'CUSTOMIZED');
 
 -- CreateEnum
-CREATE TYPE "OkrPlanningCadence" AS ENUM ('MONTHLY', 'WEEKLY', 'DAILY');
+CREATE TYPE "OkrPlanningCadence" AS ENUM ('MONTHLY', 'WEEKLY');
 
 -- CreateEnum
 CREATE TYPE "OkrConfigScopeType" AS ENUM ('GLOBAL', 'ORGANIZATION', 'DEPARTMENT', 'ROLE', 'QUARTER');
@@ -50,13 +47,10 @@ CREATE TYPE "OkrMetricCategory" AS ENUM ('NUMERIC', 'PERCENTAGE', 'CURRENCY', 'B
 CREATE TYPE "OkrConfidenceLevel" AS ENUM ('ON_TRACK', 'AT_RISK', 'OFF_TRACK');
 
 -- CreateEnum
-CREATE TYPE "OkrWeekDay" AS ENUM ('MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY');
-
--- CreateEnum
 CREATE TYPE "OkrApprovalAction" AS ENUM ('SUBMITTED', 'APPROVED', 'REJECTED', 'CHANGES_REQUESTED', 'PUBLISHED');
 
 -- CreateEnum
-CREATE TYPE "OkrEntityType" AS ENUM ('CYCLE', 'COMPANY_OBJECTIVE', 'COMPANY_KR', 'KR_CONTRIBUTOR', 'EMPLOYEE_OBJECTIVE', 'EMPLOYEE_KR', 'EMPLOYEE_MONTH_PLAN', 'EMPLOYEE_MONTH_PLAN_ITEM', 'MANAGER_MONTH_PLAN', 'MANAGER_MONTH_PLAN_ITEM', 'MANAGER_WEEKLY_PLAN', 'WEEKLY_PLAN', 'SUBTASK', 'DAILY_PLAN', 'PROGRESS_UPDATE', 'ARCHIVE', 'EXPORT', 'SUBMISSION');
+CREATE TYPE "OkrEntityType" AS ENUM ('CYCLE', 'COMPANY_OBJECTIVE', 'COMPANY_KR', 'DEPARTMENT_OBJECTIVE', 'DEPARTMENT_KR', 'DEPARTMENT_MONTH_PLAN', 'DEPARTMENT_WEEKLY_PLAN', 'KR_CONTRIBUTOR', 'EMPLOYEE_OBJECTIVE', 'EMPLOYEE_KR', 'EMPLOYEE_MONTH_PLAN', 'WEEKLY_PLAN', 'SUBTASK', 'MILESTONE', 'PROGRESS_UPDATE', 'ARCHIVE', 'EXPORT');
 
 -- CreateEnum
 CREATE TYPE "OkrArchiveStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED');
@@ -93,7 +87,6 @@ CREATE TABLE "department" (
     "company_id" INTEGER NOT NULL,
     "name" VARCHAR(100) NOT NULL,
     "department_code" VARCHAR(20),
-    "head_user_id" INTEGER,
 
     CONSTRAINT "department_pkey" PRIMARY KEY ("id")
 );
@@ -375,7 +368,6 @@ CREATE TABLE "employee_cost_sharing" (
     "remarks" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "remaining_cost" DECIMAL(12,2),
 
     CONSTRAINT "employee_cost_sharing_pkey" PRIMARY KEY ("id")
 );
@@ -789,22 +781,6 @@ CREATE TABLE "leave_cash_outs" (
 );
 
 -- CreateTable
-CREATE TABLE "okr_submission" (
-    "id" SERIAL NOT NULL,
-    "company_id" INTEGER NOT NULL,
-    "cycle_id" INTEGER NOT NULL,
-    "submitter_id" VARCHAR(20) NOT NULL,
-    "reviewer_id" VARCHAR(20),
-    "department_id" INTEGER,
-    "status" VARCHAR(50) NOT NULL,
-    "type" "OkrSubmissionType" NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "okr_submission_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "okr_cycle" (
     "id" SERIAL NOT NULL,
     "company_id" INTEGER NOT NULL,
@@ -964,6 +940,8 @@ CREATE TABLE "company_objective" (
     "cycle_id" INTEGER NOT NULL,
     "title" VARCHAR(200) NOT NULL,
     "description" VARCHAR(1000),
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
     "status_code" VARCHAR(50) NOT NULL,
     "created_by" VARCHAR(20) NOT NULL,
     "approved_by" VARCHAR(20),
@@ -973,10 +951,6 @@ CREATE TABLE "company_objective" (
     "archived_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "current_value" DECIMAL(18,4),
-    "progress_percent" DECIMAL(7,2),
-    "submission_id" INTEGER,
-    "target_value" DECIMAL(18,4),
 
     CONSTRAINT "company_objective_pkey" PRIMARY KEY ("id")
 );
@@ -988,13 +962,16 @@ CREATE TABLE "company_key_result" (
     "objective_id" INTEGER NOT NULL,
     "title" VARCHAR(200) NOT NULL,
     "description" VARCHAR(1000),
-    "metric_definition_id" INTEGER NOT NULL,
+    "metric_definition_id" INTEGER,
+    "owner_department_id" INTEGER,
     "unit_of_measure" VARCHAR(30),
     "target_value" DECIMAL(18,4),
     "weight_percent" DECIMAL(7,2),
     "contributes_to_objective_score" BOOLEAN NOT NULL DEFAULT true,
     "contributes_to_objective_value" BOOLEAN NOT NULL DEFAULT true,
     "is_mandatory_for_completion" BOOLEAN NOT NULL DEFAULT false,
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
     "status_code" VARCHAR(50) NOT NULL,
     "created_by" VARCHAR(20) NOT NULL,
     "approved_by" VARCHAR(20),
@@ -1002,20 +979,103 @@ CREATE TABLE "company_key_result" (
     "published_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "current_value" DECIMAL(18,4),
-    "progress_percent" DECIMAL(7,2),
-    "submission_id" INTEGER,
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
-    "normalized_weight" DECIMAL(7,4),
 
     CONSTRAINT "company_key_result_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "department_objective" (
+    "id" SERIAL NOT NULL,
+    "company_id" INTEGER NOT NULL,
+    "cycle_id" INTEGER NOT NULL,
+    "company_kr_id" INTEGER NOT NULL,
+    "department_id" INTEGER NOT NULL,
+    "execution_mode" "OkrExecutionMode" NOT NULL DEFAULT 'DIRECT_ADOPTION',
+    "title" VARCHAR(200) NOT NULL,
+    "description" VARCHAR(1000),
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
+    "status_code" VARCHAR(50) NOT NULL,
+    "created_by" VARCHAR(20) NOT NULL,
+    "approved_by" VARCHAR(20),
+    "published_by" VARCHAR(20),
+    "published_at" TIMESTAMP(3),
+    "is_archived" BOOLEAN NOT NULL DEFAULT false,
+    "archived_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "department_objective_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "department_key_result" (
+    "id" SERIAL NOT NULL,
+    "company_id" INTEGER NOT NULL,
+    "department_objective_id" INTEGER NOT NULL,
+    "title" VARCHAR(200) NOT NULL,
+    "description" VARCHAR(1000),
+    "metric_definition_id" INTEGER,
+    "unit_of_measure" VARCHAR(30),
+    "target_value" DECIMAL(18,4),
+    "weight_percent" DECIMAL(7,2),
+    "contributes_to_objective_score" BOOLEAN NOT NULL DEFAULT true,
+    "contributes_to_objective_value" BOOLEAN NOT NULL DEFAULT true,
+    "is_mandatory_for_completion" BOOLEAN NOT NULL DEFAULT false,
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
+    "status_code" VARCHAR(50) NOT NULL,
+    "created_by" VARCHAR(20) NOT NULL,
+    "approved_by" VARCHAR(20),
+    "published_by" VARCHAR(20),
+    "published_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "department_key_result_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "department_month_plan" (
+    "id" SERIAL NOT NULL,
+    "company_id" INTEGER NOT NULL,
+    "department_kr_id" INTEGER NOT NULL,
+    "month_number" INTEGER NOT NULL,
+    "description" VARCHAR(2000) NOT NULL,
+    "status_code" VARCHAR(50) NOT NULL,
+    "created_by" VARCHAR(20) NOT NULL,
+    "approved_by" VARCHAR(20),
+    "published_by" VARCHAR(20),
+    "published_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "department_month_plan_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "department_weekly_plan" (
+    "id" SERIAL NOT NULL,
+    "company_id" INTEGER NOT NULL,
+    "department_kr_id" INTEGER NOT NULL,
+    "week_number" INTEGER NOT NULL,
+    "description" VARCHAR(2000) NOT NULL,
+    "status_code" VARCHAR(50) NOT NULL,
+    "created_by" VARCHAR(20) NOT NULL,
+    "approved_by" VARCHAR(20),
+    "published_by" VARCHAR(20),
+    "published_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "department_weekly_plan_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "kr_contributor" (
     "id" SERIAL NOT NULL,
     "company_id" INTEGER NOT NULL,
-    "department_kr_id" INTEGER,
+    "department_kr_id" INTEGER NOT NULL,
     "user_id" VARCHAR(20) NOT NULL,
     "role_type" "OkrContributorRoleType" NOT NULL,
     "is_required_for_completion" BOOLEAN NOT NULL DEFAULT true,
@@ -1023,8 +1083,6 @@ CREATE TABLE "kr_contributor" (
     "assigned_by" VARCHAR(20) NOT NULL,
     "assigned_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "company_kr_id" INTEGER,
-    "employee_kr_id" INTEGER,
 
     CONSTRAINT "kr_contributor_pkey" PRIMARY KEY ("id")
 );
@@ -1035,10 +1093,12 @@ CREATE TABLE "employee_objective" (
     "company_id" INTEGER NOT NULL,
     "cycle_id" INTEGER NOT NULL,
     "kr_contributor_id" INTEGER NOT NULL,
-    "chosen_parent_kr_id" INTEGER,
+    "chosen_parent_kr_id" INTEGER NOT NULL,
     "user_id" VARCHAR(20) NOT NULL,
     "title" VARCHAR(200) NOT NULL,
     "description" VARCHAR(1000),
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
     "status_code" VARCHAR(50) NOT NULL,
     "created_by" VARCHAR(20) NOT NULL,
     "approved_by" VARCHAR(20),
@@ -1048,12 +1108,6 @@ CREATE TABLE "employee_objective" (
     "archived_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "chosen_parent_employee_kr_id" INTEGER,
-    "current_value" DECIMAL(18,4),
-    "department_id" INTEGER,
-    "progress_percent" DECIMAL(7,2),
-    "submission_id" INTEGER,
-    "target_value" DECIMAL(18,4),
 
     CONSTRAINT "employee_objective_pkey" PRIMARY KEY ("id")
 );
@@ -1065,7 +1119,7 @@ CREATE TABLE "employee_key_result" (
     "employee_objective_id" INTEGER NOT NULL,
     "title" VARCHAR(200) NOT NULL,
     "description" VARCHAR(1000),
-    "metric_definition_id" INTEGER NOT NULL,
+    "metric_definition_id" INTEGER,
     "unit_of_measure" VARCHAR(30),
     "target_value" DECIMAL(18,4),
     "weight_percent" DECIMAL(7,2),
@@ -1074,17 +1128,14 @@ CREATE TABLE "employee_key_result" (
     "is_mandatory_for_completion" BOOLEAN NOT NULL DEFAULT false,
     "execution_mode" "OkrExecutionMode" NOT NULL DEFAULT 'DIRECT_ADOPTION',
     "status_code" VARCHAR(50) NOT NULL,
+    "final_score" DECIMAL(7,2),
+    "final_value" DECIMAL(18,4),
     "created_by" VARCHAR(20) NOT NULL,
     "approved_by" VARCHAR(20),
     "published_by" VARCHAR(20),
     "published_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "current_value" DECIMAL(18,4),
-    "progress_percent" DECIMAL(7,2),
-    "submission_id" INTEGER,
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
-    "normalized_weight" DECIMAL(7,4),
 
     CONSTRAINT "employee_key_result_pkey" PRIMARY KEY ("id")
 );
@@ -1093,8 +1144,9 @@ CREATE TABLE "employee_key_result" (
 CREATE TABLE "employee_month_plan" (
     "id" SERIAL NOT NULL,
     "company_id" INTEGER NOT NULL,
+    "employee_kr_id" INTEGER NOT NULL,
     "month_number" INTEGER NOT NULL,
-    "description" VARCHAR(2000),
+    "description" VARCHAR(2000) NOT NULL,
     "status_code" VARCHAR(50) NOT NULL,
     "created_by" VARCHAR(20) NOT NULL,
     "approved_by" VARCHAR(20),
@@ -1102,34 +1154,8 @@ CREATE TABLE "employee_month_plan" (
     "published_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "target_value" DECIMAL(18,4),
-    "current_value" DECIMAL(18,4),
-    "employee_objective_id" INTEGER NOT NULL,
-    "is_manager_plan" BOOLEAN NOT NULL DEFAULT false,
-    "progress_percent" DECIMAL(7,2),
-    "submission_id" INTEGER,
-    "title" VARCHAR(200) NOT NULL,
 
     CONSTRAINT "employee_month_plan_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "employee_month_plan_item" (
-    "id" SERIAL NOT NULL,
-    "company_id" INTEGER NOT NULL,
-    "employee_month_plan_id" INTEGER NOT NULL,
-    "employee_kr_id" INTEGER NOT NULL,
-    "metric_definition_id" INTEGER,
-    "parent_employee_month_plan_item_id" INTEGER,
-    "title" VARCHAR(200) NOT NULL DEFAULT 'Untitled',
-    "target_value" DECIMAL(18,4) NOT NULL,
-    "current_value" DECIMAL(18,4),
-    "note" VARCHAR(1000),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
-
-    CONSTRAINT "employee_month_plan_item_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1137,7 +1163,7 @@ CREATE TABLE "weekly_plan" (
     "id" SERIAL NOT NULL,
     "company_id" INTEGER NOT NULL,
     "employee_kr_id" INTEGER NOT NULL,
-    "employee_month_plan_id" INTEGER NOT NULL,
+    "employee_month_plan_id" INTEGER,
     "week_number" INTEGER NOT NULL,
     "status_code" VARCHAR(50) NOT NULL,
     "confidence_level" "OkrConfidenceLevel",
@@ -1145,41 +1171,8 @@ CREATE TABLE "weekly_plan" (
     "created_by" VARCHAR(20) NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "metric_definition_id" INTEGER,
-    "target_value" DECIMAL(18,4),
-    "current_value" DECIMAL(18,4),
-    "contributes_to_parent_score" BOOLEAN NOT NULL DEFAULT true,
-    "contributes_to_parent_value" BOOLEAN NOT NULL DEFAULT true,
-    "approved_by" VARCHAR(20),
-    "employee_month_plan_item_id" INTEGER,
-    "parent_weekly_plan_id" INTEGER,
-    "parent_weekly_task_id" INTEGER,
-    "progress_percent" DECIMAL(7,2),
-    "published_at" TIMESTAMP(3),
-    "published_by" VARCHAR(20),
-    "submission_id" INTEGER,
-    "title" VARCHAR(200),
-    "weight_percent" DECIMAL(7,2),
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
 
     CONSTRAINT "weekly_plan_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "weekly_task" (
-    "id" SERIAL NOT NULL,
-    "company_id" INTEGER NOT NULL,
-    "weekly_plan_id" INTEGER NOT NULL,
-    "title" VARCHAR(200) NOT NULL,
-    "target_value" DECIMAL(18,4),
-    "current_value" DECIMAL(18,4),
-    "status_code" VARCHAR(50) NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
-    "progress_percent" DECIMAL(7,2),
-
-    CONSTRAINT "weekly_task_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1197,47 +1190,24 @@ CREATE TABLE "subtask" (
     "created_by" VARCHAR(20) NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "metric_definition_id" INTEGER,
-    "target_value" DECIMAL(18,4),
-    "current_value" DECIMAL(18,4),
-    "progress_percent" DECIMAL(7,2),
-    "confidence_level" "OkrConfidenceLevel",
-    "contributes_to_parent_score" BOOLEAN NOT NULL DEFAULT true,
-    "contributes_to_parent_value" BOOLEAN NOT NULL DEFAULT true,
-    "weight_percent" DECIMAL(7,2),
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
 
     CONSTRAINT "subtask_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "daily_plan" (
+CREATE TABLE "milestone" (
     "id" SERIAL NOT NULL,
     "company_id" INTEGER NOT NULL,
-    "weekly_task_id" INTEGER NOT NULL,
+    "weekly_plan_id" INTEGER NOT NULL,
     "title" VARCHAR(200) NOT NULL,
-    "weekly_task_ref" VARCHAR(200),
-    "completion_day" "OkrWeekDay",
     "description" VARCHAR(1000),
-    "metric_definition_id" INTEGER,
-    "target_value" DECIMAL(18,4),
-    "current_value" DECIMAL(18,4),
-    "weight_percent" DECIMAL(7,2),
-    "progress_percent" DECIMAL(7,2),
-    "confidence_level" "OkrConfidenceLevel",
-    "contributes_to_parent_score" BOOLEAN NOT NULL DEFAULT true,
-    "contributes_to_parent_value" BOOLEAN NOT NULL DEFAULT true,
-    "approved_by" VARCHAR(20),
-    "published_by" VARCHAR(20),
-    "published_at" TIMESTAMP(3),
     "status_code" VARCHAR(50) NOT NULL,
     "completed_at" TIMESTAMP(3),
     "created_by" VARCHAR(20) NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
-    "is_direct" BOOLEAN NOT NULL DEFAULT true,
 
-    CONSTRAINT "daily_plan_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "milestone_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1255,8 +1225,6 @@ CREATE TABLE "progress_update" (
     "updated_by" VARCHAR(20) NOT NULL,
     "cycle_label" VARCHAR(20),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completion_day" "OkrWeekDay",
-    "daily_plan_id" INTEGER,
 
     CONSTRAINT "progress_update_pkey" PRIMARY KEY ("id")
 );
@@ -1345,6 +1313,8 @@ CREATE TABLE "okr_comment" (
     "updated_at" TIMESTAMP(3) NOT NULL,
     "companyObjectiveId" INTEGER,
     "companyKeyResultId" INTEGER,
+    "departmentObjectiveId" INTEGER,
+    "departmentKeyResultId" INTEGER,
     "employeeObjectiveId" INTEGER,
     "employeeKeyResultId" INTEGER,
 
@@ -1539,9 +1509,6 @@ CREATE UNIQUE INDEX "app_role_company_id_name_key" ON "app_role"("company_id", "
 CREATE UNIQUE INDEX "ux_app_role_id_company" ON "app_role"("id", "company_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "app_user_employee_id_key" ON "app_user"("employee_id");
-
--- CreateIndex
 CREATE UNIQUE INDEX "app_user_email_key" ON "app_user"("email");
 
 -- CreateIndex
@@ -1698,18 +1665,6 @@ CREATE INDEX "idx_accrual_log_date" ON "accrual_logs"("accrual_date");
 CREATE INDEX "idx_cash_out_employee_year" ON "leave_cash_outs"("employee_id", "fiscal_year");
 
 -- CreateIndex
-CREATE INDEX "okr_submission_company_id_idx" ON "okr_submission"("company_id");
-
--- CreateIndex
-CREATE INDEX "okr_submission_cycle_id_idx" ON "okr_submission"("cycle_id");
-
--- CreateIndex
-CREATE INDEX "okr_submission_submitter_id_idx" ON "okr_submission"("submitter_id");
-
--- CreateIndex
-CREATE INDEX "okr_submission_status_idx" ON "okr_submission"("status");
-
--- CreateIndex
 CREATE INDEX "okr_cycle_company_id_idx" ON "okr_cycle"("company_id");
 
 -- CreateIndex
@@ -1723,9 +1678,6 @@ CREATE INDEX "okr_config_profile_company_id_idx" ON "okr_config_profile"("compan
 
 -- CreateIndex
 CREATE INDEX "okr_config_profile_company_id_scope_type_is_active_idx" ON "okr_config_profile"("company_id", "scope_type", "is_active");
-
--- CreateIndex
-CREATE UNIQUE INDEX "okr_config_profile_company_id_name_key" ON "okr_config_profile"("company_id", "name");
 
 -- CreateIndex
 CREATE INDEX "okr_config_value_company_id_idx" ON "okr_config_value"("company_id");
@@ -1809,9 +1761,6 @@ CREATE INDEX "company_objective_company_id_idx" ON "company_objective"("company_
 CREATE INDEX "company_objective_cycle_id_idx" ON "company_objective"("cycle_id");
 
 -- CreateIndex
-CREATE INDEX "company_objective_submission_id_idx" ON "company_objective"("submission_id");
-
--- CreateIndex
 CREATE INDEX "company_objective_company_id_cycle_id_status_code_idx" ON "company_objective"("company_id", "cycle_id", "status_code");
 
 -- CreateIndex
@@ -1824,19 +1773,67 @@ CREATE INDEX "company_key_result_objective_id_idx" ON "company_key_result"("obje
 CREATE INDEX "company_key_result_metric_definition_id_idx" ON "company_key_result"("metric_definition_id");
 
 -- CreateIndex
-CREATE INDEX "company_key_result_submission_id_idx" ON "company_key_result"("submission_id");
+CREATE INDEX "company_key_result_company_id_objective_id_status_code_idx" ON "company_key_result"("company_id", "objective_id", "status_code");
 
 -- CreateIndex
-CREATE INDEX "company_key_result_company_id_objective_id_status_code_idx" ON "company_key_result"("company_id", "objective_id", "status_code");
+CREATE INDEX "department_objective_company_id_idx" ON "department_objective"("company_id");
+
+-- CreateIndex
+CREATE INDEX "department_objective_cycle_id_idx" ON "department_objective"("cycle_id");
+
+-- CreateIndex
+CREATE INDEX "department_objective_company_kr_id_idx" ON "department_objective"("company_kr_id");
+
+-- CreateIndex
+CREATE INDEX "department_objective_department_id_idx" ON "department_objective"("department_id");
+
+-- CreateIndex
+CREATE INDEX "department_objective_company_id_cycle_id_department_id_stat_idx" ON "department_objective"("company_id", "cycle_id", "department_id", "status_code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "department_objective_company_kr_id_department_id_key" ON "department_objective"("company_kr_id", "department_id");
+
+-- CreateIndex
+CREATE INDEX "department_key_result_company_id_idx" ON "department_key_result"("company_id");
+
+-- CreateIndex
+CREATE INDEX "department_key_result_department_objective_id_idx" ON "department_key_result"("department_objective_id");
+
+-- CreateIndex
+CREATE INDEX "department_key_result_metric_definition_id_idx" ON "department_key_result"("metric_definition_id");
+
+-- CreateIndex
+CREATE INDEX "department_key_result_company_id_department_objective_id_st_idx" ON "department_key_result"("company_id", "department_objective_id", "status_code");
+
+-- CreateIndex
+CREATE INDEX "department_month_plan_company_id_idx" ON "department_month_plan"("company_id");
+
+-- CreateIndex
+CREATE INDEX "department_month_plan_department_kr_id_idx" ON "department_month_plan"("department_kr_id");
+
+-- CreateIndex
+CREATE INDEX "department_month_plan_company_id_month_number_status_code_idx" ON "department_month_plan"("company_id", "month_number", "status_code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "department_month_plan_department_kr_id_month_number_key" ON "department_month_plan"("department_kr_id", "month_number");
+
+-- CreateIndex
+CREATE INDEX "department_weekly_plan_company_id_idx" ON "department_weekly_plan"("company_id");
+
+-- CreateIndex
+CREATE INDEX "department_weekly_plan_department_kr_id_idx" ON "department_weekly_plan"("department_kr_id");
+
+-- CreateIndex
+CREATE INDEX "department_weekly_plan_company_id_week_number_status_code_idx" ON "department_weekly_plan"("company_id", "week_number", "status_code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "department_weekly_plan_department_kr_id_week_number_key" ON "department_weekly_plan"("department_kr_id", "week_number");
 
 -- CreateIndex
 CREATE INDEX "kr_contributor_company_id_idx" ON "kr_contributor"("company_id");
 
 -- CreateIndex
-CREATE INDEX "kr_contributor_company_kr_id_idx" ON "kr_contributor"("company_kr_id");
-
--- CreateIndex
-CREATE INDEX "kr_contributor_employee_kr_id_idx" ON "kr_contributor"("employee_kr_id");
+CREATE INDEX "kr_contributor_department_kr_id_idx" ON "kr_contributor"("department_kr_id");
 
 -- CreateIndex
 CREATE INDEX "kr_contributor_user_id_idx" ON "kr_contributor"("user_id");
@@ -1845,10 +1842,7 @@ CREATE INDEX "kr_contributor_user_id_idx" ON "kr_contributor"("user_id");
 CREATE INDEX "kr_contributor_company_id_status_code_idx" ON "kr_contributor"("company_id", "status_code");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "kr_contributor_company_kr_id_employee_kr_id_user_id_key" ON "kr_contributor"("company_kr_id", "employee_kr_id", "user_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "employee_objective_kr_contributor_id_key" ON "employee_objective"("kr_contributor_id");
+CREATE UNIQUE INDEX "kr_contributor_department_kr_id_user_id_key" ON "kr_contributor"("department_kr_id", "user_id");
 
 -- CreateIndex
 CREATE INDEX "employee_objective_company_id_idx" ON "employee_objective"("company_id");
@@ -1863,10 +1857,10 @@ CREATE INDEX "employee_objective_user_id_idx" ON "employee_objective"("user_id")
 CREATE INDEX "employee_objective_chosen_parent_kr_id_idx" ON "employee_objective"("chosen_parent_kr_id");
 
 -- CreateIndex
-CREATE INDEX "employee_objective_submission_id_idx" ON "employee_objective"("submission_id");
+CREATE INDEX "employee_objective_company_id_cycle_id_user_id_status_code_idx" ON "employee_objective"("company_id", "cycle_id", "user_id", "status_code");
 
 -- CreateIndex
-CREATE INDEX "employee_objective_company_id_cycle_id_user_id_status_code_idx" ON "employee_objective"("company_id", "cycle_id", "user_id", "status_code");
+CREATE UNIQUE INDEX "employee_objective_kr_contributor_id_key" ON "employee_objective"("kr_contributor_id");
 
 -- CreateIndex
 CREATE INDEX "employee_key_result_company_id_idx" ON "employee_key_result"("company_id");
@@ -1878,46 +1872,19 @@ CREATE INDEX "employee_key_result_employee_objective_id_idx" ON "employee_key_re
 CREATE INDEX "employee_key_result_metric_definition_id_idx" ON "employee_key_result"("metric_definition_id");
 
 -- CreateIndex
-CREATE INDEX "employee_key_result_submission_id_idx" ON "employee_key_result"("submission_id");
-
--- CreateIndex
 CREATE INDEX "employee_key_result_company_id_employee_objective_id_status_idx" ON "employee_key_result"("company_id", "employee_objective_id", "status_code");
 
 -- CreateIndex
 CREATE INDEX "employee_month_plan_company_id_idx" ON "employee_month_plan"("company_id");
 
 -- CreateIndex
-CREATE INDEX "employee_month_plan_month_number_idx" ON "employee_month_plan"("month_number");
+CREATE INDEX "employee_month_plan_employee_kr_id_idx" ON "employee_month_plan"("employee_kr_id");
 
 -- CreateIndex
-CREATE INDEX "employee_month_plan_employee_objective_id_idx" ON "employee_month_plan"("employee_objective_id");
+CREATE INDEX "employee_month_plan_company_id_month_number_status_code_idx" ON "employee_month_plan"("company_id", "month_number", "status_code");
 
 -- CreateIndex
-CREATE INDEX "employee_month_plan_submission_id_idx" ON "employee_month_plan"("submission_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_company_id_status_code_idx" ON "employee_month_plan"("company_id", "status_code");
-
--- CreateIndex
-CREATE UNIQUE INDEX "employee_month_plan_month_number_employee_objective_id_key" ON "employee_month_plan"("month_number", "employee_objective_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_item_company_id_idx" ON "employee_month_plan_item"("company_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_item_employee_month_plan_id_idx" ON "employee_month_plan_item"("employee_month_plan_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_item_employee_kr_id_idx" ON "employee_month_plan_item"("employee_kr_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_item_metric_definition_id_idx" ON "employee_month_plan_item"("metric_definition_id");
-
--- CreateIndex
-CREATE INDEX "employee_month_plan_item_parent_employee_month_plan_item_id_idx" ON "employee_month_plan_item"("parent_employee_month_plan_item_id");
-
--- CreateIndex
-CREATE INDEX "weekly_plan_employee_kr_id_employee_month_plan_id_week_numb_idx" ON "weekly_plan"("employee_kr_id", "employee_month_plan_id", "week_number");
+CREATE UNIQUE INDEX "employee_month_plan_employee_kr_id_month_number_key" ON "employee_month_plan"("employee_kr_id", "month_number");
 
 -- CreateIndex
 CREATE INDEX "weekly_plan_company_id_idx" ON "weekly_plan"("company_id");
@@ -1929,28 +1896,10 @@ CREATE INDEX "weekly_plan_employee_kr_id_idx" ON "weekly_plan"("employee_kr_id")
 CREATE INDEX "weekly_plan_employee_month_plan_id_idx" ON "weekly_plan"("employee_month_plan_id");
 
 -- CreateIndex
-CREATE INDEX "weekly_plan_employee_month_plan_item_id_idx" ON "weekly_plan"("employee_month_plan_item_id");
-
--- CreateIndex
-CREATE INDEX "weekly_plan_metric_definition_id_idx" ON "weekly_plan"("metric_definition_id");
-
--- CreateIndex
-CREATE INDEX "weekly_plan_submission_id_idx" ON "weekly_plan"("submission_id");
-
--- CreateIndex
-CREATE INDEX "weekly_plan_parent_weekly_plan_id_idx" ON "weekly_plan"("parent_weekly_plan_id");
-
--- CreateIndex
-CREATE INDEX "weekly_plan_parent_weekly_task_id_idx" ON "weekly_plan"("parent_weekly_task_id");
-
--- CreateIndex
 CREATE INDEX "weekly_plan_company_id_week_number_status_code_idx" ON "weekly_plan"("company_id", "week_number", "status_code");
 
 -- CreateIndex
-CREATE INDEX "weekly_task_company_id_idx" ON "weekly_task"("company_id");
-
--- CreateIndex
-CREATE INDEX "weekly_task_weekly_plan_id_idx" ON "weekly_task"("weekly_plan_id");
+CREATE UNIQUE INDEX "weekly_plan_employee_kr_id_week_number_key" ON "weekly_plan"("employee_kr_id", "week_number");
 
 -- CreateIndex
 CREATE INDEX "subtask_company_id_idx" ON "subtask"("company_id");
@@ -1959,25 +1908,19 @@ CREATE INDEX "subtask_company_id_idx" ON "subtask"("company_id");
 CREATE INDEX "subtask_employee_kr_id_idx" ON "subtask"("employee_kr_id");
 
 -- CreateIndex
-CREATE INDEX "subtask_metric_definition_id_idx" ON "subtask"("metric_definition_id");
-
--- CreateIndex
 CREATE INDEX "subtask_company_id_target_month_target_week_idx" ON "subtask"("company_id", "target_month", "target_week");
 
 -- CreateIndex
 CREATE INDEX "subtask_company_id_status_code_idx" ON "subtask"("company_id", "status_code");
 
 -- CreateIndex
-CREATE INDEX "daily_plan_company_id_idx" ON "daily_plan"("company_id");
+CREATE INDEX "milestone_company_id_idx" ON "milestone"("company_id");
 
 -- CreateIndex
-CREATE INDEX "daily_plan_weekly_task_id_idx" ON "daily_plan"("weekly_task_id");
+CREATE INDEX "milestone_weekly_plan_id_idx" ON "milestone"("weekly_plan_id");
 
 -- CreateIndex
-CREATE INDEX "daily_plan_metric_definition_id_idx" ON "daily_plan"("metric_definition_id");
-
--- CreateIndex
-CREATE INDEX "daily_plan_company_id_status_code_idx" ON "daily_plan"("company_id", "status_code");
+CREATE INDEX "milestone_company_id_status_code_idx" ON "milestone"("company_id", "status_code");
 
 -- CreateIndex
 CREATE INDEX "progress_update_company_id_idx" ON "progress_update"("company_id");
@@ -2104,9 +2047,6 @@ CREATE INDEX "exported_file_export_job_id_idx" ON "exported_file"("export_job_id
 
 -- AddForeignKey
 ALTER TABLE "department" ADD CONSTRAINT "department_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "department" ADD CONSTRAINT "department_head_user_id_fkey" FOREIGN KEY ("head_user_id") REFERENCES "app_user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "job_title" ADD CONSTRAINT "job_title_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -2253,10 +2193,10 @@ ALTER TABLE "financial_detail" ADD CONSTRAINT "financial_detail_bank_id_fkey" FO
 ALTER TABLE "financial_detail" ADD CONSTRAINT "financial_detail_employee_id_company_id_fkey" FOREIGN KEY ("employee_id", "company_id") REFERENCES "employee"("id", "company_id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "document_signer_config" ADD CONSTRAINT "document_signer_config_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "document_signer_config" ADD CONSTRAINT "document_signer_config_signer_employee_id_fkey" FOREIGN KEY ("signer_employee_id") REFERENCES "employee"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "document_signer_config" ADD CONSTRAINT "document_signer_config_signer_employee_id_fkey" FOREIGN KEY ("signer_employee_id") REFERENCES "employee"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "document_signer_config" ADD CONSTRAINT "document_signer_config_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "celebration" ADD CONSTRAINT "celebration_employee_id_company_id_fkey" FOREIGN KEY ("employee_id", "company_id") REFERENCES "employee"("id", "company_id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -2334,34 +2274,34 @@ ALTER TABLE "okr_config_assignment" ADD CONSTRAINT "okr_config_assignment_cycle_
 ALTER TABLE "company_objective" ADD CONSTRAINT "company_objective_cycle_id_fkey" FOREIGN KEY ("cycle_id") REFERENCES "okr_cycle"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "company_objective" ADD CONSTRAINT "company_objective_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "company_key_result" ADD CONSTRAINT "company_key_result_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "company_key_result" ADD CONSTRAINT "company_key_result_objective_id_fkey" FOREIGN KEY ("objective_id") REFERENCES "company_objective"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "company_key_result" ADD CONSTRAINT "company_key_result_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "company_key_result" ADD CONSTRAINT "company_key_result_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "kr_contributor" ADD CONSTRAINT "kr_contributor_company_kr_id_fkey" FOREIGN KEY ("company_kr_id") REFERENCES "company_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "company_key_result" ADD CONSTRAINT "company_key_result_owner_department_id_fkey" FOREIGN KEY ("owner_department_id") REFERENCES "department"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "kr_contributor" ADD CONSTRAINT "kr_contributor_department_kr_id_fkey" FOREIGN KEY ("department_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "department_objective" ADD CONSTRAINT "department_objective_cycle_id_fkey" FOREIGN KEY ("cycle_id") REFERENCES "okr_cycle"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "kr_contributor" ADD CONSTRAINT "kr_contributor_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "department_objective" ADD CONSTRAINT "department_objective_company_kr_id_fkey" FOREIGN KEY ("company_kr_id") REFERENCES "company_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "kr_contributor" ADD CONSTRAINT "kr_contributor_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "app_user"("employee_id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "department_key_result" ADD CONSTRAINT "department_key_result_department_objective_id_fkey" FOREIGN KEY ("department_objective_id") REFERENCES "department_objective"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_chosen_parent_employee_kr_id_fkey" FOREIGN KEY ("chosen_parent_employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "department_key_result" ADD CONSTRAINT "department_key_result_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_chosen_parent_kr_id_fkey" FOREIGN KEY ("chosen_parent_kr_id") REFERENCES "company_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "department_month_plan" ADD CONSTRAINT "department_month_plan_department_kr_id_fkey" FOREIGN KEY ("department_kr_id") REFERENCES "department_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "department_weekly_plan" ADD CONSTRAINT "department_weekly_plan_department_kr_id_fkey" FOREIGN KEY ("department_kr_id") REFERENCES "department_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "kr_contributor" ADD CONSTRAINT "kr_contributor_department_kr_id_fkey" FOREIGN KEY ("department_kr_id") REFERENCES "department_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_cycle_id_fkey" FOREIGN KEY ("cycle_id") REFERENCES "okr_cycle"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -2370,76 +2310,28 @@ ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_cycle_id_fke
 ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_kr_contributor_id_fkey" FOREIGN KEY ("kr_contributor_id") REFERENCES "kr_contributor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "app_user"("employee_id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "employee_objective" ADD CONSTRAINT "employee_objective_chosen_parent_kr_id_fkey" FOREIGN KEY ("chosen_parent_kr_id") REFERENCES "department_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "employee_key_result" ADD CONSTRAINT "employee_key_result_employee_objective_id_fkey" FOREIGN KEY ("employee_objective_id") REFERENCES "employee_objective"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "employee_key_result" ADD CONSTRAINT "employee_key_result_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "employee_key_result" ADD CONSTRAINT "employee_key_result_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "employee_key_result" ADD CONSTRAINT "employee_key_result_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan" ADD CONSTRAINT "employee_month_plan_employee_objective_id_fkey" FOREIGN KEY ("employee_objective_id") REFERENCES "employee_objective"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan" ADD CONSTRAINT "employee_month_plan_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan_item" ADD CONSTRAINT "employee_month_plan_item_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan_item" ADD CONSTRAINT "employee_month_plan_item_employee_month_plan_id_fkey" FOREIGN KEY ("employee_month_plan_id") REFERENCES "employee_month_plan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan_item" ADD CONSTRAINT "employee_month_plan_item_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "employee_month_plan_item" ADD CONSTRAINT "employee_month_plan_item_parent_employee_month_plan_item_i_fkey" FOREIGN KEY ("parent_employee_month_plan_item_id") REFERENCES "employee_month_plan_item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "employee_month_plan" ADD CONSTRAINT "employee_month_plan_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_employee_month_plan_id_fkey" FOREIGN KEY ("employee_month_plan_id") REFERENCES "employee_month_plan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_employee_month_plan_item_id_fkey" FOREIGN KEY ("employee_month_plan_item_id") REFERENCES "employee_month_plan_item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_parent_weekly_plan_id_fkey" FOREIGN KEY ("parent_weekly_plan_id") REFERENCES "weekly_plan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_parent_weekly_task_id_fkey" FOREIGN KEY ("parent_weekly_task_id") REFERENCES "weekly_task"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_submission_id_fkey" FOREIGN KEY ("submission_id") REFERENCES "okr_submission"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "weekly_task" ADD CONSTRAINT "weekly_task_weekly_plan_id_fkey" FOREIGN KEY ("weekly_plan_id") REFERENCES "weekly_plan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "weekly_plan" ADD CONSTRAINT "weekly_plan_employee_month_plan_id_fkey" FOREIGN KEY ("employee_month_plan_id") REFERENCES "employee_month_plan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "subtask" ADD CONSTRAINT "subtask_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "subtask" ADD CONSTRAINT "subtask_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "daily_plan" ADD CONSTRAINT "daily_plan_metric_definition_id_fkey" FOREIGN KEY ("metric_definition_id") REFERENCES "okr_metric_definition"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "daily_plan" ADD CONSTRAINT "daily_plan_weekly_task_id_fkey" FOREIGN KEY ("weekly_task_id") REFERENCES "weekly_task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "progress_update" ADD CONSTRAINT "progress_update_daily_plan_id_fkey" FOREIGN KEY ("daily_plan_id") REFERENCES "daily_plan"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "milestone" ADD CONSTRAINT "milestone_weekly_plan_id_fkey" FOREIGN KEY ("weekly_plan_id") REFERENCES "weekly_plan"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "progress_update" ADD CONSTRAINT "progress_update_employee_kr_id_fkey" FOREIGN KEY ("employee_kr_id") REFERENCES "employee_key_result"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -2448,19 +2340,25 @@ ALTER TABLE "progress_update" ADD CONSTRAINT "progress_update_employee_kr_id_fke
 ALTER TABLE "okr_score_snapshot" ADD CONSTRAINT "okr_score_snapshot_cycle_id_fkey" FOREIGN KEY ("cycle_id") REFERENCES "okr_cycle"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_companyKeyResultId_fkey" FOREIGN KEY ("companyKeyResultId") REFERENCES "company_key_result"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_parent_comment_id_fkey" FOREIGN KEY ("parent_comment_id") REFERENCES "okr_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_companyObjectiveId_fkey" FOREIGN KEY ("companyObjectiveId") REFERENCES "company_objective"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_employeeKeyResultId_fkey" FOREIGN KEY ("employeeKeyResultId") REFERENCES "employee_key_result"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_companyKeyResultId_fkey" FOREIGN KEY ("companyKeyResultId") REFERENCES "company_key_result"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_departmentObjectiveId_fkey" FOREIGN KEY ("departmentObjectiveId") REFERENCES "department_objective"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_departmentKeyResultId_fkey" FOREIGN KEY ("departmentKeyResultId") REFERENCES "department_key_result"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_employeeObjectiveId_fkey" FOREIGN KEY ("employeeObjectiveId") REFERENCES "employee_objective"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_parent_comment_id_fkey" FOREIGN KEY ("parent_comment_id") REFERENCES "okr_comment"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "okr_comment" ADD CONSTRAINT "okr_comment_employeeKeyResultId_fkey" FOREIGN KEY ("employeeKeyResultId") REFERENCES "employee_key_result"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "quarter_archive" ADD CONSTRAINT "quarter_archive_cycle_id_fkey" FOREIGN KEY ("cycle_id") REFERENCES "okr_cycle"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -13,6 +13,7 @@ import {
   getKeyResultDetail,
   publishKeyResult,
   assignUsers,
+  assignDepartments,
   listAvailableCompanyKRs,
   listMetrics,
 } from "src/controllers/okrCompanyController";
@@ -50,6 +51,6 @@ router.get("/key-results/:id", getKeyResultDetail);
 router.put("/key-results/:id", updateKeyResult);
 router.patch("/key-results/:id/publish", publishKeyResult);
 router.post("/key-results/:id/assign-users", assignUsers);
-router.post("/key-results/:id/assign-departments", assignUsers);
+router.post("/key-results/:id/assign-departments", assignDepartments);
 
 export default router;

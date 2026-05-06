@@ -10,6 +10,8 @@ import {
   getCompletionStatusCtrl,
   triggerRollupRefresh,
   generateSnapshotCtrl,
+  getSnapshotsCtrl,
+  getEmployeeOverview,
 } from "src/controllers/okrDashboardController";
 
 const router = express.Router();
@@ -34,9 +36,11 @@ router.get("/financial", getFinancialBreakdownCtrl);
 router.get("/at-risk", getAtRiskSummary);
 router.get("/completion", getCompletionStatusCtrl);
 router.get("/completion/:id", getCompletionStatusCtrl);
+router.get("/employee", getEmployeeOverview);
 
-// Rollup & Snapshots
-router.post("/rollup/refresh", restrictTo("Admin"), triggerRollupRefresh);
-router.post("/snapshots/generate", restrictTo("Admin"), generateSnapshotCtrl);
+// Rollup & Snapshots — accessible to Admin, HR, and SuperAdmin
+router.post("/rollup/refresh", restrictTo("Admin", "HR", "SuperAdmin", "Super Admin"), triggerRollupRefresh);
+router.post("/snapshots/generate", restrictTo("Admin", "HR", "SuperAdmin", "Super Admin"), generateSnapshotCtrl);
+router.get("/snapshots", getSnapshotsCtrl);
 
 export default router;

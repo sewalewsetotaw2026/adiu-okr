@@ -41,6 +41,7 @@ model OkrCycle {
   archived_at        DateTime?
   companyObjectives  CompanyObjective[]
   employeeObjectives EmployeeObjective[]
+  employeeMonthPlans EmployeeMonthPlan[]
   configAssignments  OkrConfigAssignment[]
   scoreSnapshots     OkrScoreSnapshot[]
   quarterArchives    QuarterArchive[]
@@ -178,12 +179,14 @@ model OkrMetricDefinition {
   code                     String                  @db.VarChar(50)
   name                     String                  @db.VarChar(100)
   category                 OkrMetricCategory
+  category_label           String?                 @db.VarChar(100)
   unit_of_measure          String?                 @db.VarChar(30)
   is_financial             Boolean                 @default(false)
   requires_target_value    Boolean                 @default(true)
   allows_binary_completion Boolean                 @default(false)
   supports_value_rollup    Boolean                 @default(true)
   supports_weighted_score  Boolean                 @default(true)
+  value_based_progress     Boolean                 @default(false)
   is_active                Boolean                 @default(true)
   created_at               DateTime                @default(now())
   updated_at               DateTime                @updatedAt
@@ -197,7 +200,27 @@ model OkrMetricDefinition {
   @@unique([company_id, code])
   @@index([company_id])
   @@index([company_id, category, is_active])
+  @@index([company_id, value_based_progress])
   @@map("okr_metric_definition")
+}
+
+model OkrMetricCategoryOption {
+  id            Int               @id @default(autoincrement())
+  company_id    Int
+  code          String            @db.VarChar(50)
+  name          String            @db.VarChar(100)
+  behavior_type OkrMetricCategory @default(CUSTOM)
+  description   String?           @db.VarChar(300)
+  is_active     Boolean           @default(true)
+  created_by    String            @db.VarChar(20)
+  created_at    DateTime          @default(now())
+  updated_at    DateTime          @updatedAt
+
+  @@unique([company_id, code])
+  @@unique([company_id, name])
+  @@index([company_id])
+  @@index([company_id, is_active])
+  @@map("okr_metric_category_option")
 }
 
 model OkrConfigSnapshot {
@@ -276,6 +299,7 @@ model CompanyKeyResult {
   submission                     OkrSubmission?      @relation(fields: [submission_id], references: [id])
   employeeObjectives             EmployeeObjective[]
   contributors                   KrContributor[]
+  departments                    CompanyKrDepartment[]
   comments                       OkrComment[]
 
   @@index([company_id])
@@ -284,6 +308,22 @@ model CompanyKeyResult {
   @@index([submission_id])
   @@index([company_id, objective_id, status_code])
   @@map("company_key_result")
+}
+
+model CompanyKrDepartment {
+  id            Int      @id @default(autoincrement())
+  company_id    Int
+  company_kr_id Int
+  department_id Int
+  created_at    DateTime @default(now())
+
+  companyKr  CompanyKeyResult @relation(fields: [company_kr_id], references: [id], onDelete: Cascade)
+  department Department       @relation(fields: [department_id], references: [id], onDelete: Cascade)
+
+  @@unique([company_kr_id, department_id])
+  @@index([company_kr_id])
+  @@index([department_id])
+  @@map("company_kr_department")
 }
 
 model KrContributor {
@@ -408,7 +448,9 @@ model EmployeeMonthPlan {
   id                    Int                     @id @default(autoincrement())
   company_id            Int
   month_number          Int
-  employee_objective_id Int
+  employee_objective_id Int?                    // Nullable — plans can span multiple objectives
+  user_id               String                  @db.VarChar(20)
+  cycle_id              Int
   title                 String                  @db.VarChar(200)
   description           String?                 @db.VarChar(2000)
   target_value          Decimal?                @db.Decimal(18, 4)
@@ -424,15 +466,19 @@ model EmployeeMonthPlan {
   created_at            DateTime                @default(now())
   updated_at            DateTime                @updatedAt
   submission_id         Int?
-  employeeObjective     EmployeeObjective       @relation(fields: [employee_objective_id], references: [id], onDelete: Cascade)
+  employeeObjective     EmployeeObjective?      @relation(fields: [employee_objective_id], references: [id], onDelete: Cascade)
+  user                  AppUser                 @relation(fields: [user_id], references: [employee_id])
+  cycle                 OkrCycle                @relation(fields: [cycle_id], references: [id])
   submission            OkrSubmission?          @relation(fields: [submission_id], references: [id])
   items                 EmployeeMonthPlanItem[]
   weeklyPlans           WeeklyPlan[]
 
-  @@unique([month_number, employee_objective_id])
+  @@unique([month_number, user_id, cycle_id])
   @@index([company_id])
   @@index([month_number])
   @@index([employee_objective_id])
+  @@index([user_id])
+  @@index([cycle_id])
   @@index([submission_id])
   @@index([company_id, status_code])
   @@map("employee_month_plan")
@@ -859,6 +905,7 @@ model ExportedFile {
 }
 
 enum OkrSubmissionType {
+  QUARTERLY_PLANNING
   OBJECTIVE_PLANNING
   MONTHLY_PLAN
   WEEKLY_PLAN

@@ -117,8 +117,8 @@ export async function openCycle(id: number, companyId: number, actorId: string) 
     where: { id, company_id: companyId },
   });
   if (!cycle) throw new Error("Cycle not found.");
-  if (cycle.status !== "DRAFT") {
-    throw new Error("Only DRAFT cycles can be opened.");
+  if (cycle.status !== "DRAFT" && cycle.status !== "CLOSED") {
+    throw new Error("Only DRAFT or CLOSED cycles can be opened.");
   }
 
   const existingOpen = await prisma.okrCycle.findFirst({

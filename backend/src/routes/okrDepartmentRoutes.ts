@@ -4,6 +4,7 @@ import {
   listDepartmentObjectives,
   listPendingDepartmentObjectives,
   listPendingDepartmentKeyResults,
+  listDepartmentPendingApprovals,
   createDepartmentObjective,
   getDepartmentObjectiveDetail,
   publishDepartmentObjective,
@@ -22,19 +23,23 @@ import {
   listDepartmentDailyPlans,
   updateDepartmentDailyPlan,
   deleteDepartmentDailyPlan,
+
   submitDepartmentObjective,
   approveDepartmentObjective,
   bulkSubmitDepartment,
   bulkApproveDepartment,
-  listPendingDepartmentApprovals,
-  bulkApproveDepartmentItems,
-  approveDepartmentItem,
 } from "src/controllers/okrDepartmentController";
 import { restrictTo } from "src/middleware/authMiddleware";
 
 const router = express.Router();
 
 router.use(protect);
+
+router.get("/approvals/pending", listDepartmentPendingApprovals);
+router.post("/approvals/bulk", restrictTo("Admin"), bulkApproveDepartment);
+router.post("/approvals/single", restrictTo("Admin"), bulkApproveDepartment);
+router.get("/objectives/pending", restrictTo("Admin"), listPendingDepartmentObjectives);
+router.get("/key-results/pending", listPendingDepartmentKeyResults);
 
 router.param("id", (req, res, next, id) => {
   const parsed = Number(id);
@@ -46,27 +51,21 @@ router.param("id", (req, res, next, id) => {
   next();
 });
 
-router.get("/objectives", listDepartmentObjectives);
-router.get(
-  "/objectives/pending",
-  // restrictTo("Admin", "HR", "SuperAdmin", "SUPERADMIN"),
-  listPendingDepartmentObjectives,
-);
-router.get("/key-results/pending", listPendingDepartmentKeyResults);
-router.post("/objectives", createDepartmentObjective); // Add this
 router.post("/adopt-kr", adoptCompanyKR);
+router.get("/objectives", listDepartmentObjectives);
+router.post("/objectives", createDepartmentObjective);
 router.get("/objectives/:id", getDepartmentObjectiveDetail);
 router.patch("/objectives/:id/publish", publishDepartmentObjective);
 router.patch("/objectives/:id/submit", submitDepartmentObjective);
-router.patch("/bulk-submit", bulkSubmitDepartment);
-router.patch("/bulk-approve", bulkApproveDepartment);
-// router.patch("/bulk-approve", restrictTo("Admin", "HR", "SuperAdmin", "SUPERADMIN"), bulkApproveDepartment);
-router.patch("/objectives/:id/approve", approveDepartmentObjective);
 
-// Unified Department Approvals
-router.get("/approvals/pending", listPendingDepartmentApprovals);
-router.post("/approvals/bulk", bulkApproveDepartmentItems);
-router.post("/approvals/single", approveDepartmentItem);
+// Existing bulk operations (keeping for compatibility)
+router.patch("/bulk-submit", restrictTo("Admin", "Manager", "CEO", "SUPER_ADMIN", "Super Admin"), bulkSubmitDepartment);
+router.patch("/bulk-approve", restrictTo("Admin"), bulkApproveDepartment);
+router.patch(
+  "/objectives/:id/approve",
+  restrictTo("Admin"),
+  approveDepartmentObjective,
+);
 
 // Department Key Results (nested under objectives)
 router.post("/objectives/:id/key-results", createDepartmentKR);
@@ -75,7 +74,11 @@ router.get("/objectives/:id/key-results", listDepartmentKRs);
 // Department Key Results (direct access)
 router.put("/key-results/:id", updateDepartmentKR);
 router.patch("/key-results/:id/submit", submitDepartmentKeyResult);
-router.patch("/key-results/:id/approve", approveDepartmentKeyResult);
+router.patch(
+  "/key-results/:id/approve",
+  restrictTo("Admin"),
+  approveDepartmentKeyResult,
+);
 router.patch("/key-results/:id/publish", publishDepartmentKeyResult);
 
 // Month Plans
@@ -92,5 +95,6 @@ router.get("/weekly-plans/:id/daily-plans", listDepartmentDailyPlans);
 router.put("/daily-plans/:id", updateDepartmentDailyPlan);
 router.patch("/daily-plans/:id", updateDepartmentDailyPlan);
 router.delete("/daily-plans/:id", deleteDepartmentDailyPlan);
+
 
 export default router;
