@@ -533,7 +533,7 @@ export default function CompanyObjectives() {
                     Create your first company objective, then add key results
                     and assign owning departments from the detail view.
                   </p>
-                  <Button
+                  {/* <Button
                     variant="primary"
                     size="sm"
                     icon={MdAdd}
@@ -551,7 +551,7 @@ export default function CompanyObjectives() {
                     }
                     className="mt-6 inline-flex items-center gap-2 rounded-xl"
                   >
-                    {/* {Number(
+                    {Number(
                       configMenu?.additional_configuration?.allowed_objectives
                         ?.max,
                     ) > 0 &&
@@ -561,8 +561,8 @@ export default function CompanyObjectives() {
                           ?.max,
                       )
                       ? "Limit Reached"
-                      : "Create Objective"} */}
-                  </Button>
+                      : "Create Objective"}
+                  </Button> */}
                 </div>
               ) : filteredObjectives.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-white/80 px-8 py-16 text-center">
