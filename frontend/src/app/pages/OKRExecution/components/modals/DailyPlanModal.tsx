@@ -5,10 +5,9 @@ import BulletTextarea from "../../../../components/common/BulletTextarea";
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  // NEW: KR selection options (filtered by weekly plan group)
-  krOptions: Array<{ id: number; title: string; targetValue: number; metricId?: number }>;
-  krTargets: Record<number, { target: number | ""; initial: number | ""; metricId: number | ""; isDirect: boolean }>;
-  onChangeKrValue: (id: number, field: "target" | "initial" | "metricId" | "isDirect", val: string | number | boolean | "") => void;
+  // KR targets used for multi-task entry
+  krTargets: Record<number, { target: number | ""; initial: number | ""; metricId: number | ""; contributesToScore?: boolean; contributesToValue?: boolean }>;
+  onChangeKrValue: (id: number, field: "target" | "initial" | "metricId" | "contributesToScore" | "contributesToValue", val: string | number | boolean | "") => void;
 
   title: string;
   onChangeTitle: (v: string) => void;
@@ -17,23 +16,19 @@ type Props = {
   completionDay: string;
   onChangeCompletionDay: (v: string) => void;
 
-  metrics: Array<{ id: number; name: string; unit_of_measure?: string }>;
+  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean }>;
   onSubmit: () => void;
   isEdit?: boolean;
   submitting?: boolean;
   weeklyPlanOptions?: Array<{ id: number; title: string; tasks: Array<{ id: number; title: string; targetValue: number }> }>;
-  selectedWeeklyPlanId?: number | "";
-  onChangeWeeklyPlanId?: (id: number) => void;
   selectedTaskIds?: number[];
   onChangeTaskIds?: (ids: number[]) => void;
-  existingDays?: string[];
 };
 
 /** Create / edit daily plan with multi-KR support. */
 export default function DailyPlanModal({
   isOpen,
   onClose,
-  krOptions,
   krTargets,
   onChangeKrValue,
   title,
@@ -47,11 +42,8 @@ export default function DailyPlanModal({
   isEdit = false,
   submitting,
   weeklyPlanOptions,
-  selectedWeeklyPlanId,
-  onChangeWeeklyPlanId,
   selectedTaskIds,
   onChangeTaskIds,
-  existingDays = [],
 }: Props) {
   const days = [
     "MONDAY",
@@ -93,17 +85,17 @@ export default function DailyPlanModal({
               <div key={w.id} className="space-y-2 border-b border-gray-100 last:border-0 pb-3 last:pb-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    {(w.title || "Untitled").split(":")[0]} {/* "Week X" */}
+                    {w.title.split(":")[0]} {/* "Week X" */}
                   </span>
                   <span className="text-[11px] font-bold text-gray-400 tracking-tighter truncate">
-                    {(w.title || "Untitled").split(":")[1] || (w.title || "Untitled")}
+                    {w.title.split(":")[1] || w.title}
                   </span>
                 </div>
                 
                 <div className="pl-2 space-y-2">
                   {w.tasks.map((t) => {
                     const isSelected = selectedTaskIds?.includes(t.id);
-                    const values = krTargets[t.id] || { target: "", initial: "", metricId: "", isDirect: true };
+                    const values = krTargets[t.id] || { target: "", initial: "", metricId: "" };
                     
                     return (
                       <div key={t.id} className={`p-2 rounded-lg border transition-all ${isSelected ? "bg-white border-primary/20 shadow-sm" : "border-transparent hover:bg-white/50"}`}>
@@ -129,7 +121,9 @@ export default function DailyPlanModal({
                         </label>
 
                         {isSelected && (
-                          <div className="mt-3 grid grid-cols-3 gap-3 pt-3 border-t border-gray-50">
+                          <div className="mt-3 grid grid-cols-1 gap-3 pt-3 border-t border-gray-50"
+                            style={{ gridTemplateColumns: metrics.find((m) => m.id === values.metricId)?.allows_binary_completion ? "1fr" : "repeat(3, 1fr)" }}
+                          >
                             <div>
                               <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">Metric</label>
                               <select
@@ -139,45 +133,69 @@ export default function DailyPlanModal({
                               >
                                 <option value="">Metric...</option>
                                 {metrics.map((m) => (
-                                  <option key={m.id} value={m.id}>{m.name}</option>
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} ({m.unit_of_measure || m.unit || "N/A"})
+                                  </option>
                                 ))}
                               </select>
                             </div>
-                            <div>
-                              <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">Daily Target</label>
-                              <input
-                                type="number"
-                                value={values.target}
-                                onChange={(e) => onChangeKrValue(t.id, "target", e.target.value === "" ? "" : Number(e.target.value))}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-primary"
-                                placeholder="Goal"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">Initial</label>
-                              <input
-                                type="number"
-                                value={values.initial}
-                                onChange={(e) => onChangeKrValue(t.id, "initial", e.target.value === "" ? "" : Number(e.target.value))}
-                                className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-primary"
-                                placeholder="Start"
-                              />
-                            </div>
-                            <div className="col-span-3 mt-1 flex items-center gap-2">
+                            {!metrics.find((m) => m.id === values.metricId)?.allows_binary_completion && (
+                              <>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">Daily Target</label>
+                                  <input
+                                    type="number"
+                                    value={values.target}
+                                    onChange={(e) => onChangeKrValue(t.id, "target", e.target.value === "" ? "" : Number(e.target.value))}
+                                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-primary"
+                                    placeholder="Goal"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">Initial</label>
+                                  <input
+                                    type="number"
+                                    value={values.initial}
+                                    onChange={(e) => onChangeKrValue(t.id, "initial", e.target.value === "" ? "" : Number(e.target.value))}
+                                    className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs outline-none focus:border-primary"
+                                    placeholder="Start"
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {isSelected && (
+                          <div className="mt-3 grid grid-cols-2 gap-4 pt-3 border-t border-gray-50">
+                            {(() => {
+                              const selectedMetric = metrics.find(m => m.id === Number(values.metricId));
+                              if (selectedMetric?.value_based_progress) return null;
+                              return (
+                                <label className="flex items-center gap-2 cursor-pointer group">
+                                  <input
+                                    type="checkbox"
+                                    checked={values.contributesToScore ?? true}
+                                    onChange={(e) => onChangeKrValue(t.id, "contributesToScore", e.target.checked)}
+                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
+                                  />
+                                  <span className="text-xs font-semibold text-k-dark-grey group-hover:text-primary transition-colors">
+                                    Contributes to Score Rollup
+                                  </span>
+                                </label>
+                              );
+                            })()}
+
+                            <label className="flex items-center gap-2 cursor-pointer group">
                               <input
                                 type="checkbox"
-                                id={`is_direct_daily_${t.id}`}
-                                checked={values.isDirect !== false}
-                                onChange={(e) => onChangeKrValue(t.id, "isDirect", e.target.checked)}
-                                className="h-3.5 w-3.5 rounded border-gray-300 text-primary focus:ring-primary"
+                                checked={values.contributesToValue ?? true}
+                                onChange={(e) => onChangeKrValue(t.id, "contributesToValue", e.target.checked)}
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
                               />
-                              <label
-                                htmlFor={`is_direct_daily_${t.id}`}
-                                className="text-[10px] font-semibold text-k-medium-grey"
-                              >
-                                Directly contribute to Weekly Task
-                              </label>
-                            </div>
+                              <span className="text-xs font-semibold text-k-dark-grey group-hover:text-primary transition-colors">
+                                Contributes to Value Rollup
+                              </span>
+                            </label>
                           </div>
                         )}
                       </div>

@@ -1,5 +1,6 @@
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
+import BulletTextarea from "../../../../components/common/BulletTextarea";
 
 type Props = {
   isOpen: boolean;
@@ -47,9 +48,9 @@ export default function ApprovalActionModal({
         <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey uppercase tracking-wide">
           Comment {action === "reject" ? <span className="text-error">*</span> : null}
         </label>
-        <textarea
+        <BulletTextarea
           value={comment}
-          onChange={(e) => onChangeComment(e.target.value)}
+          onValueChange={(val) => onChangeComment(val)}
           placeholder={
             action === "reject"
               ? "Explain the reason for rejection…"

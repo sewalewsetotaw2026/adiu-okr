@@ -674,15 +674,20 @@ export default function PlanningCompliancePage() {
                   const monthlyObj = item.monthly_progress || item.monthlyProgress || {};
 
                   let score = 0;
+                  let indirectScore = 0;
                   if (selectedPeriod === "Quarterly") {
                     score = item.progress || 0;
+                    indirectScore = item.indirect_progress || 0;
                   } else if (selectedPeriod === "Monthly") {
                     score = monthlyObj[selectedMonth] ?? monthlyObj[String(selectedMonth)] ?? 0;
+                    indirectScore = item.indirect_monthly_progress?.[selectedMonth] ?? item.indirect_monthly_progress?.[String(selectedMonth)] ?? 0;
                   } else if (selectedPeriod === "Weekly") {
                     score = weeklyObj[selectedWeek] ?? weeklyObj[String(selectedWeek)] ?? 0;
+                    indirectScore = item.indirect_weekly_progress?.[selectedWeek] ?? item.indirect_weekly_progress?.[String(selectedWeek)] ?? 0;
                   }
 
                   const displayScore = Number(Number(score).toFixed(2));
+                  const displayIndirect = Number(Number(indirectScore).toFixed(2));
 
                   return (
                     <tr key={`${item.employee_id}-${idx}`} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
@@ -690,15 +695,26 @@ export default function PlanningCompliancePage() {
                       <td className="px-6 py-4 text-gray-500">{item.department_name}</td>
                       <td className="px-6 py-4 text-gray-500">{item.job_title}</td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 max-w-[140px]">
-                          <div className="h-2 flex-1 rounded-full bg-gray-100 overflow-hidden">
-                            <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${displayScore}%` }} />
+                        <div className="flex flex-col gap-2 max-w-[140px]">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
+                              <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${displayScore}%` }} />
+                            </div>
+                            <span className="text-[10px] tabular-nums text-gray-700 font-bold">{displayScore}%</span>
                           </div>
-                          <span className="text-xs tabular-nums text-gray-700 font-bold">{displayScore}%</span>
+                          {displayIndirect > 0 && (
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 flex-1 rounded-full bg-gray-100 overflow-hidden">
+                                <div className="h-full rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${displayIndirect}%` }} />
+                              </div>
+                              <span className="text-[10px] tabular-nums text-indigo-600 font-bold">{displayIndirect}%</span>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
                   );
+
                 })
               )}
             </tbody>

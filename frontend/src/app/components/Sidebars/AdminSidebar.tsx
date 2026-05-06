@@ -43,83 +43,9 @@ export default function AdminSidebar() {
   const { actions: managerActions } = useManagerSlice();
   const isManager = useSelector(selectIsManager);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-
-  const okrLinks = [
-    {
-      to: routeConstants.okr,
-      label: "Overview",
-      icon: MdDashboard,
-      exact: true,
-    },
-    {
-      to: routeConstants.okrCycles,
-      label: "Company Cycle",
-      icon: MdCalendarToday,
-    },
-    {
-      to: routeConstants.okrObjectives,
-      label: "Company Objectives",
-      icon: MdTrackChanges,
-    },
-    // {
-    //   to: routeConstants.okrDepartmentPlanning,
-    //   label: "Department OKR",
-    //   icon: MdGroup,
-    // },
-    {
-      to: routeConstants.okrDepartmentApprovalQueue,
-      label: "Approvals",
-      icon: MdPublishedWithChanges,
-    },
-    {
-      to: routeConstants.okrCeoStrategicDashboard,
-      label: "CEO Dashboard",
-      icon: MdInsights,
-    },
-    {
-      to: routeConstants.okrDepartmentComparison,
-      label: "Compare",
-      icon: MdCompareArrows,
-    },
-    {
-      to: routeConstants.okrCompanyGallery,
-      label: "Gallery",
-      icon: MdCollectionsBookmark,
-    },
-    {
-      to: routeConstants.okrConfiguration,
-      label: "Configuration",
-      icon: MdSettings,
-    },
-    // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
-    {
-      to: routeConstants.okrArchiveManagement,
-      label: "Archive",
-      icon: MdArchive,
-    },
-    {
-      to: routeConstants.okrPlanningCompliance,
-      label: "Planning Compliance",
-      icon: MdPublishedWithChanges,
-    },
-    // { to: routeConstants.okrMyExecution, label: "My OKRs", icon: MdPerson },
-  ];
-
-  const isOkrSectionActive =
-    location.pathname.startsWith("/admin/okr") ||
-    okrLinks.some((link) =>
-      link.exact
-        ? location.pathname === link.to
-        : location.pathname.startsWith(link.to),
-    );
-
-  const [isOkrExpanded, setIsOkrExpanded] = useState(isOkrSectionActive);
-
-  useEffect(() => {
-    if (isOkrSectionActive) {
-      setIsOkrExpanded(true);
-    }
-  }, [isOkrSectionActive]);
+  const [isOkrExpanded, setIsOkrExpanded] = useState(
+    location.pathname.startsWith("/admin/okr") || location.pathname.startsWith("/manager/okr"),
+  );
 
   useEffect(() => {
     dispatch(managerActions.checkIsManager());
@@ -214,6 +140,65 @@ export default function AdminSidebar() {
   );
 
   const filteredNavItems = navItems.filter((item) => item.visible !== false);
+  const okrLinks = [
+    {
+      to: routeConstants.okr,
+      label: "Overview",
+      icon: MdDashboard,
+      exact: true,
+    },
+    {
+      to: routeConstants.okrCycles,
+      label: "Company Cycle",
+      icon: MdCalendarToday,
+    },
+    {
+      to: routeConstants.okrObjectives,
+      label: "Company Objectives",
+      icon: MdTrackChanges,
+    },
+    {
+      to: routeConstants.okrDepartmentPlanning,
+      label: "Department OKR",
+      icon: MdGroup,
+    },
+    {
+      to: routeConstants.okrDepartmentApprovalQueue,
+      label: "Approvals",
+      icon: MdPublishedWithChanges,
+    },
+    {
+      to: routeConstants.okrCeoStrategicDashboard,
+      label: "CEO Dashboard",
+      icon: MdInsights,
+    },
+    {
+      to: routeConstants.okrDepartmentComparison,
+      label: "Compare",
+      icon: MdCompareArrows,
+    },
+    {
+      to: routeConstants.okrCompanyGallery,
+      label: "Gallery",
+      icon: MdCollectionsBookmark,
+    },
+    {
+      to: routeConstants.okrConfiguration,
+      label: "Configuration",
+      icon: MdSettings,
+    },
+    // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
+    {
+      to: routeConstants.okrArchiveManagement,
+      label: "Archive",
+      icon: MdArchive,
+    },
+      {
+        to: routeConstants.okrPlanningCompliance,
+        label: "Planning Compliance",
+        icon: MdPublishedWithChanges,
+      },
+  ];
   const normalNavItems = filteredNavItems.filter(
     (item) => !item.path.startsWith("/admin/okr"),
   );
@@ -239,6 +224,12 @@ export default function AdminSidebar() {
     },
     ...normalNavItems.slice(okrInsertIndex),
   ];
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin/okr") || location.pathname.startsWith("/manager/okr")) {
+      setIsOkrExpanded(true);
+    }
+  }, [location.pathname]);
 
   return (
     <>
@@ -306,7 +297,7 @@ export default function AdminSidebar() {
                         group w-full flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors cursor-pointer
                         ${isOpen || isMobileOpen ? "" : "justify-center"}
                         ${
-                          isOkrSectionActive
+                          location.pathname.startsWith("/admin/okr")
                             ? "bg-primary text-white"
                             : "text-gray-500 hover:bg-primary-light hover:text-primary"
                         }

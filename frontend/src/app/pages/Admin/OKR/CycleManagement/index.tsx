@@ -5,6 +5,7 @@ import StatusBadge, { Status } from "../components/StatusBadge";
 import ModalLayout from "../components/ModalLayout";
 import ApprovalFooter from "../components/ApprovalFooter";
 import RefreshButton from "../../../../components/common/RefreshButton";
+import Button from "../../../../components/Core/ui/Button";
 
 import {
   MdCalendarToday,
@@ -201,10 +202,10 @@ export default function CycleManagement() {
   };
 
   const EDIT_LOCKED_MESSAGE =
-    "Only cycles in Draft or Open can be edited. After a cycle is closed, its dates and name can no longer be changed.";
+    "Closed cycles cannot be edited. Active and Draft cycles can still be modified.";
 
   const openEdit = (cycle: Cycle) => {
-    if (cycle.status !== "draft" && cycle.status !== "open") {
+    if (cycle.status === "closed") {
       ToastService.error(EDIT_LOCKED_MESSAGE);
       return;
     }
@@ -223,47 +224,38 @@ export default function CycleManagement() {
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
           <PageHeader>
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => navigate(routeConstants.okr)}
-                    className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all active:scale-95 shadow-inner ring-1 ring-white/20"
-                    title="Back to OKR"
-                  >
-                    <MdChevronLeft className="text-2xl" />
-                  </button>
-                  <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
-                    <MdCalendarToday className="text-3xl text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-black tracking-tighter text-white">
-                      Planning Cycles
-                    </h1>
-                    <p className="text-white/60 text-xs font-medium mt-1">
-                      Manage organizational planning windows and active
-                      execution periods.
-                    </p>
-                  </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                
+                <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
+                  <MdCalendarToday className="text-3xl text-white" />
                 </div>
+                <div className="text-white">
+                  <h1 className="text-2xl font-black tracking-tighter capitalize">
+                    Planning Cycles
+                  </h1>
+                  <p className="text-white/60 text-xs font-medium mt-1">
+                    Manage organizational planning windows and active execution
+                    periods.
+                  </p>
+                </div>
+              </div>
 
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <RefreshButton
-                    onClick={() => {
-                      dispatch(actions.fetchCyclesRequest());
-                    }}
-                    loading={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={openCreate}
-                    className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-900 uppercase tracking-widest font-space shadow-lg shadow-slate-200/50 hover:bg-slate-50 active:scale-95 transition-all"
-                  >
-                    <MdAdd className="text-lg" />
-                    New Cycle
-                  </button>
-                </div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <RefreshButton
+                  onClick={() => {
+                    dispatch(actions.fetchCyclesRequest());
+                  }}
+                  loading={loading}
+                />
+                <Button
+                  variant="white"
+                  size="sm"
+                  onClick={openCreate}
+                  icon={MdAdd}
+                >
+                  New cycle
+                </Button>
               </div>
             </div>
           </PageHeader>
@@ -322,7 +314,7 @@ export default function CycleManagement() {
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-space mb-1">
                           {stat.label}
                         </p>
-                        <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
                           {stat.value}
                         </h3>
                       </div>
@@ -342,14 +334,14 @@ export default function CycleManagement() {
                     Create a cycle with start and end dates. Open it when you
                     are ready to run company objectives for that period.
                   </p>
-                  <button
-                    type="button"
+                  <Button
+                    variant="primary"
                     onClick={openCreate}
-                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95"
+                    icon={MdAdd}
+                    className="mt-6"
                   >
-                    <MdAdd />
                     Create Cycle
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-100 overflow-hidden">
@@ -375,26 +367,19 @@ export default function CycleManagement() {
                         {cycles.map((cycle) => {
                           const isBusy = actionLoadingId === cycle.id;
                           const openDisabled = isBusy || hasOpenCycle;
-                          const canEditCycle =
-                            cycle.status === "draft" || cycle.status === "open";
+                          const canEditCycle = cycle.status !== "closed";
 
                           return (
                             <tr
                               key={cycle.id}
-                              className={`group transition-colors ${
-                                isBusy ? "opacity-60" : "hover:bg-slate-50/50"
+                              className={`group transition-all duration-300 ${
+                                isBusy ? "opacity-60" : "hover:bg-slate-50"
                               }`}
                             >
                               <td className="px-6 py-4">
-                                <div className="flex flex-col">
                                   <span className="font-black text-slate-900 uppercase tracking-tight">
                                     {cycle.name}
                                   </span>
-                                  <span className="text-[10px] font-medium text-slate-400 font-space">
-                                    REFID: CYC-
-                                    {cycle.id.toString().padStart(3, "0")}
-                                  </span>
-                                </div>
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-2">
@@ -412,40 +397,40 @@ export default function CycleManagement() {
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center justify-end gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
                                     onClick={() => openEdit(cycle)}
                                     disabled={!canEditCycle || isBusy}
-                                    className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-all disabled:opacity-20"
-                                  >
-                                    <MdEdit className="text-lg" />
-                                  </button>
+                                    className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-all disabled:opacity-20 h-auto"
+                                    icon={MdEdit}
+                                  />
 
-                                  {cycle.status !== "closed" && (
                                     <>
                                       {cycle.status === "open" ? (
-                                        <button
-                                          type="button"
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
                                           onClick={() => closeCycle(cycle)}
                                           disabled={isBusy}
-                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-red-100 transition-all disabled:opacity-20"
+                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-red-100 transition-all disabled:opacity-20 h-auto"
+                                          icon={MdStopCircle}
                                         >
-                                          <MdStopCircle className="text-sm" />
                                           Close
-                                        </button>
+                                        </Button>
                                       ) : (
-                                        <button
-                                          type="button"
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
                                           onClick={() => openCycle(cycle)}
                                           disabled={openDisabled}
-                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-emerald-100 transition-all disabled:opacity-20"
+                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-emerald-100 transition-all disabled:opacity-20 h-auto"
+                                          icon={MdPlayCircleOutline}
                                         >
-                                          <MdPlayCircleOutline className="text-sm" />
                                           Open
-                                        </button>
+                                        </Button>
                                       )}
                                     </>
-                                  )}
                                 </div>
                               </td>
                             </tr>

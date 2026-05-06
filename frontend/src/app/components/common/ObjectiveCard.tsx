@@ -5,6 +5,7 @@ import {
   MdPriorityHigh,
   MdCheckCircle,
 } from "react-icons/md";
+import KeyResultListItem from "./KeyResultListItem";
 
 // Status types matched to the UI mockup
 export type ObjectiveStatusValue =
@@ -16,22 +17,43 @@ export type ObjectiveStatusValue =
   | "published"
   | string;
 
-export interface ObjectiveCardProps {
+export interface ObjectiveData {
   id: string | number;
   title: string;
-  status: ObjectiveStatusValue;
-  progress: number;
-  progressLabel?: string;
+  description?: string;
   ownerName?: ReactNode;
+  progress: number;
+  indirectProgress?: number;
+  status: ObjectiveStatusValue;
+  krCount?: number;
+  departmentsLinkedCount?: number;
+}
+
+export interface ObjectiveCardProps {
+  objective?: ObjectiveData;
+  id?: string | number;
+  title?: string;
+  status?: string;
+  progress?: number;
+  indirectProgress?: number;
+  progressLabel?: string;
+  krCount?: number;
   krsCount?: number;
   departmentsLinkedCount?: number;
-  actions?: ReactNode;
-  children?: ReactNode;
-  className?: string;
+  description?: string;
+  ownerName?: ReactNode;
   headerContext?: ReactNode;
+  children?: ReactNode;
+
+  keyResults?: any[];
+  variant?: "admin" | "manager" | "employee";
+  actions?: ReactNode;
+  className?: string;
   expandable?: boolean;
   defaultExpanded?: boolean;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
+  showId?: boolean;
+  onDecomposeKR?: (krId: number, title: string) => void;
 }
 
 function getStatusStyles(status: string, progress: number = 0) {
@@ -95,26 +117,34 @@ function getStatusStyles(status: string, progress: number = 0) {
   };
 }
 
-export default function ObjectiveCard({
-  id,
-  title,
-  status,
-  progress,
-  ownerName,
-  krsCount,
-  departmentsLinkedCount,
-  actions,
-  children,
-  className = "",
-  headerContext,
-  expandable = false,
-  defaultExpanded = false,
-  onClick,
-}: ObjectiveCardProps) {
+export default function ObjectiveCard(props: ObjectiveCardProps) {
+  const {
+    objective,
+    keyResults = [],
+    actions,
+    className = "",
+    expandable = false,
+    defaultExpanded = false,
+    onClick,
+    showId = true,
+    onDecomposeKR,
+    progressLabel = "Overall Progress",
+  } = props;
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  const id = objective?.id ?? props.id ?? "";
+  const title = objective?.title ?? props.title ?? "";
+  const status = objective?.status ?? props.status ?? "draft";
+  const progress = objective?.progress ?? props.progress ?? 0;
+  const indirectProgress = objective?.indirectProgress ?? props.indirectProgress ?? 0;
+  const ownerName = objective?.ownerName ?? props.ownerName;
+  const krCount = objective?.krCount ?? props.krCount ?? props.krsCount;
+  const departmentsLinkedCount = objective?.departmentsLinkedCount ?? props.departmentsLinkedCount;
+  const description = objective?.description ?? props.description;
 
   const statusStyles = getStatusStyles(status, progress);
   const clampedProgress = Math.min(100, Math.max(0, progress));
+  const clampedIndirectProgress = Math.min(100, Math.max(0, indirectProgress));
 
   const IconComponent =
     clampedProgress >= 100
@@ -132,13 +162,16 @@ export default function ObjectiveCard({
     }
   };
 
+  const variantStyles = "border-slate-100 shadow-sm shadow-slate-200/50";
+
   return (
     <div
-      className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300 hover-premium ${
-        (onClick || expandable) && !isExpanded ? "cursor-pointer" : ""
+      className={`bg-white rounded-2xl border ${variantStyles} shadow-sm overflow-hidden transition-all duration-300 hover-premium group ${
+        onClick || expandable
+          ? "cursor-pointer hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 hover:bg-primary/5 hover:-translate-y-1"
+          : ""
       } ${className}`}
     >
-      {/* Header Container */}
       <div
         className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative"
         onClick={handleToggle}
@@ -157,24 +190,33 @@ export default function ObjectiveCard({
               >
                 {statusStyles.label}
               </span>
-              {/*<span className="text-slate-300 text-[10px] font-bold font-space uppercase tracking-widest">ID: {id}</span>*/}
+              {/* {showId && (
+                <span className="text-slate-300 text-[10px] font-bold font-space uppercase tracking-widest">
+                  ID: {id}
+                </span>
+              )} */}
+
             </div>
 
             <h3 className="text-xl font-bold text-slate-900 leading-tight tracking-tight mb-2 group-hover:text-primary transition-colors">
               {title}
             </h3>
 
+            {props.headerContext && (
+               <div className="mb-2 text-sm text-slate-500">{props.headerContext}</div>
+            )}
+
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              {(krsCount !== undefined ||
+              {(krCount !== undefined ||
                 departmentsLinkedCount !== undefined) && (
                 <span className="text-slate-400 text-xs font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
-                  {krsCount !== undefined && (
+                  {krCount !== undefined && (
                     <span>
-                      {krsCount}{" "}
-                      <span className="font-medium text-slate-300">KRs</span>
+                      {krCount}{" "}
+                      <span className="font-medium text-slate-300">Key Results</span>
                     </span>
                   )}
-                  {krsCount !== undefined &&
+                  {krCount !== undefined &&
                     departmentsLinkedCount !== undefined && (
                       <span className="text-slate-200">|</span>
                     )}
@@ -200,9 +242,9 @@ export default function ObjectiveCard({
               )}
             </div>
 
-            {headerContext && (
+            {description && (
               <div className="mt-3 text-sm text-slate-500 border-l-2 border-slate-100 pl-3 italic">
-                {headerContext}
+                {description}
               </div>
             )}
           </div>
@@ -210,9 +252,26 @@ export default function ObjectiveCard({
 
         <div className="flex items-center gap-6 sm:gap-10 justify-between w-full sm:w-auto shrink-0 mt-4 sm:mt-0 px-2 sm:px-0">
           <div className="text-right flex flex-col items-end gap-1">
-            <div className="text-3xl font-black text-slate-900 tracking-tighter">
-              {clampedProgress}
-              <span className="text-lg text-slate-400 ml-0.5">%</span>
+            {progressLabel && (
+              <span className="text-[10px] font-black tracking-widest text-slate-400 font-space uppercase mb-1">{progressLabel}</span>
+            )}
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-2xl font-black text-slate-900 tracking-tighter">
+                  {clampedProgress}
+                  <span className="text-sm text-slate-400 ml-0.5">%</span>
+                </div>
+                <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Direct</div>
+              </div>
+              {indirectProgress > 0 && (
+                <div className="text-right">
+                  <div className="text-2xl font-black text-slate-900 tracking-tighter">
+                    {clampedIndirectProgress}
+                    <span className="text-sm text-slate-400 ml-0.5">%</span>
+                  </div>
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Indirect</div>
+                </div>
+              )}
             </div>
             <div className="w-24 sm:w-40 bg-slate-100 h-2.5 rounded-full overflow-hidden p-0.5 shadow-inner">
               <div
@@ -224,7 +283,7 @@ export default function ObjectiveCard({
 
           {expandable && (
             <div
-              className={`text-slate-400 rounded-xl p-2 transition-all duration-300 ${isExpanded ? "bg-primary/5 text-primary rotate-180" : "bg-slate-50 hover:bg-slate-100"}`}
+              className={`text-slate-400 rounded-xl p-2 transition-all duration-300 ${isExpanded ? "bg-primary/5 text-primary rotate-180" : "bg-slate-50 hover:bg-primary/10"}`}
             >
               <MdExpandMore className="text-2xl" />
             </div>
@@ -236,7 +295,9 @@ export default function ObjectiveCard({
       {expandable && isExpanded && (
         <div className="animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="px-6 pb-6">
-            {children && (
+            {props.children ? (
+              props.children
+            ) : keyResults && keyResults.length > 0 ? (
               <div className="bg-slate-50/50 rounded-2xl p-5 border border-slate-100/50">
                 <div className="flex items-center justify-between mb-5 px-1">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] font-space flex items-center gap-2">
@@ -244,9 +305,42 @@ export default function ObjectiveCard({
                     Key Results
                   </h4>
                 </div>
-                {children}
+                <div className="flex flex-col gap-4">
+                  {keyResults.map((kr: any) => {
+                    const krTgt = Number(kr.target_value ?? 0);
+                    const krCur = Number(kr.current_value ?? kr.currentValue ?? kr.final_value ?? 0);
+                    const directRaw = kr.final_score ?? kr.progress_percent ?? kr.progress_pct ?? kr.progress;
+                    const krPct = directRaw != null ? Number(directRaw) : (krTgt > 0 ? Number(((krCur / krTgt) * 100).toFixed(2)) : 0);
+                    const krIndirectPct = Number(kr.indirect_score ?? kr.indirect_score_percent ?? kr.indirectProgress ?? 0);
+                    return (
+                      <KeyResultListItem
+                        key={kr.id}
+                        title={kr.title}
+                        progress={krPct}
+                        indirectProgress={krIndirectPct}
+                        status={kr.status_code || kr.status || "draft"}
+                        targetString={`${kr.unit_of_measure === "ETB" ? "ETB " : ""}${krCur} / ${krTgt}${kr.unit_of_measure === "%" ? "%" : ""}`}
+                        metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
+                        actions={
+                          onDecomposeKR && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDecomposeKR(kr.id, kr.title);
+                              }}
+                              className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+                            >
+                              Add Decomposition
+                            </button>
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           {actions && (

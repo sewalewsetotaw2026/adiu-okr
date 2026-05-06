@@ -1,5 +1,4 @@
 import { routeConstants } from "../constants";
-import { Navigate } from "react-router-dom";
 import AdminDashboard from "../../app/pages/Admin/Dashboard";
 import CreateUser from "../../app/pages/Admin/CreateAccount";
 import CreateEmployment from "../../app/pages/Admin/CreateEmployment";
@@ -37,9 +36,9 @@ import EmployeeSettings from "../../app/pages/employee/Settings";
 import Settings from "../../app/pages/Admin/Settings";
 import NotFound from "../../app/pages/ErrorDisplayPage/NotFound";
 import NoAuthorized from "../../app/pages/ErrorDisplayPage/NoAuthorized";
-import MyTeam from "../../app/pages/Manager/MyTeam";
-import TeamLeaveApplications from "../../app/pages/Manager/TeamLeaveApplications";
-import TeamManagement from "../../app/pages/Manager/TeamManagement";
+import MyTeam from "../../app/pages/manager/MyTeam";
+import TeamLeaveApplications from "../../app/pages/manager/TeamLeaveApplications";
+import TeamManagement from "../../app/pages/manager/TeamManagement";
 import AdminProfile from "../../app/pages/Admin/Profile";
 import SharedEmployeeProfile from "../../app/components/employees/SharedEmployeeProfile";
 import { DepartmentTree } from "../../app/pages/Manager/DepartmentTree";
@@ -70,6 +69,9 @@ import TeamExecutionMonitorPage from "../../app/pages/OKRExecution/TeamExecution
 import PlanningCompliancePage from "../../app/pages/OKRExecution/TeamExecutionMonitor/PlanningCompliance";
 import ApprovalQueuePage from "../../app/pages/OKRExecution/ApprovalQueue";
 import DepartmentApprovalQueuePage from "../../app/pages/Admin/OKR/DepartmentApprovalQueue";
+import ReviewDashboard from "../../app/pages/OKRExecution/ReviewerPanel";
+import ReviewDetail from "../../app/pages/OKRExecution/ReviewerPanel/ReviewDetail";
+import ChangeRequestReview from "../../app/pages/OKRExecution/ReviewerPanel/ChangeRequestReview";
 
 import { IRoute } from "./types";
 
@@ -409,7 +411,7 @@ export const routes: IRoute[] = [
     path: routeConstants.okrObjectiveDetail,
     element: <ObjectiveDetail />,
     isAuthenticated: true,
-    allowedRoles: [1, 2, "Admin", "HR"],
+    allowedRoles: [1, 2, 3, "Admin", "HR", "Employee"],
   },
   {
     path: routeConstants.okrDepartmentPlanning,
@@ -489,13 +491,13 @@ export const routes: IRoute[] = [
     path: routeConstants.okrMyExecution,
     element: <MyExecutionDashboardPage />,
     isAuthenticated: true,
-    allowedRoles: [3, "Employee", "HR"],
+    allowedRoles: [3, 4, "Employee", "Manager", "HR"],
   },
   {
     path: routeConstants.okrEmployeeObjectiveDetail,
     element: <EmployeeObjectiveDetailPage />,
     isAuthenticated: true,
-    allowedRoles: [3, "Employee", "HR"],
+    allowedRoles: [1, 2, 3, 4, "Admin", "HR", "Employee", "Manager"],
   },
   {
     path: routeConstants.okrTeamExecutionMonitor,
@@ -520,5 +522,23 @@ export const routes: IRoute[] = [
     element: <DepartmentApprovalQueuePage />,
     isAuthenticated: true,
     allowedRoles: [1, 2, 4, "Admin", "HR"],
+  },
+  {
+    path: routeConstants.okrReviews,
+    element: <ReviewDashboard />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
+  },
+  {
+    path: routeConstants.okrReviewDetail,
+    element: <ReviewDetail />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
+  },
+  {
+    path: routeConstants.okrChangeRequestReview,
+    element: <ChangeRequestReview />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
   },
 ];

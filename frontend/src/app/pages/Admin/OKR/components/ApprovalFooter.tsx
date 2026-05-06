@@ -23,7 +23,7 @@ export default function ApprovalFooter({
 }: Props) {
   return (
     <div
-      className={`flex flex-col-reverse sm:flex-row sm:justify-end gap-3 mt-6 pt-4 border-t border-gray-100 ${className}`}
+      className={`flex flex-col-reverse sm:flex-row sm:justify-end gap-3 ${className}`}
     >
       <Button
         variant="secondary"

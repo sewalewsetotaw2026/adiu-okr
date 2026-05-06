@@ -1,23 +1,27 @@
-import toast from "react-hot-toast";
+import toast, { ToastOptions, Renderable } from "react-hot-toast";
 
 const ToastService = {
-  success: (message: string) => {
-    toast.success(message);
+  success: (message: Renderable, options?: ToastOptions) => {
+    toast.success(message, options);
   },
-  error: (message: string) => {
-    toast.error(message);
+  error: (message: Renderable, options?: ToastOptions) => {
+    toast.error(message, options);
   },
-  info: (message: string) => {
-    toast(message);
+  info: (message: Renderable, options?: ToastOptions) => {
+    toast(message, options);
   },
-  warning: (message: string) => {
+  warning: (message: Renderable, options?: ToastOptions) => {
     toast(message, {
       icon: "⚠️",
+      ...options,
     });
   },
-  loading: (message: string) => {
-    return toast.loading(message);
+  loading: (message: Renderable, options?: ToastOptions) => {
+    return toast.loading(message, options);
   },
+  dismiss: (id?: string) => {
+    toast.dismiss(id);
+  }
 };
 
 export default ToastService;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
 import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
+import Button from "../../../../components/Core/ui/Button";
 import BulletTextarea from "../../../../components/common/BulletTextarea";
 import ObjectiveCard from "../../../../components/common/ObjectiveCard";
 import KeyResultListItem from "../../../../components/common/KeyResultListItem";
@@ -33,6 +34,7 @@ type Objective = {
   status: Status;
   krCount: number;
   progress: number;
+  indirectProgress?: number;
   keyResults: any[];
 };
 
@@ -46,6 +48,7 @@ export default function CompanyObjectives() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [currentCycleId, setCurrentCycleId] = useState<number | null>(null);
+  const [configMenu, setConfigMenu] = useState<any>(null);
 
   const [editingObjective, setEditingObjective] = useState<Objective | null>(
     null,
@@ -55,6 +58,9 @@ export default function CompanyObjectives() {
     title: "",
     description: "",
   });
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const summary = useMemo(() => {
     const n = objectives.length;
@@ -67,6 +73,17 @@ export default function CompanyObjectives() {
         : 0;
     return { n, published, draft, totalKRs, avgProgress };
   }, [objectives]);
+
+  const filteredObjectives = useMemo(() => {
+    return objectives.filter((obj) => {
+      const matchesSearch = obj.title
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+      const matchesStatus =
+        statusFilter === "all" || obj.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [objectives, searchTerm, statusFilter]);
 
   const hasDraftObjectives = summary.draft > 0;
 
@@ -82,9 +99,17 @@ export default function CompanyObjectives() {
 
     setObjectives(
       (Array.isArray(list) ? list : []).map((o: any) => {
-        const tgt = Number(o.target_value ?? 0);
-        const cur = Number(o.current_value ?? 0);
-        const pct = tgt > 0 ? Number(((cur / tgt) * 100).toFixed(2)) : 0;
+        const directRaw =
+          o.final_score ?? o.progress_percent ?? o.progress_pct ?? o.progress;
+        let pct = 0;
+        if (directRaw !== null && directRaw !== undefined) {
+          pct = Math.max(0, Math.min(100, Number(directRaw)));
+        } else {
+          const tgt = Number(o.target_value ?? 0);
+          const cur = Number(o.current_value ?? 0);
+          pct = tgt > 0 ? Number(((cur / tgt) * 100).toFixed(2)) : 0;
+        }
+        const indirectPct = Number(o.indirect_score ?? 0);
         return {
           id: Number(o.id),
           title: o.title || "Untitled",
@@ -92,6 +117,7 @@ export default function CompanyObjectives() {
           status: o.status_code || "draft",
           krCount: o._count?.keyResults || 0,
           progress: pct,
+          indirectProgress: indirectPct,
           keyResults: Array.isArray(o.keyResults) ? o.keyResults : [],
         };
       }),
@@ -113,9 +139,15 @@ export default function CompanyObjectives() {
         const cycle = cycleRes?.data?.data || cycleRes?.data || cycleRes;
 
         if (!cycle?.id) return;
-
         setCurrentCycleId(cycle.id);
-        setSelectedCycle(cycle.name || "Current Cycle");
+        setSelectedCycle(cycle.title || cycle.name || "Active Cycle");
+
+        const configRes = await makeCall({
+          method: "GET",
+          route: apiRoutes.okr.configurationMenu,
+          isSecureRoute: true,
+        });
+        setConfigMenu(configRes?.data?.data || configRes?.data || configRes);
 
         await fetchObjectives(cycle.id);
       } catch (err) {
@@ -292,62 +324,83 @@ export default function CompanyObjectives() {
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
           <PageHeader>
-            <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
-                    <MdTrackChanges className="text-3xl text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-black tracking-tighter text-white">
-                      Company Strategy
-                    </h1>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 ring-1 ring-white/20 text-[10px] font-black tracking-widest text-white/70 font-space">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        {selectedCycle}
-                      </div>
-                      <p className="text-white/60 text-xs font-medium">
-                        {summary.n} Active Objectives · {summary.avgProgress}%
-                        Overall Progress
-                      </p>
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-4 text-white">
+                <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner shrink-0">
+                  <MdTrackChanges className="text-3xl" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-black tracking-tighter capitalize">
+                    Company Objective
+                  </h1>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 ring-1 ring-white/20 text-[10px] font-black uppercase tracking-widest text-white/70 font-space">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      {selectedCycle}
                     </div>
+                    <p className="text-white/60 text-xs font-medium">
+                      {summary.n} Active Objectives · {summary.avgProgress}%
+                      Overall Progress
+                    </p>
                   </div>
                 </div>
+              </div>
 
-                <div className="flex flex-wrap gap-2 lg:justify-end">
-                  <RefreshButton
-                    onClick={async () => {
-                      if (currentCycleId) {
-                        setLoading(true);
-                        try {
-                          await fetchObjectives(currentCycleId);
-                        } finally {
-                          setLoading(false);
-                        }
+              <div className="flex flex-wrap gap-2 lg:justify-end items-center">
+                <RefreshButton
+                  onClick={async () => {
+                    if (currentCycleId) {
+                      setLoading(true);
+                      try {
+                        await fetchObjectives(currentCycleId);
+                      } finally {
+                        setLoading(false);
                       }
-                    }}
-                    loading={loading}
-                  />
-                  {hasDraftObjectives && (
-                    <button
-                      type="button"
-                      onClick={handlePublish}
-                      className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-900 text-primary tracking-widest font-space shadow-lg shadow-slate-20/50 hover:bg-slate-50 active:scale-95 transition-all"
-                    >
-                      <MdPublish className="text-lg" />
-                      Publish Planning
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={openCreateModal}
-                    className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-900 tracking-widest font-space shadow-lg shadow-slate-20/50 hover:bg-slate-50 active:scale-95 transition-all"
+                    }
+                  }}
+                  loading={loading}
+                />
+                {hasDraftObjectives && (
+                  <Button
+                    variant="white"
+                    size="sm"
+                    icon={MdPublish}
+                    onClick={handlePublish}
+                    className="tracking-widest font-space text-[10px] font-black"
                   >
-                    <MdAdd className="text-lg" />
-                    New Objective
-                  </button>
-                </div>
+                    Publish Planning
+                  </Button>
+                )}
+                <Button
+                  variant="white"
+                  size="sm"
+                  icon={MdAdd}
+                  onClick={openCreateModal}
+                  disabled={
+                    Number(
+                      configMenu?.additional_configuration?.allowed_objectives
+                        ?.max,
+                    ) > 0 &&
+                    summary.n >=
+                      Number(
+                        configMenu?.additional_configuration?.allowed_objectives
+                          ?.max,
+                      )
+                  }
+                  className="tracking-widest font-space text-[10px] font-black"
+                >
+                  {Number(
+                    configMenu?.additional_configuration?.allowed_objectives
+                      ?.max,
+                  ) > 0 &&
+                  summary.n >=
+                    Number(
+                      configMenu?.additional_configuration?.allowed_objectives
+                        ?.max,
+                    )
+                    ? "Objective Limit Reached"
+                    : "New Objective"}
+                </Button>
               </div>
             </div>
           </PageHeader>
@@ -376,19 +429,19 @@ export default function CompanyObjectives() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   {
-                    label: "Strategic Goals",
+                    label: "Objectives",
                     value: summary.n,
                     icon: MdTrackChanges,
                     color: "text-primary",
                   },
                   {
-                    label: "Active Key Results",
+                    label: "Key Results",
                     value: summary.totalKRs,
                     icon: MdOutlineHub,
                     color: "text-emerald-500",
                   },
                   {
-                    label: "Strategy Progress",
+                    label: "Overall Progress",
                     value: `${summary.avgProgress}%`,
                     icon: MdTrendingUp,
                     color: "text-blue-500",
@@ -412,7 +465,7 @@ export default function CompanyObjectives() {
                         <p className="text-[10px] font-black tracking-widest text-slate-400 font-space mb-1">
                           {stat.label}
                         </p>
-                        <h3 className="text-2xl font-black text-slate-900 tracking-tighter">
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
                           {stat.value}
                         </h3>
                       </div>
@@ -432,6 +485,44 @@ export default function CompanyObjectives() {
                 ))}
               </div>
 
+              {/* Search & Filter Bar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                <div className="relative flex-1 max-w-md">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <MdOutlineVisibility className="text-slate-400" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search company objectives..."
+                    className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition-all"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-space mr-2">
+                    Status:
+                  </span>
+                  <div className="flex bg-slate-100 p-1 rounded-xl">
+                    {["all", "draft", "published"].map((s) => (
+                      <Button
+                        key={s}
+                        variant={statusFilter === s ? "white" : "ghost"}
+                        size="sm"
+                        onClick={() => setStatusFilter(s)}
+                        className={`px-4 py-1.5 rounded-lg text-[10px] font-black tracking-widest font-space transition-all h-auto ${
+                          statusFilter === s
+                            ? "bg-white text-primary shadow-sm"
+                            : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {objectives.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-white/80 px-8 py-16 text-center">
                   <MdTrackChanges className="mx-auto text-4xl text-gray-300 mb-3" />
@@ -442,25 +533,74 @@ export default function CompanyObjectives() {
                     Create your first company objective, then add key results
                     and assign owning departments from the detail view.
                   </p>
-                  <button
-                    type="button"
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={MdAdd}
                     onClick={openCreateModal}
-                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95"
+                    disabled={
+                      Number(
+                        configMenu?.additional_configuration?.allowed_objectives
+                          ?.max,
+                      ) > 0 &&
+                      summary.n >=
+                        Number(
+                          configMenu?.additional_configuration
+                            ?.allowed_objectives?.max,
+                        )
+                    }
+                    className="mt-6 inline-flex items-center gap-2 rounded-xl"
                   >
-                    <MdAdd />
-                    Create Objective
-                  </button>
+                    {Number(
+                      configMenu?.additional_configuration?.allowed_objectives
+                        ?.max,
+                    ) > 0 &&
+                    summary.n >=
+                      Number(
+                        configMenu?.additional_configuration?.allowed_objectives
+                          ?.max,
+                      )
+                      ? "Limit Reached"
+                      : "Create Objective"}
+                  </Button>
+                </div>
+              ) : filteredObjectives.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-white/80 px-8 py-16 text-center">
+                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                    <MdOutlineVisibility className="text-2xl text-slate-300" />
+                  </div>
+                  <p className="text-gray-700 font-medium text-lg">
+                    No results found
+                  </p>
+                  <p className="text-sm text-gray-500 mt-1 max-w-md mx-auto">
+                    We couldn't find any objectives matching "{searchTerm}"
+                    {statusFilter !== "all"
+                      ? ` with status ${statusFilter}`
+                      : ""}
+                    .
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setStatusFilter("all");
+                    }}
+                    className="mt-6 text-sm font-bold text-primary hover:underline tracking-widest font-space h-auto p-0"
+                  >
+                    Clear All Filters
+                  </Button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
-                  {objectives.map((obj) => (
+                  {filteredObjectives.map((obj) => (
                     <ObjectiveCard
                       key={obj.id}
                       id={`CO-${obj.id}`}
                       title={obj.title}
                       status={obj.status}
                       progress={obj.progress}
-                      progressLabel="Overall Progress"
+                      indirectProgress={obj.indirectProgress}
                       krsCount={obj.krCount}
                       headerContext={obj.description}
                       expandable={obj.keyResults?.length > 0}
@@ -476,8 +616,9 @@ export default function CompanyObjectives() {
                       actions={
                         <>
                           <div className="flex flex-wrap gap-2 flex-1">
-                            <button
-                              type="button"
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigate(
@@ -487,12 +628,13 @@ export default function CompanyObjectives() {
                                   ),
                                 );
                               }}
-                              className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-primary hover:bg-primary/10 transition-colors"
+                              className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-primary hover:bg-primary/10 transition-colors h-auto"
                             >
                               View Details
-                            </button>
-                            {/*<button
-                              type="button"
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigate(
@@ -502,28 +644,31 @@ export default function CompanyObjectives() {
                                   ) + "?createKR=true",
                                 );
                               }}
-                              className="rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+                              className="rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors h-auto"
                             >
-                              + Add KR
-                            </button>*/}
+                              + Add Key Result
+                            </Button>
                           </div>
                           {obj.status !== "published" && (
                             <div className="flex items-center gap-1.5 opacity-80 hover:opacity-100 transition-opacity">
                               {obj.krCount > 0 ? (
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  icon={MdPublish}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     void publishSingleObjective(obj.id);
                                   }}
-                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 tracking-widest font-space"
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 tracking-widest font-space h-auto"
                                 >
-                                  <MdPublish className="text-sm" />
                                   Publish
-                                </button>
+                                </Button>
                               ) : null}
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                icon={MdEdit}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setEditingObjective(obj);
@@ -533,11 +678,10 @@ export default function CompanyObjectives() {
                                   });
                                   setIsModalOpen(true);
                                 }}
-                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-800 tracking-widest font-space"
+                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-200 hover:text-slate-800 tracking-widest font-space h-auto"
                               >
-                                <MdEdit className="text-sm" />
                                 Edit
-                              </button>
+                              </Button>
                             </div>
                           )}
                         </>
@@ -546,6 +690,11 @@ export default function CompanyObjectives() {
                       {obj.keyResults?.length > 0 && (
                         <div className="flex flex-col gap-4 mt-2">
                           {obj.keyResults.map((kr: any) => {
+                            const krDirectRaw =
+                              kr.final_score ??
+                              kr.progress_percent ??
+                              kr.progress_pct ??
+                              kr.progress;
                             const krTgt = Number(kr.target_value ?? 0);
                             const krCur = Number(
                               kr.current_value ??
@@ -554,9 +703,14 @@ export default function CompanyObjectives() {
                                 0,
                             );
                             const krPct =
-                              krTgt > 0
-                                ? Number(((krCur / krTgt) * 100).toFixed(2))
-                                : 0;
+                              krDirectRaw !== null && krDirectRaw !== undefined
+                                ? Math.max(
+                                    0,
+                                    Math.min(100, Number(krDirectRaw)),
+                                  )
+                                : krTgt > 0
+                                  ? Number(((krCur / krTgt) * 100).toFixed(2))
+                                  : 0;
                             return (
                               <KeyResultListItem
                                 key={kr.id}

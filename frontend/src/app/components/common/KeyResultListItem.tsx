@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export interface KeyResultListItemProps {
   title: string;
   progress: number;
+  indirectProgress?: number;
   status: string;
   targetString: string;
   metricTypeString?: string;
@@ -55,6 +56,7 @@ function getKRStatusStyles(status: string, progress: number) {
 export default function KeyResultListItem({
   title,
   progress,
+  indirectProgress = 0,
   status,
   targetString,
   metricTypeString,
@@ -65,6 +67,7 @@ export default function KeyResultListItem({
   
   const styles = getKRStatusStyles(status, progress);
   const clampedProgress = Math.min(100, Math.max(0, progress));
+  const clampedIndirectProgress = Math.min(100, Math.max(0, indirectProgress));
 
   return (
     <div className="group relative bg-white p-5 rounded-2xl border border-slate-200 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
@@ -95,13 +98,34 @@ export default function KeyResultListItem({
           <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">Progress</span>
-              <span className="text-xs font-black text-slate-900 font-space">{clampedProgress}%</span>
             </div>
-            <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
-              <div 
-                 className={`absolute inset-y-0 left-0 transition-all duration-1000 ease-out animate-liquid-progress ${styles.bar}`} 
-                 style={{ width: `${clampedProgress}%` }}
-              />
+            <div className="flex items-center gap-4">
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[9px] font-black text-slate-500 uppercase">Direct</span>
+                  <span className="text-xs font-black text-slate-900 font-space">{clampedProgress}%</span>
+                </div>
+                <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
+                  <div 
+                     className={`absolute inset-y-0 left-0 transition-all duration-1000 ease-out animate-liquid-progress ${styles.bar}`} 
+                     style={{ width: `${clampedProgress}%` }}
+                  />
+                </div>
+              </div>
+              {clampedIndirectProgress > 0 && (
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[9px] font-black text-slate-500 uppercase">Indirect</span>
+                    <span className="text-xs font-black text-slate-900 font-space">{clampedIndirectProgress}%</span>
+                  </div>
+                  <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden shadow-inner border border-slate-200/50">
+                    <div 
+                       className={`absolute inset-y-0 left-0 transition-all duration-1000 ease-out animate-liquid-progress bg-slate-400`} 
+                       style={{ width: `${clampedIndirectProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           

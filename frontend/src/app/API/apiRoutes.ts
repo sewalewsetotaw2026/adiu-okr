@@ -38,7 +38,8 @@ const apiRoutes = {
   careerEventsByEmployee: (id: string) =>
     `${BASE_URL}/career-events/employee/${id}`,
   departments: `${BASE_URL}/departments`,
-  assignDepartmentHead: (id: number | string) => `${BASE_URL}/departments/${id}/assign-head`,
+  assignDepartmentHead: (id: number | string) =>
+    `${BASE_URL}/departments/${id}/assign-head`,
   jobTitles: `${BASE_URL}/job-titles`,
 
   jobLevels: `${BASE_URL}/job-levels`,
@@ -261,6 +262,8 @@ const apiRoutes = {
       `${BASE_URL}/okr/dashboard/completion/${id}`,
     dashboardRollupRefresh: `${BASE_URL}/okr/dashboard/rollup/refresh`,
     dashboardSnapshotsGenerate: `${BASE_URL}/okr/dashboard/snapshots/generate`,
+    dashboardSnapshots: (cycleId: number | string) =>
+      `${BASE_URL}/okr/dashboard/snapshots?cycle_id=${cycleId}`,
 
     // Configuration
     configurations: `${BASE_URL}/okr/configurations`,
@@ -273,6 +276,10 @@ const apiRoutes = {
 
     // Metric definitions
     metrics: `${BASE_URL}/okr/metrics`,
+    metricById: (id: number | string) => `${BASE_URL}/okr/metrics/${id}`,
+    metricCategories: `${BASE_URL}/okr/metrics/categories`,
+    metricCategoryById: (id: number | string) =>
+      `${BASE_URL}/okr/metrics/categories/${id}`,
 
     // Company
     companyMetrics: `${BASE_URL}/okr/company/metrics`,
@@ -320,14 +327,10 @@ const apiRoutes = {
       `${BASE_URL}/okr/department/key-results/${id}`,
     publishDepartmentKR: (id: number | string) =>
       `${BASE_URL}/okr/department/key-results/${id}/publish`,
-    departmentKRMonthPlan: (departmentKrId: number | string) =>
-      `${BASE_URL}/okr/department/key-results/${departmentKrId}/month-plan`,
-    departmentKRMonthPlans: (departmentKrId: number | string) =>
-      `${BASE_URL}/okr/department/key-results/${departmentKrId}/month-plans`,
-    departmentKRWeeklyPlan: (departmentKrId: number | string) =>
-      `${BASE_URL}/okr/department/key-results/${departmentKrId}/weekly-plan`,
-    departmentKRWeeklyPlans: (departmentKrId: number | string) =>
-      `${BASE_URL}/okr/department/key-results/${departmentKrId}/weekly-plans`,
+    // Department KR planning is unified with the new planning routes:
+    // monthly plans hang off any KR via /okr/key-results/:id/monthly-plans.
+    departmentKRMonthPlans: (krId: number | string) =>
+      `${BASE_URL}/okr/key-results/${krId}/monthly-plans`,
 
     // Contributors (GET ?department_kr_id=, POST assign)
     contributors: `${BASE_URL}/okr/contributors`,
@@ -348,6 +351,7 @@ const apiRoutes = {
     submitEmployeeObjective: (id: number | string) =>
       `${BASE_URL}/okr/employee/objectives/${id}/submit`,
     employeeBulkSubmit: `${BASE_URL}/okr/employee/bulk-submit`,
+    employeeBulkPublish: `${BASE_URL}/okr/employee/bulk-publish`,
     employeeKRs: (objectiveId: number | string) =>
       `${BASE_URL}/okr/employee/objectives/${objectiveId}/key-results`,
     employeeKRById: (id: number | string) =>
@@ -358,38 +362,39 @@ const apiRoutes = {
       `${BASE_URL}/okr/employee/key-results/${id}/publish`,
     employeeKRExecutionMode: (id: number | string) =>
       `${BASE_URL}/okr/employee/key-results/${id}/execution-mode`,
+    // ── Planning (new schema, mounted at /okr) ────────────────────────
+    // Monthly plans live under their parent KR.
     employeeKRMonthPlans: (krId: number | string) =>
-      `${BASE_URL}/okr/employee/key-results/${krId}/month-plans`,
-    employeeKRWeeklyPlans: (krId: number | string) =>
-      `${BASE_URL}/okr/employee/key-results/${krId}/weekly-plans`,
+      `${BASE_URL}/okr/key-results/${krId}/monthly-plans`,
+    // Weekly plans live under their parent monthly plan.
+    monthlyPlanWeeklyPlans: (monthlyPlanId: number | string) =>
+      `${BASE_URL}/okr/monthly-plans/${monthlyPlanId}/weekly-plans`,
+    // Daily plans live under their parent weekly plan.
+    weeklyPlanDailyPlans: (weeklyPlanId: number | string) =>
+      `${BASE_URL}/okr/weekly-plans/${weeklyPlanId}/daily-plans`,
+
+    // Single-resource endpoints (PUT/DELETE/PATCH).
+    monthlyPlanById: (id: number | string) =>
+      `${BASE_URL}/okr/monthly-plans/${id}`,
+    weeklyPlanById: (id: number | string) =>
+      `${BASE_URL}/okr/weekly-plans/${id}`,
+    dailyPlanById: (id: number | string) =>
+      `${BASE_URL}/okr/daily-plans/${id}`,
+    dailyPlanStatus: (id: number | string) =>
+      `${BASE_URL}/okr/daily-plans/${id}/status`,
+
+    // Subtasks (unchanged).
     employeeKRSubtasks: (krId: number | string) =>
       `${BASE_URL}/okr/employee/key-results/${krId}/subtasks`,
     employeeSubtaskById: (id: number | string) =>
       `${BASE_URL}/okr/employee/subtasks/${id}`,
-    employeeMonthPlanById: (id: number | string) =>
-      `${BASE_URL}/okr/employee/month-plans/${id}`,
-    employeeWeeklyPlanById: (id: number | string) =>
-      `${BASE_URL}/okr/employee/weekly-plans/${id}`,
-    employeeWeeklyPlanDailyPlans: (weeklyPlanId: number | string) =>
-      `${BASE_URL}/okr/employee/weekly-plans/${weeklyPlanId}/daily-plans`,
-    batchDailyPlans: `${BASE_URL}/okr/employee/weekly-plans/batch/daily-plans`,
-    employeeDailyPlanById: (id: number | string) =>
-      `${BASE_URL}/okr/employee/daily-plans/${id}`,
-    objectiveMonthPlans: (id: number | string) =>
-      `${BASE_URL}/okr/employee/objectives/${id}/month-plans`,
-    monthWeeklyPlans: (id: number | string) =>
-      `${BASE_URL}/okr/employee/month-plans/${id}/weekly-plans`,
-    weeklyPlans: (id: number | string) =>
-      `${BASE_URL}/okr/employee/weekly-plans/${id}`,
 
     employeeKRProgress: (krId: number | string) =>
       `${BASE_URL}/okr/employee/key-results/${krId}/progress`,
-    employeeBulkPublish: `${BASE_URL}/okr/employee/bulk-publish`,
-    employeeBulkSubmitPlans: `${BASE_URL}/okr/employee/bulk-submit-plans`,
-    employeeBulkPublishPlans: `${BASE_URL}/okr/employee/bulk-publish-plans`,
 
     // Manager
     managerTeamSummary: `${BASE_URL}/okr/manager/team-summary`,
+    managerSubordinatePositions: `${BASE_URL}/okr/manager/subordinate-positions`,
     managerPendingApprovals: `${BASE_URL}/okr/manager/pending-approvals`,
     managerPendingEmployeeObjectives: `${BASE_URL}/okr/manager/pending-employee-objectives`,
     managerPendingEmployeeKRs: `${BASE_URL}/okr/manager/pending-employee-key-results`,
@@ -399,8 +404,10 @@ const apiRoutes = {
 
     // Manager Plan Alignment (subordinate-facing)
     managerPlans: {
-      alignmentMonth: (monthNum: number | string) => `${BASE_URL}/okr/manager-plans/alignment/month/${monthNum}`,
-      alignmentWeekly: (weekNum: number | string) => `${BASE_URL}/okr/manager-plans/alignment/weekly/${weekNum}`,
+      alignmentMonth: (monthNum: number | string) =>
+        `${BASE_URL}/okr/manager-plans/alignment/month/${monthNum}`,
+      alignmentWeekly: (weekNum: number | string) =>
+        `${BASE_URL}/okr/manager-plans/alignment/weekly/${weekNum}`,
     },
 
     // Archives
@@ -413,6 +420,39 @@ const apiRoutes = {
     archiveExports: (id: number | string) =>
       `${BASE_URL}/okr/archives/${id}/exports`,
     exportJobById: (id: number | string) => `${BASE_URL}/okr/exports/${id}`,
+
+    // Plan-Based Approval Flow
+    submitPlan: `${BASE_URL}/okr/approvals/submit`,
+    submissionById: (id: number | string) =>
+      `${BASE_URL}/okr/approvals/submissions/${id}`,
+    submissionComments: (id: number | string) =>
+      `${BASE_URL}/okr/approvals/submissions/${id}/comments`,
+    approveSubmission: (id: number | string) =>
+      `${BASE_URL}/okr/approvals/${id}/approve`,
+    rejectSubmission: (id: number | string) =>
+      `${BASE_URL}/okr/approvals/${id}/reject`,
+    submissionFeedback: `${BASE_URL}/okr/approvals/comment`,
+    entityComments: `${BASE_URL}/okr/approvals/comments`,
+    managerSubmissions: `${BASE_URL}/okr/approvals/manager/submissions`,
+    adminSubmissions: `${BASE_URL}/okr/approvals/admin/submissions`,
+    dashboardEmployee: (cycleId: number | string) =>
+      `${BASE_URL}/okr/dashboard/employee?cycle_id=${cycleId}`,
+
+    // Post-Publish Change Requests
+    changeRequests: {
+      create: `${BASE_URL}/okr/change-requests`,
+      list: `${BASE_URL}/okr/change-requests`,
+      myReviews: `${BASE_URL}/okr/change-requests/my-reviews`,
+      detail: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}`,
+      approve: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}/approve`,
+      reject: (id: number | string) => `${BASE_URL}/okr/change-requests/${id}/reject`,
+      realignmentFlags: `${BASE_URL}/okr/change-requests/realignment/my-flags`,
+      entityRealignmentFlags: `${BASE_URL}/okr/change-requests/realignment/entity`,
+      acknowledgeRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/acknowledge`,
+      dismissRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/dismiss`,
+      completeRealignment: (id: number | string) => `${BASE_URL}/okr/change-requests/realignment/${id}/complete`,
+      subordinateAlignment: `${BASE_URL}/okr/change-requests/alignment/subordinates`,
+    },
   },
   manager: {
     team: `${BASE_URL}/manager/team`,

@@ -1,0 +1,922 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  MdAdd,
+  MdChevronRight,
+  MdSend,
+  MdPublish,
+  MdLock,
+  MdLockOpen,
+  MdCheckCircle,
+  MdPlayCircle,
+} from "react-icons/md";
+import Button from "../../../components/Core/ui/Button";
+import ConfirmationModal from "../../../components/common/ConfirmationModal";
+import LoadingSkeleton from "../../../components/common/LoadingSkeleton";
+import ToastService from "../../../../utils/ToastService";
+import {
+  deleteWeeklyPlan,
+  fetchMonthlyPlans,
+  fetchWeeklyAvailableWeight,
+  fetchWeeklyPlans,
+  publishWeeklyPeriod,
+  submitWeeklyPeriod,
+} from "../../../services/okr-execution.api";
+import type {
+  AvailableWeight,
+  MonthlyPlan,
+  WeeklyPlan,
+} from "../../../../types/okr.types";
+import AddWeeklyPlanModal from "./AddWeeklyPlanModal";
+import EditWeeklyPlanModal from "./EditWeeklyPlanModal";
+import PlanStatusBanner from "./PlanStatusBanner";
+import WeeklyPlanCard from "./WeeklyPlanCard";
+
+const NON_DRAFT_LIFECYCLE = new Set([
+  "SUBMITTED",
+  "UNDER_REVIEW",
+  "APPROVED",
+  "PUBLISHED",
+]);
+const EDITABLE_LIFECYCLE = new Set(["DRAFT", "REJECTED"]);
+
+export interface WeeklyPlanTabProps {
+  /** KR ids belonging to the user's quarterly objectives. */
+  krIds: string[];
+  /**
+   * Optional: pass weeks-in-current-month so the tab knows whether to render
+   * a Week 5 section. Defaults to 4 if not provided. The tab will also force
+   * Week 5 visible if any plan has week_number === 5.
+   */
+  weeksInMonth?: number;
+  /** Auto-expand a specific week section on mount (deep link support). */
+  initialExpandWeek?: number;
+  /**
+   * Called whenever a plan is created/edited/deleted/submitted so the
+   * dashboard can refresh the Monthly tab's per-plan weekly allocation.
+   */
+  onAllocationsChanged?: () => void;
+  /** Optional nonce to trigger a refresh from the parent. */
+  refreshNonce?: number;
+  /** Whether adding weekly plans is allowed by cadence configuration. */
+  allowAdd?: boolean;
+  /** The current OKR cycle ID. */
+  cycleId?: string | number | null;
+  /** The user's role level. */
+  userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+}
+
+interface PeriodSubmissionState {
+  isSubmitted: boolean;
+  canShowSubmit: boolean;
+  canShowPublish: boolean;
+  totalWeight: number;
+  bannerStatus?: WeeklyPlan["plan_status"];
+  reviewerName?: string;
+  feedbackNote?: string;
+  submittedAt?: string;
+  approvedAt?: string;
+  publishedAt?: string;
+  // Track the parent monthly plan id used for submit-period.
+  // If multiple monthlies feed this week, we cannot submit the period as
+  // one batch — the API requires a single monthly_plan_id.
+  parentMonthlyPlanIds: string[];
+}
+
+export default function WeeklyPlanTab({
+  krIds,
+  weeksInMonth = 4,
+  initialExpandWeek,
+  onAllocationsChanged,
+  refreshNonce,
+  allowAdd = true,
+  cycleId,
+  userRoleLevel,
+}: WeeklyPlanTabProps) {
+  const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>([]);
+  const [plans, setPlans] = useState<WeeklyPlan[]>([]);
+  const [allocations, setAllocations] = useState<
+    Record<string, AvailableWeight | null>
+  >({});
+  const [loading, setLoading] = useState(false);
+
+
+  const [expanded, setExpanded] = useState<Record<number, boolean>>(() => {
+    const active = (() => {
+      if (initialExpandWeek) return initialExpandWeek;
+      const now = new Date();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const dayOfMonth = now.getDate();
+      const firstDow = firstDayOfMonth.getDay();
+      return Math.min(Math.ceil((dayOfMonth + firstDow) / 7), weeksInMonth);
+    })();
+    return {
+      1: active === 1,
+      2: active === 2,
+      3: active === 3,
+      4: active === 4,
+      5: active === 5,
+    };
+  });
+  const [addForWeek, setAddForWeek] = useState<number | null>(null);
+  const [editing, setEditing] = useState<WeeklyPlan | null>(null);
+  const [deleting, setDeleting] = useState<WeeklyPlan | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [submitConfirm, setSubmitConfirm] = useState<{
+    weekNumber: number;
+    monthlyPlanId: string;
+    warning?: string;
+  } | null>(null);
+  const [submittingPeriod, setSubmittingPeriod] = useState(false);
+  const [publishConfirm, setPublishConfirm] = useState<{
+    weekNumber: number;
+    monthlyPlanId: string;
+  } | null>(null);
+  const [publishingPeriod, setPublishingPeriod] = useState(false);
+
+  // ── Loaders ────────────────────────────────────────────────────────────
+
+  const reload = useCallback(async () => {
+    if (krIds.length === 0) {
+      setMonthlyPlans([]);
+      setPlans([]);
+      setAllocations({});
+      return;
+    }
+    setLoading(true);
+    try {
+      // 1. Monthly plans across all the user's KRs.
+      const monthlyLists = await Promise.all(
+        krIds.map((id) =>
+          fetchMonthlyPlans(id).catch(() => [] as MonthlyPlan[]),
+        ),
+      );
+      const allMonthly = monthlyLists.flat();
+      setMonthlyPlans(allMonthly);
+
+      // 2. Weekly plans only for PUBLISHED monthly plans (per spec).
+      const publishedMonthly = allMonthly.filter(
+        (m) => m.plan_status === "PUBLISHED",
+      );
+      const weeklyLists = await Promise.all(
+        publishedMonthly.map((mp) =>
+          fetchWeeklyPlans(mp.id).catch(() => [] as WeeklyPlan[]),
+        ),
+      );
+      setPlans(weeklyLists.flat());
+
+      // 3. Weekly allocation per monthly plan (used to gate the CTA).
+      const allocs: Record<string, AvailableWeight | null> = {};
+      await Promise.all(
+        allMonthly.map(async (mp) => {
+          try {
+            allocs[mp.id] = await fetchWeeklyAvailableWeight(mp.id);
+          } catch {
+            allocs[mp.id] = null;
+          }
+        }),
+      );
+      setAllocations(allocs);
+    } finally {
+      setLoading(false);
+    }
+  }, [krIds, refreshNonce]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (!initialExpandWeek) return;
+    setExpanded((prev) => ({ ...prev, [initialExpandWeek]: true }));
+  }, [initialExpandWeek]);
+
+
+  // ── Derived state ──────────────────────────────────────────────────────
+
+  // Determine how many week slots to render: at least `weeksInMonth`, and
+  // always include any week that already has a plan.
+  const slots = useMemo<number[]>(() => {
+    const max = Math.max(
+      4,
+      Math.min(5, weeksInMonth),
+      ...plans.map((p) => Number(p.week_number) || 0),
+    );
+    const out: number[] = [];
+    for (let i = 1; i <= Math.min(5, max); i++) out.push(i);
+    return out;
+  }, [weeksInMonth, plans]);
+
+  const plansByWeek = useMemo(() => {
+    const map: Record<number, WeeklyPlan[]> = {};
+    for (const w of slots) map[w] = [];
+    for (const p of plans) {
+      const w = Number(p.week_number);
+      if (w >= 1 && w <= 5) {
+        if (!map[w]) map[w] = [];
+        map[w].push(p);
+      }
+    }
+    return map;
+  }, [plans, slots]);
+
+  const periodMeta = useMemo<Record<number, PeriodSubmissionState>>(() => {
+    const out: Record<number, PeriodSubmissionState> = {} as any;
+    for (const w of slots) {
+      const list = plansByWeek[w] ?? [];
+      const total = list.reduce(
+        (acc, p) => acc + Number(p.weight_pct || 0),
+        0,
+      );
+      const isSubmitted = list.some((p) =>
+        NON_DRAFT_LIFECYCLE.has(p.plan_status),
+      );
+      const canShowSubmit =
+        list.length > 0 &&
+        list.some((p) => EDITABLE_LIFECYCLE.has(p.plan_status));
+      const order: WeeklyPlan["plan_status"][] = [
+        "REJECTED",
+        "SUBMITTED",
+        "UNDER_REVIEW",
+        "APPROVED",
+        "PUBLISHED",
+      ];
+      const banner = order.find((s) =>
+        list.some((p) => p.plan_status === s),
+      );
+      const bannerPlan = banner
+        ? list.find((p) => p.plan_status === banner)
+        : undefined;
+      const parentIds = Array.from(
+        new Set(list.map((p) => p.parent_monthly_id).filter(Boolean)),
+      );
+      // Find rejected plan for feedback note
+      const rejectedPlan = list.find((p) => p.plan_status === "REJECTED");
+      const canShowPublish =
+        list.length > 0 &&
+        list.some((p) => p.plan_status === "APPROVED");
+      out[w] = {
+        isSubmitted,
+        canShowSubmit,
+        canShowPublish,
+        totalWeight: Math.round(total * 100) / 100,
+        bannerStatus: bannerPlan?.plan_status,
+        submittedAt: bannerPlan?.submitted_at,
+        approvedAt: bannerPlan?.approved_at,
+        publishedAt: bannerPlan?.published_at,
+        reviewerName: rejectedPlan?.reviewer_name || bannerPlan?.reviewer_name,
+        feedbackNote: rejectedPlan?.feedback_note || rejectedPlan?.rejection_reason || rejectedPlan?.reviewer_note,
+        parentMonthlyPlanIds: parentIds,
+      };
+    }
+    return out;
+  }, [plansByWeek, slots]);
+
+  const allFullyAllocated = useMemo(() => {
+    if (monthlyPlans.length === 0) return true;
+    return monthlyPlans.every((mp) => {
+      const aw = allocations[mp.id];
+      const remaining = aw ? aw.remaining_pct : 100;
+      const progress = Number(mp.progress_pct ?? 0);
+      // Block CTA if no published monthly plan has remaining capacity.
+      return (
+        mp.plan_status !== "PUBLISHED" || remaining <= 0 || progress >= 100
+      );
+    });
+  }, [monthlyPlans, allocations]);
+
+  // ── Handlers ───────────────────────────────────────────────────────────
+
+  const handleCreated = (created: WeeklyPlan[]) => {
+    setPlans((prev) => [...prev, ...created]);
+    void refreshAllocations();
+    onAllocationsChanged?.();
+    if (created.length === 1) {
+      ToastService.success(`Weekly plan created for Week ${created[0].week_number}.`);
+    } else {
+      ToastService.success(`${created.length} weekly plans created.`);
+    }
+  };
+
+  const handleEdited = (updated: WeeklyPlan) => {
+    setPlans((prev) =>
+      prev.map((p) => (p.id === updated.id ? updated : p)),
+    );
+    ToastService.success("Weekly plan updated.");
+  };
+
+  const refreshAllocations = useCallback(async () => {
+    if (monthlyPlans.length === 0) return;
+    const next: Record<string, AvailableWeight | null> = { ...allocations };
+    await Promise.all(
+      monthlyPlans.map(async (mp) => {
+        try {
+          next[mp.id] = await fetchWeeklyAvailableWeight(mp.id);
+        } catch {
+          next[mp.id] = null;
+        }
+      }),
+    );
+    setAllocations(next);
+  }, [monthlyPlans, allocations]);
+
+  const onConfirmDelete = async () => {
+    if (!deleting) return;
+    setDeleteSubmitting(true);
+    setDeleteError(null);
+    try {
+      await deleteWeeklyPlan(deleting.id);
+      setPlans((prev) => prev.filter((p) => p.id !== deleting.id));
+      void refreshAllocations();
+      onAllocationsChanged?.();
+      setDeleting(null);
+      ToastService.success("Weekly plan deleted.");
+    } catch (err: any) {
+      setDeleteError(
+        err?.data?.message ||
+          err?.message ||
+          "Could not delete plan. Try again.",
+      );
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
+  const startSubmitPeriod = (w: number) => {
+    const list = plansByWeek[w] ?? [];
+    const errors: string[] = [];
+    if (list.length === 0) {
+      errors.push("This week has no plans yet.");
+    }
+    list.forEach((p) => {
+      if (!Number(p.target_value)) errors.push(`"${p.title}" has no target.`);
+      if (!Number(p.weight_pct)) errors.push(`"${p.title}" has no weight.`);
+    });
+    if (errors.length > 0) {
+      ToastService.error(errors.join(" "));
+      return;
+    }
+    const meta = periodMeta[w];
+    if (meta.parentMonthlyPlanIds.length === 0) {
+      ToastService.error("No plans found to submit.");
+      return;
+    }
+    const total = meta.totalWeight;
+    setSubmitConfirm({
+      weekNumber: w,
+      monthlyPlanId: meta.parentMonthlyPlanIds[0], // dummy for type safety
+      warning:
+        Math.abs(total - 100) > 0.01
+          ? `Plans sum to ${total}%, not 100%. Proceed anyway?`
+          : undefined,
+    });
+  };
+
+  const onConfirmSubmitPeriod = async () => {
+    if (!submitConfirm) return;
+    setSubmittingPeriod(true);
+    try {
+      const meta = periodMeta[submitConfirm.weekNumber];
+      const parentIds = meta.parentMonthlyPlanIds;
+
+      await Promise.all(
+        parentIds.map((id) => submitWeeklyPeriod(submitConfirm.weekNumber, id)),
+      );
+
+      ToastService.success(
+        `Week ${submitConfirm.weekNumber} plan submitted for review.`,
+      );
+      setSubmitConfirm(null);
+      await reload();
+      onAllocationsChanged?.();
+    } catch (err: any) {
+      ToastService.error(
+        err?.data?.message ||
+          err?.message ||
+          "Could not submit weekly plans for review.",
+      );
+    } finally {
+      setSubmittingPeriod(false);
+    }
+  };
+
+  const onConfirmPublishPeriod = async () => {
+    if (!publishConfirm) return;
+    setPublishingPeriod(true);
+    try {
+      await publishWeeklyPeriod(publishConfirm.weekNumber, publishConfirm.monthlyPlanId);
+      ToastService.success(
+        `Week ${publishConfirm.weekNumber} plan published successfully.`,
+      );
+      setPublishConfirm(null);
+      await reload();
+      onAllocationsChanged?.();
+    } catch (err: any) {
+      ToastService.error(
+        err?.data?.message ||
+          err?.message ||
+          "Could not publish weekly plans.",
+      );
+    } finally {
+      setPublishingPeriod(false);
+    }
+  };
+
+  const hasAnyApproved = useMemo(
+    () => plans.some((p) => p.plan_status === "APPROVED"),
+    [plans],
+  );
+
+  const hasAnyDraft = useMemo(
+    () => plans.some((p) => EDITABLE_LIFECYCLE.has(p.plan_status)),
+    [plans],
+  );
+
+  // A week is locked when the previous week has no plans that are APPROVED or PUBLISHED.
+  // Week 1 is always unlocked (it's the starting point).
+  const weekLocked = useMemo<Record<number, boolean>>(() => {
+    const isWeekApprovedOrPublished = (w: number) =>
+      (plansByWeek[w] ?? []).some(
+        (p) => p.plan_status === "APPROVED" || p.plan_status === "PUBLISHED",
+      );
+    const out: Record<number, boolean> = {};
+    for (const w of slots) {
+      out[w] = w === 1 ? false : !isWeekApprovedOrPublished(w - 1);
+    }
+    return out;
+  }, [plansByWeek, slots]);
+
+  // Active week = the last week that has at least one plan (regardless of status).
+  // Falls back to week 1.
+  const activeWeek = useMemo(() => {
+    if (initialExpandWeek) return initialExpandWeek;
+    for (const w of [...slots].reverse()) {
+      if ((plansByWeek[w] ?? []).length > 0) return w;
+    }
+    return slots[0] ?? 1;
+  }, [initialExpandWeek, plansByWeek, slots]);
+
+  // The next unlocked week = first unlocked week with zero plans (ready to start).
+  const nextUnlockedWeek = useMemo<number | null>(() => {
+    for (const w of slots) {
+      if (!weekLocked[w] && (plansByWeek[w] ?? []).length === 0 && w !== activeWeek) {
+        return w;
+      }
+    }
+    return null;
+  }, [weekLocked, plansByWeek, slots, activeWeek]);
+
+  // Auto-expand the active week whenever it changes (driven by plan data).
+  useEffect(() => {
+    if (initialExpandWeek) {
+      setExpanded((prev) => ({ ...prev, [initialExpandWeek]: true }));
+      return;
+    }
+    setExpanded((prev) => ({ ...prev, [activeWeek]: true }));
+  }, [activeWeek, initialExpandWeek]);
+
+  // ── Render ─────────────────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-800">
+            Weekly Plans
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Decompose each published monthly plan into weekly executions.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasAnyApproved && (
+            <Button
+              variant="outline"
+              size="sm"
+              icon={MdPublish}
+              onClick={() => {
+                const approvedWeeks = slots.filter((w) => periodMeta[w]?.canShowPublish);
+                if (approvedWeeks.length === 0) return;
+                
+                Promise.all(approvedWeeks.flatMap(w => {
+                  const meta = periodMeta[w];
+                  return meta.parentMonthlyPlanIds.map(id => publishWeeklyPeriod(w, id));
+                })).then(() => {
+                  ToastService.success("Approved plans published successfully.");
+                  reload();
+                  onAllocationsChanged?.();
+                });
+              }}
+            >
+              Publish Approved
+            </Button>
+          )}
+          {hasAnyDraft && (
+            <Button
+              variant="outline"
+              size="sm"
+              icon={MdSend}
+              onClick={() => {
+                const draftWeeks = slots.filter((w) => periodMeta[w]?.canShowSubmit);
+                if (draftWeeks.length === 0) return;
+                
+                Promise.all(draftWeeks.flatMap(w => {
+                  const meta = periodMeta[w];
+                  return meta.parentMonthlyPlanIds.map(id => submitWeeklyPeriod(w, id));
+                })).then(() => {
+                  ToastService.success("Draft plans submitted for review.");
+                  reload();
+                  onAllocationsChanged?.();
+                });
+              }}
+            >
+              Submit Drafts
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            icon={MdAdd}
+            disabled={allFullyAllocated || krIds.length === 0 || !allowAdd}
+            title={
+              !allowAdd
+                ? "Weekly plans are not enabled for your role"
+                : allFullyAllocated
+                  ? "All published monthly plans are fully allocated"
+                  : undefined
+            }
+            onClick={() => setAddForWeek(0)}
+          >
+            Add Weekly Plan
+          </Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <LoadingSkeleton variant="card" count={3} />
+      ) : (
+        slots.map((w) => (
+          <WeekSection
+            key={w}
+            weekNumber={w}
+            plans={plansByWeek[w] ?? []}
+            meta={periodMeta[w]}
+            expanded={!!expanded[w]}
+            isActive={w === activeWeek}
+            isNextUnlocked={w === nextUnlockedWeek}
+            isLocked={!!weekLocked[w]}
+            onToggle={() => {
+              if (weekLocked[w]) return;
+              setExpanded((prev) => ({ ...prev, [w]: !prev[w] }));
+            }}
+            onAdd={() => setAddForWeek(w)}
+            onEdit={(plan) => setEditing(plan)}
+            onDelete={(plan) => setDeleting(plan)}
+            onSubmit={() => startSubmitPeriod(w)}
+            onPublish={() => {
+              const meta = periodMeta[w];
+              if (meta.parentMonthlyPlanIds.length > 0) {
+                setPublishConfirm({ weekNumber: w, monthlyPlanId: meta.parentMonthlyPlanIds[0] });
+              }
+            }}
+            allowAdd={allowAdd}
+          />
+        ))
+      )}
+
+      <AddWeeklyPlanModal
+        isOpen={addForWeek !== null}
+        onClose={() => setAddForWeek(null)}
+        krIds={krIds}
+        weeksInMonth={weeksInMonth}
+        onCreated={handleCreated}
+        preselectedWeekNumber={addForWeek ? addForWeek : undefined}
+        cycleId={cycleId}
+        userRoleLevel={userRoleLevel}
+      />
+
+      <EditWeeklyPlanModal
+        isOpen={!!editing}
+        plan={editing}
+        onClose={() => setEditing(null)}
+        onSaved={handleEdited}
+      />
+
+      <ConfirmationModal
+        isOpen={!!deleting}
+        onClose={() => {
+          setDeleting(null);
+          setDeleteError(null);
+        }}
+        onConfirm={() => void onConfirmDelete()}
+        title="Delete this weekly plan?"
+        message={
+          deleteError
+            ? deleteError
+            : "Deleting removes all daily plans under it and recalculates parent monthly plan progress. This cannot be undone."
+        }
+        confirmText="Delete"
+        cancelText="Keep plan"
+        type="danger"
+        isLoading={deleteSubmitting}
+      />
+
+      <ConfirmationModal
+        isOpen={!!submitConfirm}
+        onClose={() => setSubmitConfirm(null)}
+        onConfirm={() => void onConfirmSubmitPeriod()}
+        title={`Submit Week ${submitConfirm?.weekNumber ?? ""} plan for review?`}
+        message={
+          submitConfirm?.warning
+            ? `${submitConfirm.warning} Once submitted you cannot edit until reviewed.`
+            : "Once submitted you cannot edit until reviewed."
+        }
+        confirmText="Submit for review"
+        cancelText="Not yet"
+        type={submitConfirm?.warning ? "warning" : "info"}
+        isLoading={submittingPeriod}
+      />
+
+      <ConfirmationModal
+        isOpen={!!publishConfirm}
+        onClose={() => setPublishConfirm(null)}
+        onConfirm={() => void onConfirmPublishPeriod()}
+        title={`Publish Week ${publishConfirm?.weekNumber ?? ""} plan?`}
+        message="Publishing makes this plan live and active. This action cannot be undone."
+        confirmText="Publish"
+        cancelText="Cancel"
+        type="info"
+        isLoading={publishingPeriod}
+      />
+    </div>
+  );
+}
+
+// ── Week Section ─────────────────────────────────────────────────────────
+
+function WeekSection({
+  weekNumber,
+  plans,
+  meta,
+  expanded,
+  isActive,
+  isNextUnlocked,
+  isLocked,
+  onToggle,
+  onAdd,
+  onEdit,
+  onDelete,
+  onSubmit,
+  onPublish,
+  allowAdd = true,
+}: {
+  weekNumber: number;
+  plans: WeeklyPlan[];
+  meta: PeriodSubmissionState;
+  expanded: boolean;
+  isActive: boolean;
+  isNextUnlocked: boolean;
+  isLocked: boolean;
+  onToggle: () => void;
+  onAdd: () => void;
+  onEdit: (plan: WeeklyPlan) => void;
+  onDelete: (plan: WeeklyPlan) => void;
+  onSubmit: () => void;
+  onPublish: () => void;
+  allowAdd?: boolean;
+}) {
+  const isCompleted =
+    meta.bannerStatus === "PUBLISHED" || meta.bannerStatus === "APPROVED";
+
+  const cardBorder = isLocked
+    ? "border-slate-200"
+    : isActive
+      ? "border-primary/50 ring-2 ring-primary/15"
+      : isCompleted
+        ? "border-emerald-300"
+        : isNextUnlocked
+          ? "border-primary/30"
+          : "border-slate-200";
+
+  const headerBg = isLocked
+    ? "bg-slate-50"
+    : isActive
+      ? "bg-gradient-to-r from-primary/5 to-primary/10"
+      : isCompleted
+        ? "bg-gradient-to-r from-emerald-50 to-emerald-50/60"
+        : "bg-white";
+
+  const badgeBg = isLocked
+    ? "bg-slate-200 text-slate-400"
+    : isActive
+      ? "bg-primary text-white shadow-md shadow-primary/30"
+      : isCompleted
+        ? "bg-emerald-500 text-white"
+        : isNextUnlocked
+          ? "bg-primary/10 text-primary"
+          : "bg-slate-100 text-slate-500";
+
+  return (
+    <section
+      className={`rounded-3xl border-2 bg-white overflow-hidden transition-all duration-200 ${
+        isLocked ? "opacity-70" : "shadow-md hover:shadow-lg"
+      } ${cardBorder}`}
+    >
+      {/* Card Header */}
+      <div
+        role="button"
+        tabIndex={isLocked ? -1 : 0}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (!isLocked && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className={`w-full flex items-center justify-between gap-4 px-6 py-5 text-left transition-colors ${
+          isLocked ? "cursor-not-allowed" : "hover:bg-black/[0.02] cursor-pointer"
+        } ${headerBg}`}
+      >
+        {/* Left: badge + title */}
+        <div className="flex items-center gap-4 min-w-0">
+          <span
+            className={`h-12 w-12 rounded-2xl font-black text-base flex items-center justify-center shrink-0 transition-all ${badgeBg}`}
+          >
+            W{weekNumber}
+          </span>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-base font-bold text-slate-800">
+                Week {weekNumber}
+              </span>
+              {isActive && !isLocked && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary text-white text-[10px] font-bold uppercase tracking-wide">
+                  <MdPlayCircle className="text-xs" />
+                  Active
+                </span>
+              )}
+              {isCompleted && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wide">
+                  <MdCheckCircle className="text-xs" />
+                  {meta.bannerStatus === "PUBLISHED" ? "Published" : "Approved"}
+                </span>
+              )}
+              {isNextUnlocked && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wide">
+                  <MdLockOpen className="text-xs" />
+                  Ready
+                </span>
+              )}
+              {isLocked && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide">
+                  Locked
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-slate-500 mt-0.5">
+              {isLocked
+                ? `Unlocks after Week ${weekNumber - 1} plan is approved`
+                : isNextUnlocked
+                  ? "Unlocked — add your first plan to start"
+                  : plans.length === 0
+                    ? "No plans yet — click Add to start"
+                    : `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${meta.isSubmitted ? "Submitted" : "In progress"}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: lock icon + actions */}
+        <div className="flex items-center gap-3 shrink-0">
+          {isLocked ? (
+            <div className="flex flex-col items-center gap-1">
+              <MdLock className="text-slate-400" style={{ fontSize: 32 }} />
+              <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
+                Locked
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col items-center gap-1">
+                <MdLockOpen
+                  className={isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"}
+                  style={{ fontSize: 28 }}
+                />
+                <span
+                  className={`text-[9px] font-semibold uppercase tracking-wider ${
+                    isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"
+                  }`}
+                >
+                  Unlocked
+                </span>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={MdAdd}
+                disabled={!allowAdd}
+                title={!allowAdd ? "Weekly plans are not enabled for your role" : undefined}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAdd();
+                }}
+              >
+                Add
+              </Button>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                {expanded ? "Collapse" : "Expand"}
+                <MdChevronRight
+                  className={`text-lg transition-transform ${expanded ? "rotate-90" : ""}`}
+                />
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Locked overlay message */}
+      {isLocked && (
+        <div className="px-6 py-6 border-t border-slate-100 bg-slate-50/80">
+          <div className="flex flex-col items-center justify-center gap-3 py-4">
+            <MdLock className="text-slate-300" style={{ fontSize: 48 }} />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-slate-500">
+                Week {weekNumber} is locked
+              </p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                Complete and get Week {weekNumber - 1} approved before planning
+                Week {weekNumber}.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expanded content */}
+      {!isLocked && expanded && (
+        <div className="border-t border-slate-100 p-6 space-y-4 bg-slate-50/30">
+          {meta.isSubmitted && meta.bannerStatus && (
+            <PlanStatusBanner
+              plan_status={meta.bannerStatus}
+              submitted_at={meta.submittedAt}
+              approved_at={meta.approvedAt}
+              published_at={meta.publishedAt}
+              reviewer_name={meta.reviewerName}
+              feedback_note={meta.feedbackNote}
+            />
+          )}
+
+          {plans.length === 0 ? (
+            <div className="rounded-2xl bg-white border border-dashed border-slate-200 px-5 py-10 text-center">
+              <MdAdd className="mx-auto text-slate-300 mb-2" style={{ fontSize: 36 }} />
+              <p className="text-sm text-slate-600 mb-3">
+                No plan yet for Week {weekNumber}. Click "+ Add Weekly Plan"
+                to start.
+              </p>
+              <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
+                Add Weekly Plan
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {plans.map((plan) => (
+                <WeeklyPlanCard
+                  key={plan.id}
+                  plan={plan}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          )}
+
+          {meta.canShowSubmit && (
+            <div className="flex items-center justify-end pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={MdSend}
+                onClick={onSubmit}
+              >
+                Submit Week {weekNumber} Plan for Review
+              </Button>
+            </div>
+          )}
+
+          {meta.canShowPublish && (
+            <div className="flex items-center justify-end pt-2">
+              <Button
+                variant="primary"
+                size="sm"
+                icon={MdPublish}
+                onClick={onPublish}
+              >
+                Publish Week {weekNumber} Plan
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

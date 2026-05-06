@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
 import PageHeader from "../../../../components/common/PageHeader";
 import makeCall from "../../../../API";
@@ -11,7 +11,9 @@ import {
 } from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 import { routeConstants } from "../../../../../utils/constants";
-import { MdOutlineHistory, MdOpenInNew, MdChevronRight } from "react-icons/md";
+import { MdOutlineHistory, MdOpenInNew } from "react-icons/md";
+import Button from "../../../../components/Core/ui/Button";
+import RefreshButton from "../../../../components/common/RefreshButton";
 
 type AuditRow = {
   id: number;
@@ -43,7 +45,6 @@ function extractSnapshotId(row: AuditRow): number | null {
 }
 
 export default function OkrAuditLogsPage() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<AuditRow[]>([]);
   const [entityType, setEntityType] = useState("");
@@ -103,26 +104,26 @@ export default function OkrAuditLogsPage() {
     <AdminLayout>
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-2 space-y-6">
-          <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
-            <button
-              type="button"
-              onClick={() => navigate(routeConstants.okr)}
-              className="text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              OKR
-            </button>
-            <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
-            <span className="text-gray-800 font-medium">Audit Logs</span>
-          </nav>
-
           <PageHeader>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2">
-                <MdOutlineHistory /> OKR Audit Logs
-              </h1>
-              <p className="text-white/85 text-sm mt-1">
-                Trace lifecycle changes, approvals, and configuration snapshots.
-              </p>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-center gap-4">
+               
+                <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
+                  <MdOutlineHistory className="text-3xl text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tighter text-white capitalize">
+                    OKR Audit Logs
+                  </h1>
+                  <p className="text-white/60 text-[10px] font-black uppercase tracking-widest font-space mt-1">
+                    Trace lifecycle changes, approvals, and configuration snapshots.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 lg:justify-end">
+                <RefreshButton onClick={load} loading={loading} />
+              </div>
             </div>
           </PageHeader>
 
@@ -147,14 +148,14 @@ export default function OkrAuditLogsPage() {
                 className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm"
               />
 
-              <button
-                type="button"
+              <Button
                 onClick={() => void load()}
                 disabled={loading}
-                className="rounded-xl bg-primary text-white px-4 py-2.5 text-sm font-medium hover:opacity-95 disabled:opacity-50"
+                variant="primary"
+                className="rounded-xl px-4 py-2.5 text-sm font-medium"
               >
                 {loading ? "Loading..." : "Apply Filter"}
-              </button>
+              </Button>
 
               <div className="rounded-xl bg-slate-50 ring-1 ring-gray-100 px-3 py-2.5 text-sm text-gray-600">
                 Total Logs:{" "}

@@ -9,10 +9,20 @@ import {
   MdLogout,
   MdExpandMore,
   MdExpandLess,
+  MdGroup,
+  MdOutlineList,
+  MdPeopleOutline,
+  MdPersonOutline,
+  MdCheckCircle,
+  MdTrackChanges,
+  MdFactCheck,
 } from "react-icons/md";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSidebar } from "../../context/SidebarContext";
+import okrExecutionApi from "../../services/okr-execution.api";
+import makeCall from "../../API";
+import apiRoutes from "../../API/apiRoutes";
 import { useDispatch } from "react-redux";
 import { authActions } from "../../slice/authSlice";
 import toast from "react-hot-toast";
@@ -21,14 +31,7 @@ import { useManagerSlice } from "../../slice/managerSlice";
 import { useSelector } from "react-redux";
 import { selectIsManager } from "../../slice/managerSlice/selectors";
 import { selectAuthUser } from "../../slice/authSlice/selectors";
-import { useEffect } from "react";
-import {
-  MdGroup,
-  MdFlag,
-  MdGroupAdd,
-  MdFactCheck,
-  MdMonitorHeart,
-} from "react-icons/md";
+
 import { usePermission } from "../../hooks/usePermission";
 import { routeConstants } from "../../../utils/constants";
 
@@ -40,57 +43,69 @@ export default function EmployeeSidebar() {
   const dispatch = useDispatch();
   const isManager = useSelector(selectIsManager);
   const user = useSelector(selectAuthUser);
-  const isAdmin = user?.role?.name === "Admin";
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-
-  const managerOkrItems = [
-    {
-      path: routeConstants.okrManagerDepartmentPlanning,
-      label: "Department Execution",
-      icon: MdMonitorHeart,
-      visible: !!user?.is_department_head || user?.role?.name === "Admin",
-    },
-    {
-      path: routeConstants.okrContributorAssignment,
-      label: "Contributors",
-      icon: MdGroupAdd,
-      visible: true,
-    },
-    {
-      path: routeConstants.okrTeamExecutionMonitor,
-      label: "Team Monitor",
-      icon: MdMonitorHeart,
-      visible: true,
-    },
-    {
-      path: routeConstants.okrPlanningCompliance,
-      label: "Planning Compliance",
-      icon: MdFactCheck,
-      visible: true,
-    },
-    {
-      path: routeConstants.okrApprovalQueue,
-      label: "Approvals",
-      icon: MdFactCheck,
-      visible: true,
-    },
-  ].filter((item) => item.visible !== false);
-
-  const isOkrSectionActive =
+  const [isOkrNavOpen, setIsOkrNavOpen] = useState(
     location.pathname.startsWith("/employee/execution") ||
-    managerOkrItems.some((item) => location.pathname.startsWith(item.path));
+    location.pathname.startsWith("/manager/okr") ||
+    location.pathname.startsWith("/okr/reviews"),
+  );
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  const [hasUnsubmittedPlans, setHasUnsubmittedPlans] = useState(false);
 
-  const [isOkrNavOpen, setIsOkrNavOpen] = useState(isOkrSectionActive);
-
-  useEffect(() => {
-    if (isOkrSectionActive) {
-      setIsOkrNavOpen(true);
-    }
-  }, [isOkrSectionActive]);
 
   useEffect(() => {
     dispatch(managerActions.checkIsManager());
   }, [dispatch, managerActions]);
+
+  useEffect(() => {
+    const isOkrActive =
+      location.pathname.startsWith("/employee/execution") ||
+      location.pathname.startsWith("/manager/okr");
+
+    if (isOkrActive) {
+      setIsOkrNavOpen(true);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (isManager) {
+      const fetchCounts = async () => {
+        try {
+          const cycleRes = await makeCall({
+            method: "GET",
+            route: apiRoutes.okr.currentCycle,
+            isSecureRoute: true,
+          });
+          const cycleId = Number(cycleRes?.data?.data?.id ?? cycleRes?.data?.id);
+          if (!cycleId) {
+            setPendingReviewCount(0);
+            return;
+          }
+          const submissions =
+            await okrExecutionApi.fetchManagerSubmissions(cycleId);
+          setPendingReviewCount(submissions.length);
+
+          // Task 4 - Team Health Summary
+          const health = await okrExecutionApi.fetchTeamHealthSummary();
+          setHasUnsubmittedPlans(!!health?.hasUnsubmittedPlans);
+        } catch (e) {
+          console.error("Failed to fetch pending review counts", e);
+        }
+      };
+
+      void fetchCounts();
+
+      // Task 3 - Badge Revalidation on Focus
+      window.addEventListener("focus", fetchCounts);
+
+      const interval = setInterval(fetchCounts, 60000); // Refresh every minute
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("focus", fetchCounts);
+      };
+    }
+  }, [isManager]);
+
 
   const isActive = (path: string) => {
     if (path === routeConstants.okrMyExecution) {
@@ -154,17 +169,49 @@ export default function EmployeeSidebar() {
     // },
   ].filter((item: any) => item.visible !== false);
 
+  const managerOkrItems = [
+    {
+      path: routeConstants.okrContributorAssignment,
+      label: "Contributors",
+      icon: MdPeopleOutline,
+      visible: true,
+    },
+    {
+      path: routeConstants.okrTeamExecutionMonitor,
+      label: "Team Monitor",
+      icon: MdPersonOutline,
+      visible: true,
+      indicator: hasUnsubmittedPlans,
+    },
+
+    {
+      path: routeConstants.okrPlanningCompliance,
+      label: "Planning Compliance",
+      icon: MdCheckCircle,
+      visible: true,
+    },
+    {
+      path: routeConstants.okrApprovalQueue,
+      label: "Approvals",
+      icon: MdFactCheck,
+      visible: true,
+      badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
+    },
+  ].filter((item) => item.visible !== false);
+
   const okrNavItems = [
     {
       path: routeConstants.okrMyExecution,
       label: "My Execution",
-      icon: MdFlag,
+      icon: MdOutlineList,
       visible: true,
     },
-    ...(isManager || user?.is_department_head || isAdmin
-      ? managerOkrItems
-      : []),
+    ...(isManager ? managerOkrItems : []),
   ].filter((item) => item.visible !== false);
+
+  const isOkrSectionActive =
+    location.pathname.startsWith("/employee/execution") ||
+    managerOkrItems.some((item) => location.pathname.startsWith(item.path));
 
   if (isManager) {
     const managerItems = [
@@ -198,10 +245,9 @@ export default function EmployeeSidebar() {
         className={`
           h-screen bg-white shadow-xl border-r border-gray-100 flex flex-col transition-all duration-300 z-40
           fixed top-0 left-0
-          ${
-            isMobileOpen
-              ? "translate-x-0 w-72"
-              : "-translate-x-full lg:translate-x-0"
+          ${isMobileOpen
+            ? "translate-x-0 w-72"
+            : "-translate-x-full lg:translate-x-0"
           }
           ${isOpen ? "lg:w-72" : "lg:w-24"}
         `}
@@ -218,9 +264,8 @@ export default function EmployeeSidebar() {
           <img
             src={user?.company?.logo_url || "/kacha-logo.jpg"}
             alt={`${user?.company?.company_code || "Kacha"} Logo`}
-            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${
-              isOpen || isMobileOpen ? "max-h-16" : "max-h-10"
-            }`}
+            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${isOpen || isMobileOpen ? "max-h-16" : "max-h-10"
+              }`}
           />
 
           {/* Toggle button - hidden on mobile */}
@@ -244,10 +289,9 @@ export default function EmployeeSidebar() {
               className={`
                 group flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors
                 ${isOpen || isMobileOpen ? "" : "justify-center"}
-                ${
-                  isActive(item.path)
-                    ? "bg-primary text-white"
-                    : "text-gray-500 hover:bg-primary-light hover:text-primary"
+                ${isActive(item.path)
+                  ? "bg-primary text-white"
+                  : "text-gray-500 hover:bg-primary-light hover:text-primary"
                 }
               `}
               onClick={closeMobile}
@@ -278,7 +322,7 @@ export default function EmployeeSidebar() {
                     navigate(okrNavItems[0].path);
                     closeMobile();
                     return;
-                  }
+                    }
                   setIsOkrNavOpen((v) => !v);
                 }}
                 className={`
@@ -291,11 +335,11 @@ export default function EmployeeSidebar() {
                   }
                 `}
               >
-                <MdFlag className="text-2xl shrink-0" />
+                <MdTrackChanges className="text-2xl shrink-0" />
                 {(isOpen || isMobileOpen) && (
                   <>
                     <span className="whitespace-nowrap tracking-wide text-sm">
-                      OKR
+                      OKR Management
                     </span>
                     <span className="ml-auto">
                       {isOkrNavOpen ? (
@@ -325,7 +369,18 @@ export default function EmployeeSidebar() {
                       `}
                     >
                       <item.icon className="text-base shrink-0" />
-                      <span>{item.label}</span>
+                      <span className="flex items-center gap-1.5">
+                        {item.label}
+                        {"indicator" in item && item.indicator && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
+                        )}
+                      </span>
+                      {item.badge !== undefined && (
+                        <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                          {item.badge}
+                        </span>
+                      )}
+
                     </Link>
                   ))}
                 </div>

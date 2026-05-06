@@ -15,7 +15,6 @@ export interface User {
     secondary_color?: string;
     logo_url?: string;
   };
-  is_department_head?: boolean;
 
   // Optional profile fields (often present in /users/me)
   full_name?: string;

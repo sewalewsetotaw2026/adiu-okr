@@ -106,9 +106,9 @@ export default function ExecutionSetupModal({
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
-                <span className="text-sm font-bold text-k-dark-grey">Direct Adoption</span>
+                <span className="text-sm font-bold text-k-dark-grey">Direct</span>
                 <span className="text-[10px] text-k-medium-grey leading-relaxed">
-                  Use the manager's title and description directly.
+                  Use manager's title & description.
                 </span>
               </button>
 
@@ -121,9 +121,9 @@ export default function ExecutionSetupModal({
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
-                <span className="text-sm font-bold text-k-dark-grey">Custom Adoption</span>
+                <span className="text-sm font-bold text-k-dark-grey">Custom</span>
                 <span className="text-[10px] text-k-medium-grey leading-relaxed">
-                  Define your own title and description for this outcome.
+                  Define your own title & description.
                 </span>
               </button>
             </div>

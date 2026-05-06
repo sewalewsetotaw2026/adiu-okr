@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import employeeService from "../../../services/employeeService";
 import LoadingScreen from "./LoadingScreen";
 import { toast } from "react-hot-toast";
+import { MdDelete, MdEdit } from "react-icons/md";
 
 interface FormAutocompleteProps {
   label?: string;
@@ -9,14 +10,15 @@ interface FormAutocompleteProps {
   onChange: (value: string) => void;
   placeholder?: string;
   type:
-  | "departments"
-  | "jobTitles"
-  | "jobLevels"
-  | "fieldsOfStudy"
-  | "institutions"
-  | "employees"
-  | "managers"
-  | "allowanceTypes";
+    | "departments"
+    | "jobTitles"
+    | "jobLevels"
+    | "fieldsOfStudy"
+    | "institutions"
+    | "employees"
+    | "managers"
+    | "allowanceTypes"
+    | "metricCategories";
   onIdChange?: (id: string) => void;
   icon?: React.ReactNode;
   required?: boolean;
@@ -26,6 +28,11 @@ interface FormAutocompleteProps {
   containerClassName?: string;
   inputClassName?: string;
   fetchSuggestionsFn?: (query: string) => Promise<any[]>;
+  createSuggestionFn?: (value: string) => Promise<any>;
+  allowSuggestionManagement?: boolean;
+  onEditSuggestion?: (suggestion: any) => void;
+  onDeleteSuggestion?: (suggestion: any) => void;
+  customCreateLabel?: string;
 }
 
 const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
@@ -43,6 +50,11 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
   containerClassName = "",
   inputClassName = "",
   fetchSuggestionsFn,
+  createSuggestionFn,
+  allowSuggestionManagement = false,
+  onEditSuggestion,
+  onDeleteSuggestion,
+  customCreateLabel,
 }) => {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -54,30 +66,33 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
   const isSelectingRef = useRef(false); // Track if we're in the middle of selecting
 
   // Get label from suggestion object based on type
-  const getSuggestionLabel = useCallback((suggestion: any): string => {
-    if (typeof suggestion === "string") return suggestion;
-    if (!suggestion) return "";
+  const getSuggestionLabel = useCallback(
+    (suggestion: any): string => {
+      if (typeof suggestion === "string") return suggestion;
+      if (!suggestion) return "";
 
-    if (type === "employees" || type === "managers") {
-      return suggestion.full_name || suggestion.name || "";
-    }
-    if (type === "departments") {
-      return suggestion.name || "";
-    }
-    if (type === "jobTitles") {
-      return suggestion.title || suggestion.name || "";
-    }
-    // Universal fallback for any object with name/title/label/value
-    return (
-      suggestion.name ||
-      suggestion.title ||
-      suggestion.label ||
-      suggestion.value ||
-      suggestion.full_name ||
-      suggestion.level ||
-      ""
-    );
-  }, [type]);
+      if (type === "employees" || type === "managers") {
+        return suggestion.full_name || suggestion.name || "";
+      }
+      if (type === "departments" || type === "metricCategories") {
+        return suggestion.name || "";
+      }
+      if (type === "jobTitles") {
+        return suggestion.title || suggestion.name || "";
+      }
+      // Universal fallback for any object with name/title/label/value
+      return (
+        suggestion.name ||
+        suggestion.title ||
+        suggestion.label ||
+        suggestion.value ||
+        suggestion.full_name ||
+        suggestion.level ||
+        ""
+      );
+    },
+    [type],
+  );
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -86,7 +101,10 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
       if (isSelectingRef.current) {
         return;
       }
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
         setShowSuggestions(false);
       }
     }
@@ -95,76 +113,92 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
   }, []);
 
   // Fetch suggestions from API
-  const fetchSuggestions = useCallback(async (query: string) => {
-    setIsLoading(true);
-    try {
-      let data: any;
-      if (fetchSuggestionsFn) {
-        data = await fetchSuggestionsFn(query);
-      } else {
-        data = await employeeService.getSuggestions(type as any, query);
-      }
+  const fetchSuggestions = useCallback(
+    async (query: string) => {
+      setIsLoading(true);
+      try {
+        let data: any;
+        if (fetchSuggestionsFn) {
+          data = await fetchSuggestionsFn(query);
+        } else {
+          data = await employeeService.getSuggestions(type as any, query);
+        }
 
-      let rawData: any[] = [];
+        let rawData: any[] = [];
 
-      if (type === "employees" || type === "managers") {
-        rawData = data?.employees || data?.managers || (Array.isArray(data) ? data : []);
-      } else if (type === "allowanceTypes") {
-        rawData = Array.isArray(data) ? data : (data?.data?.allowanceTypes || []);
-      } else {
-        // Standard suggestions wrapper handling
-        if (Array.isArray(data)) {
-          rawData = data;
-        } else if (data && typeof data === "object") {
-          // Extract from common keys
+        if (type === "employees" || type === "managers") {
           rawData =
-            data.data ||
-            data.departments ||
-            data.jobTitles ||
-            data.jobLevels ||
-            data.fieldsOfStudy ||
-            data.institutions ||
-            [];
+            data?.employees ||
+            data?.managers ||
+            (Array.isArray(data) ? data : []);
+        } else if (type === "allowanceTypes") {
+          rawData = Array.isArray(data)
+            ? data
+            : data?.data?.allowanceTypes || [];
+        } else {
+          // Standard suggestions wrapper handling
+          if (Array.isArray(data)) {
+            rawData = data;
+          } else if (data && typeof data === "object") {
+            // Extract from common keys
+            rawData =
+              data.data ||
+              data.departments ||
+              data.jobTitles ||
+              data.jobLevels ||
+              data.fieldsOfStudy ||
+              data.institutions ||
+              [];
 
-          // If extracted data is STILL not an array, but we have a nested .data
-          if (!Array.isArray(rawData) && (rawData as any)?.data && Array.isArray((rawData as any).data)) {
-            rawData = (rawData as any).data;
+            // If extracted data is STILL not an array, but we have a nested .data
+            if (
+              !Array.isArray(rawData) &&
+              (rawData as any)?.data &&
+              Array.isArray((rawData as any).data)
+            ) {
+              rawData = (rawData as any).data;
+            }
           }
         }
+
+        // Final safety check: if we got {status: "success", data: [...]} which some endpoints might return
+        if (
+          !Array.isArray(rawData) &&
+          data?.status === "success" &&
+          Array.isArray(data?.data)
+        ) {
+          rawData = data.data;
+        }
+
+        if (!Array.isArray(rawData)) rawData = [];
+
+        // Handle nested data structure
+        if (!Array.isArray(rawData) && (data as any)?.data) {
+          if (Array.isArray((data as any).data)) rawData = (data as any).data;
+        }
+
+        // Sort: Prioritize items starting with query
+        const lowerQuery = query.toLowerCase();
+        const sorted = [...rawData].sort((a, b) => {
+          const labelA = getSuggestionLabel(a).toLowerCase();
+          const labelB = getSuggestionLabel(b).toLowerCase();
+          const aStarts = labelA.startsWith(lowerQuery);
+          const bStarts = labelB.startsWith(lowerQuery);
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          return labelA.localeCompare(labelB);
+        });
+
+        setSuggestions(sorted);
+      } catch (err) {
+        console.error("Error fetching suggestions:", err);
+        setSuggestions([]);
+      } finally {
+        setIsLoading(false);
       }
-
-      // Final safety check: if we got {status: "success", data: [...]} which some endpoints might return
-      if (!Array.isArray(rawData) && data?.status === "success" && Array.isArray(data?.data)) {
-        rawData = data.data;
-      }
-
-      if (!Array.isArray(rawData)) rawData = [];
-
-      // Handle nested data structure
-      if (!Array.isArray(rawData) && (data as any)?.data) {
-        if (Array.isArray((data as any).data)) rawData = (data as any).data;
-      }
-
-      // Sort: Prioritize items starting with query
-      const lowerQuery = query.toLowerCase();
-      const sorted = [...rawData].sort((a, b) => {
-        const labelA = getSuggestionLabel(a).toLowerCase();
-        const labelB = getSuggestionLabel(b).toLowerCase();
-        const aStarts = labelA.startsWith(lowerQuery);
-        const bStarts = labelB.startsWith(lowerQuery);
-        if (aStarts && !bStarts) return -1;
-        if (!aStarts && bStarts) return 1;
-        return labelA.localeCompare(labelB);
-      });
-
-      setSuggestions(sorted);
-    } catch (err) {
-      console.error("Error fetching suggestions:", err);
-      setSuggestions([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [type, getSuggestionLabel, fetchSuggestionsFn]);
+    },
+    [type, getSuggestionLabel, fetchSuggestionsFn],
+  );
 
   // Debounced fetch on value change
   useEffect(() => {
@@ -176,32 +210,36 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
   }, [value, showSuggestions, fetchSuggestions]);
 
   // Handle selecting a suggestion
-  const handleSelect = useCallback((suggestion: any) => {
-    console.log("FormAutocomplete selecting:", suggestion);
-    const labelStr = getSuggestionLabel(suggestion);
-    console.log("Label resolved to:", labelStr);
+  const handleSelect = useCallback(
+    (suggestion: any) => {
+      console.log("FormAutocomplete selecting:", suggestion);
+      const labelStr = getSuggestionLabel(suggestion);
+      console.log("Label resolved to:", labelStr);
 
-    // Update the value
-    onChange(labelStr);
+      // Update the value
+      onChange(labelStr);
 
-    // Update the ID if callback provided
-    const id = typeof suggestion === "object" && suggestion != null
-      ? suggestion.id || suggestion._id
-      : undefined;
-    if (onIdChange && id != null) {
-      onIdChange(String(id));
-    }
+      // Update the ID if callback provided
+      const id =
+        typeof suggestion === "object" && suggestion != null
+          ? suggestion.id || suggestion._id
+          : undefined;
+      if (onIdChange && id != null) {
+        onIdChange(String(id));
+      }
 
-    // Close dropdown and reset state
-    setShowSuggestions(false);
-    setActiveIndex(-1);
+      // Close dropdown and reset state
+      setShowSuggestions(false);
+      setActiveIndex(-1);
 
-    // Crucial: Keep isSelectingRef true for a bit longer to prevent 
-    // the container's onClick from re-opening the dropdown immediately
-    setTimeout(() => {
-      isSelectingRef.current = false;
-    }, 200);
-  }, [getSuggestionLabel, onChange, onIdChange]);
+      // Crucial: Keep isSelectingRef true for a bit longer to prevent
+      // the container's onClick from re-opening the dropdown immediately
+      setTimeout(() => {
+        isSelectingRef.current = false;
+      }, 200);
+    },
+    [getSuggestionLabel, onChange, onIdChange],
+  );
 
   // Handle creating a new item
   const handleCreate = async (query: string) => {
@@ -210,7 +248,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
 
     // Check if value already exists
     const existingMatch = suggestions.find(
-      (s) => getSuggestionLabel(s).toLowerCase() === val.toLowerCase()
+      (s) => getSuggestionLabel(s).toLowerCase() === val.toLowerCase(),
     );
     if (existingMatch) {
       handleSelect(existingMatch);
@@ -222,7 +260,10 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
       let created: any = null;
       let id: string | null = null;
 
-      if (type === "departments") {
+      if (createSuggestionFn) {
+        created = await createSuggestionFn(val);
+        id = created?.id != null ? String(created.id) : null;
+      } else if (type === "departments") {
         const res = await employeeService.createDepartment(val);
         created = res.data?.data?.department;
         id = created?.id;
@@ -236,7 +277,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
         const res = await employeeService.createFieldOfStudy(val);
         created = res.data?.data?.fieldOfStudy;
         id = created?.id;
-        toast.success("Field of Study created");
+        toast.success("Field Of Study created");
       } else if (type === "institutions") {
         const res = await employeeService.createInstitution(val);
         created = res.data?.data?.institution;
@@ -252,9 +293,18 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
         created = res.data?.data?.jobLevel;
         id = created?.id;
         toast.success("Job Level created");
+      } else if (type === "metricCategories") {
+        // No default service call for metricCategories here.
+        // Caller should pass createSuggestionFn.
+        created = null;
       }
 
-      onChange(val);
+      if (created && typeof created === "object") {
+        onChange(getSuggestionLabel(created) || val);
+      } else {
+        onChange(val);
+      }
+
       if (onIdChange) {
         onIdChange(id ? String(id) : "");
       }
@@ -276,7 +326,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((prev) =>
-        prev < suggestions.length - 1 ? prev + 1 : prev
+        prev < suggestions.length - 1 ? prev + 1 : prev,
       );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -287,7 +337,8 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
         handleSelect(suggestions[activeIndex]);
       } else if (creatable && value.trim()) {
         const existingMatch = suggestions.find(
-          (s) => getSuggestionLabel(s).toLowerCase() === value.trim().toLowerCase()
+          (s) =>
+            getSuggestionLabel(s).toLowerCase() === value.trim().toLowerCase(),
         );
         if (existingMatch) {
           handleSelect(existingMatch);
@@ -302,7 +353,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
     } else if (e.key === "Tab") {
       // On Tab, if there's an exact match, select it
       const exactMatch = suggestions.find(
-        (s) => getSuggestionLabel(s).toLowerCase() === value.toLowerCase()
+        (s) => getSuggestionLabel(s).toLowerCase() === value.toLowerCase(),
       );
       if (exactMatch) {
         handleSelect(exactMatch);
@@ -389,8 +440,9 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
       )}
 
       <div
-        className={`flex items-center w-full h-12 px-4 bg-white/70 backdrop-blur-sm border rounded-xl transition-all duration-200 focus-within:border-primary-light focus-within:ring-4 focus-within:ring-primary-light group cursor-pointer ${error ? "border-error" : "border-gray-200"
-          } ${inputClassName}`}
+        className={`flex items-center w-full h-12 px-4 bg-white/70 backdrop-blur-sm border rounded-xl transition-all duration-200 focus-within:border-primary-light focus-within:ring-4 focus-within:ring-primary-light group cursor-pointer ${
+          error ? "border-error" : "border-gray-200"
+        } ${inputClassName}`}
         onClick={handleToggle}
       >
         {icon && (
@@ -415,8 +467,9 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
             <LoadingScreen size={16} showText={false} />
           ) : (
             <svg
-              className={`w-5 h-5 transition-transform duration-500 ${showSuggestions ? "rotate-180 text-primary" : ""
-                }`}
+              className={`w-5 h-5 transition-transform duration-500 ${
+                showSuggestions ? "rotate-180 text-primary" : ""
+              }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -448,22 +501,26 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
                 suggestions.map((suggestion, index) => {
                   const labelStr = getSuggestionLabel(suggestion);
                   const isActive = index === activeIndex;
-                  const isSelected = labelStr.toLowerCase() === value.toLowerCase();
+                  const isSelected =
+                    labelStr.toLowerCase() === value.toLowerCase();
                   const subLabel =
                     (type === "employees" || type === "managers") &&
-                      typeof suggestion === "object"
+                    typeof suggestion === "object"
                       ? `${suggestion.job_title || ""} • ${suggestion.department || ""}`
                       : null;
 
                   return (
                     <div
                       key={suggestion.id || index}
-                      className={`px-4 py-2.5 cursor-pointer transition-all duration-150 flex items-center justify-between rounded-lg ${isActive || isSelected
-                        ? "bg-primary-light text-primary"
-                        : "text-gray-700 hover:bg-gray-50"
-                        }`}
+                      className={`px-4 py-2.5 cursor-pointer transition-all duration-150 flex items-center justify-between rounded-lg ${
+                        isActive || isSelected
+                          ? "bg-primary-light text-primary"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
                       onMouseEnter={() => setActiveIndex(index)}
-                      onMouseDown={(e) => handleSuggestionMouseDown(e, suggestion)}
+                      onMouseDown={(e) =>
+                        handleSuggestionMouseDown(e, suggestion)
+                      }
                     >
                       <div className="flex flex-col truncate">
                         <span className="font-medium text-sm truncate">
@@ -475,21 +532,53 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
                           </span>
                         )}
                       </div>
-                      {isSelected && (
-                        <div className="bg-primary-light p-1 rounded-full scale-90 ml-2 shrink-0">
-                          <svg
-                            className="w-3.5 h-3.5 text-primary"
-                            fill="currentColor"
-                            viewBox="0 0 20 20"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </div>
-                      )}
+
+                      <div className="flex items-center gap-2 ml-2 shrink-0">
+                        {allowSuggestionManagement && (
+                          <>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-gray-500 hover:bg-slate-200 hover:text-primary"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onEditSuggestion?.(suggestion);
+                              }}
+                              aria-label={`Edit ${labelStr}`}
+                            >
+                              <MdEdit className="text-sm" />
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-gray-500 hover:bg-red-100 hover:text-red-600"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onDeleteSuggestion?.(suggestion);
+                              }}
+                              aria-label={`Delete ${labelStr}`}
+                            >
+                              <MdDelete className="text-sm" />
+                            </button>
+                          </>
+                        )}
+
+                        {isSelected && (
+                          <div className="bg-primary-light p-1 rounded-full scale-90">
+                            <svg
+                              className="w-3.5 h-3.5 text-primary"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })
@@ -503,7 +592,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
                 creatable &&
                 !suggestions.some(
                   (s) =>
-                    getSuggestionLabel(s).toLowerCase() === value.toLowerCase()
+                    getSuggestionLabel(s).toLowerCase() === value.toLowerCase(),
                 ) && (
                   <div
                     className="cursor-pointer hover:bg-primary-light transition-colors px-4 py-3 border-t border-gray-100"
@@ -512,7 +601,7 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
                     <p className="font-medium text-gray-700 mb-0.5">
                       "{value}"
                       <span className="text-primary ml-1 font-semibold">
-                        (Create New)
+                        ({customCreateLabel || "Create New"})
                       </span>
                     </p>
                     <p className="text-[11px] text-gray-400">
@@ -525,7 +614,9 @@ const FormAutocomplete: React.FC<FormAutocompleteProps> = ({
                             ? "Department"
                             : type === "allowanceTypes"
                               ? "Allowance Type"
-                              : "entry"}
+                              : type === "metricCategories"
+                                ? "Metric Category"
+                                : "entry"}
                     </p>
                   </div>
                 )}

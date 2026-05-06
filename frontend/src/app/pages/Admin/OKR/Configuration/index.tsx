@@ -7,19 +7,45 @@ import { okrFeatureFlags } from "../okrFeatureFlags";
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
 import ToastService from "../../../../../utils/ToastService";
-import { routeConstants } from "../../../../../utils/constants";
 import {
   MdAdd,
-  MdChevronLeft,
   MdDelete,
   MdEdit,
   MdSwapHoriz,
   MdSettings,
 } from "react-icons/md";
-import { useNavigate } from "react-router-dom";
 import RefreshButton from "../../../../components/common/RefreshButton";
+import FormAutocomplete from "../../../../components/Core/ui/FormAutocomplete";
+import ConfirmationModal from "../../../../components/common/ConfirmationModal";
+import Button from "../../../../components/Core/ui/Button";
 
-type Tab = "general" | "statuses" | "metrics" | "profiles" | "feature_flags";
+const Skeleton = ({ className }: { className?: string }) => (
+  <div className={`animate-pulse rounded-lg bg-slate-200 ${className}`} />
+);
+
+const ConfigurationSkeleton = () => (
+  <div className="space-y-8">
+    <div className="rounded-3xl bg-white p-8 shadow-sm space-y-6">
+      <Skeleton className="h-8 w-1/4" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full" />
+      </div>
+      <Skeleton className="h-32 w-full" />
+    </div>
+    <div className="rounded-3xl bg-white p-8 shadow-sm space-y-4">
+      <Skeleton className="h-6 w-1/5" />
+      <div className="grid grid-cols-4 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+type Tab = "general" | "statuses" | "categories" | "metrics" | "profiles" | "feature_flags";
+
 
 type PlanningApproach = "TOP_DOWN" | "BOTTOM_UP";
 type PlanningCadence = "MONTHLY" | "WEEKLY" | "DAILY";
@@ -30,8 +56,7 @@ type OkrMetricCategory =
   | "NUMERIC"
   | "PERCENTAGE"
   | "CURRENCY"
-  | "BINARY"
-  | "DAILY_PLAN"
+  | "MILESTONE"
   | "RATING"
   | "CUSTOM";
 
@@ -93,6 +118,7 @@ interface OkrConfigurationMenu {
       min: number;
       max: number;
     };
+    auto_publish_on_approval?: boolean;
   };
 }
 
@@ -105,11 +131,23 @@ interface MetricDefinition {
   code: string;
   name: string;
   category: OkrMetricCategory;
+  category_code: string;
+  category_label: string;
   unit_of_measure: string | null;
   is_financial: boolean;
   requires_target_value: boolean;
   allows_binary_completion: boolean;
   supports_value_rollup: boolean;
+  value_based_progress: boolean;
+  is_active: boolean;
+}
+
+interface MetricCategoryOption {
+  id: number;
+  code: string;
+  name: string;
+  behavior_type: OkrMetricCategory;
+  description?: string | null;
   is_active: boolean;
 }
 
@@ -156,13 +194,23 @@ interface FeatureFlagDraft {
 }
 
 interface MetricCreateForm {
+  id?: number;
   code: string;
   name: string;
-  category: OkrMetricCategory;
+  category_code: string;
   unit_of_measure: string;
   is_financial: boolean;
   requires_target_value: boolean;
   allows_binary_completion: boolean;
+  value_based_progress: boolean;
+}
+
+interface MetricCategoryDraft {
+  id?: number;
+  name: string;
+  code: string;
+  behavior_type: OkrMetricCategory;
+  description: string;
 }
 
 const ENTITY_TYPES: OkrEntityType[] = [
@@ -181,17 +229,15 @@ const ENTITY_TYPES: OkrEntityType[] = [
   "EXPORT",
 ];
 
-const METRIC_CATEGORIES: OkrMetricCategory[] = [
+const METRIC_BEHAVIOR_TYPES: OkrMetricCategory[] = [
   "NUMERIC",
   "PERCENTAGE",
   "CURRENCY",
-  "BINARY",
-  "DAILY_PLAN",
+  "MILESTONE",
   "RATING",
   "CUSTOM",
 ];
 
-const ROLE_OPTIONS = ["", "ADMIN", "CEO", "HR", "DIRECTOR", "MANAGER"];
 const SCOPE_OPTIONS: ScopeType[] = [
   "GLOBAL",
   "ORGANIZATION",
@@ -200,29 +246,41 @@ const SCOPE_OPTIONS: ScopeType[] = [
   "QUARTER",
 ];
 
-const CONFIG_KEYS = {
-  statuses: "status_definitions",
-  transitions: "status_transitions",
-  profiles: "profile_definitions",
-  featureFlags: "feature_flags",
-};
-
-const CONFIG_KEY_LABELS: Record<string, string> = {
-  status_definitions: "Status flow",
-  status_transitions: "Status movement rules",
-  profile_definitions: "Planning profiles",
-  feature_flags: "Feature settings",
-};
-
 const EMPTY_METRIC_FORM: MetricCreateForm = {
   code: "",
   name: "",
-  category: "NUMERIC",
+  category_code: "NUMERIC",
   unit_of_measure: "",
   is_financial: false,
   requires_target_value: true,
   allows_binary_completion: false,
+  value_based_progress: false,
 };
+
+const EMPTY_METRIC_CATEGORY_DRAFT: MetricCategoryDraft = {
+  name: "",
+  code: "",
+  behavior_type: "CUSTOM",
+  description: "",
+};
+
+const CONFIG_KEYS = {
+  menu: "okr_configuration_menu",
+  statuses: "okr_status_definitions",
+  transitions: "okr_status_transitions",
+  profiles: "okr_profile_definitions",
+  featureFlags: "okr_feature_flags",
+} as const;
+
+const ROLE_OPTIONS = [
+  "",
+  "CEO",
+  "Admin",
+  "HR",
+  "Manager",
+  "Employee",
+  "Super Admin",
+];
 
 function createDefaultMenu(): OkrConfigurationMenu {
   return {
@@ -236,7 +294,7 @@ function createDefaultMenu(): OkrConfigurationMenu {
       allow_non_financial_metrics: true,
     },
     planning_cadence_rules: {
-      active_cadence: "MONTHLY",
+      active_cadence: "DAILY",
       rules: {
         MONTHLY: {
           allow_monthly: true,
@@ -256,11 +314,11 @@ function createDefaultMenu(): OkrConfigurationMenu {
       },
     },
     level_configuration: {
-      CEO: { allow_monthly: true, allow_weekly: false, allow_daily: false },
+      CEO: { allow_monthly: true, allow_weekly: true, allow_daily: true },
       DIRECTOR: {
         allow_monthly: true,
-        allow_weekly: false,
-        allow_daily: false,
+        allow_weekly: true,
+        allow_daily: true,
       },
       MANAGER_TEAM_LEADER: {
         allow_monthly: true,
@@ -295,6 +353,7 @@ function createDefaultMenu(): OkrConfigurationMenu {
         min: 2,
         max: 6,
       },
+      auto_publish_on_approval: true,
     },
   };
 }
@@ -365,6 +424,10 @@ function toCode(input: string): string {
     .replace(/[^A-Z0-9_]/g, "");
 }
 
+function toPascalWords(input: string): string {
+  return titleize(String(input || "").replace(/[_-]+/g, " "));
+}
+
 function extractPayload<T>(response: unknown): T {
   if (!isRecord(response)) return response as T;
   const data = response.data;
@@ -408,11 +471,11 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
 
   const approachOptions = Array.isArray(planningRaw.options)
     ? planningRaw.options
-        .map((item) => String(item || "").toUpperCase())
-        .filter(
-          (item): item is PlanningApproach =>
-            item === "TOP_DOWN" || item === "BOTTOM_UP",
-        )
+      .map((item) => String(item || "").toUpperCase())
+      .filter(
+        (item): item is PlanningApproach =>
+          item === "TOP_DOWN" || item === "BOTTOM_UP",
+      )
     : defaults.planning_approach.options;
 
   const selectedCandidate = String(
@@ -468,12 +531,12 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
         metricRaw.allowed_metric_definition_ids,
       )
         ? Array.from(
-            new Set(
-              metricRaw.allowed_metric_definition_ids
-                .map((id) => Number(id))
-                .filter((id) => Number.isInteger(id) && id > 0),
-            ),
-          )
+          new Set(
+            metricRaw.allowed_metric_definition_ids
+              .map((id) => Number(id))
+              .filter((id) => Number.isInteger(id) && id > 0),
+          ),
+        )
         : defaults.metric_configuration.allowed_metric_definition_ids,
       allow_financial_metrics: asBoolean(
         metricRaw.allow_financial_metrics,
@@ -634,6 +697,10 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
           defaults.additional_configuration.allowed_krs.max,
         ),
       },
+      auto_publish_on_approval: asBoolean(
+        additionalRaw.auto_publish_on_approval,
+        false,
+      ),
     },
   };
 }
@@ -644,17 +711,26 @@ function normalizeMetricList(raw: unknown): MetricDefinition[] {
     .map((item) => {
       if (!isRecord(item)) return null;
       const categoryCandidate = String(item.category || "CUSTOM").toUpperCase();
-      const category = METRIC_CATEGORIES.includes(
+      const category = METRIC_BEHAVIOR_TYPES.includes(
         categoryCandidate as OkrMetricCategory,
       )
         ? (categoryCandidate as OkrMetricCategory)
         : "CUSTOM";
+
+      const categoryLabel = String(
+        item.category_label || item.categoryLabel || titleize(category),
+      ).trim();
+      const categoryCode = toCode(
+        String(item.category_code || item.categoryCode || categoryLabel),
+      );
 
       return {
         id: Number(item.id || 0),
         code: String(item.code || ""),
         name: String(item.name || ""),
         category,
+        category_code: categoryCode || category,
+        category_label: categoryLabel,
         unit_of_measure:
           item.unit_of_measure === null || item.unit_of_measure === undefined
             ? null
@@ -666,6 +742,7 @@ function normalizeMetricList(raw: unknown): MetricDefinition[] {
           false,
         ),
         supports_value_rollup: asBoolean(item.supports_value_rollup, true),
+        value_based_progress: asBoolean(item.value_based_progress, false),
         is_active: asBoolean(item.is_active, true),
       };
     })
@@ -693,7 +770,7 @@ function normalizeStatuses(raw: unknown): StatusDefinition[] {
 
       const code = toCode(String(item.status_code || item.code || ""));
       const displayName = String(
-        item.display_name || item.display || titleize(code || "status"),
+        item.display_name || item.display || toPascalWords(code || "status"),
       ).trim();
 
       return {
@@ -814,30 +891,58 @@ function isCollectionEmpty(value: unknown): boolean {
   return Array.isArray(value) && value.length === 0;
 }
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; isPreview?: boolean }[] = [
   { id: "general", label: "General" },
+  { id: "categories", label: "Metric Categories" },
   { id: "metrics", label: "Metrics" },
-  { id: "statuses", label: "Statuses" },
-  { id: "profiles", label: "Profiles" },
-  { id: "feature_flags", label: "Feature Flags" },
+  { id: "statuses", label: "Statuses", isPreview: true },
+  // { id: "profiles", label: "Profiles", isPreview: true },
+  // { id: "feature_flags", label: "Feature Flags", isPreview: true },
 ];
 
-export default function OKRConfigurationPage() {
-  const navigate = useNavigate();
+export default function Configuration() {
+  const [loadingInitial, setLoadingInitial] = useState(true);
   const [tab, setTab] = useState<Tab>("general");
 
   const [menuDraft, setMenuDraft] =
     useState<OkrConfigurationMenu>(createDefaultMenu());
+  const [originalMenu, setOriginalMenu] =
+    useState<OkrConfigurationMenu>(createDefaultMenu());
   const [existingConfigKeys, setExistingConfigKeys] = useState<string[]>([]);
 
-  const [loadingInitial, setLoadingInitial] = useState(true);
+  const isMenuDirty = useMemo(
+    () => JSON.stringify(menuDraft) !== JSON.stringify(originalMenu),
+    [menuDraft, originalMenu],
+  );
+
   const [refreshingTab, setRefreshingTab] = useState(false);
 
   const [metrics, setMetrics] = useState<MetricDefinition[]>([]);
+  const [metricCategories, setMetricCategories] = useState<
+    MetricCategoryOption[]
+  >([]);
   const [metricModalOpen, setMetricModalOpen] = useState(false);
   const [metricForm, setMetricForm] =
     useState<MetricCreateForm>(EMPTY_METRIC_FORM);
-  const [creatingMetric, setCreatingMetric] = useState(false);
+  const [metricCategoryDraft, setMetricCategoryDraft] =
+    useState<MetricCategoryDraft>(EMPTY_METRIC_CATEGORY_DRAFT);
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(
+    null,
+  );
+  const [savingMetric, setSavingMetric] = useState(false);
+  const [editingMetricId, setEditingMetricId] = useState<number | null>(null);
+  const [deletingMetricId, setDeletingMetricId] = useState<number | null>(null);
+  const [metricToDelete, setMetricToDelete] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [savingCategoryId, setSavingCategoryId] = useState<number | null>(null);
 
   const [statuses, setStatuses] = useState<StatusDefinition[]>([]);
   const [transitions, setTransitions] = useState<StatusTransition[]>([]);
@@ -892,22 +997,13 @@ export default function OKRConfigurationPage() {
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingStatuses, setSavingStatuses] = useState(false);
   const [savingMetricRules, setSavingMetricRules] = useState(false);
+
   const [savingProfiles, setSavingProfiles] = useState(false);
   const [savingFlags, setSavingFlags] = useState(false);
 
   const configKeySet = useMemo(
     () => new Set(existingConfigKeys),
     [existingConfigKeys],
-  );
-
-  const statusPreview = useMemo(
-    () => statuses.filter((item) => item.is_active).slice(0, 3),
-    [statuses],
-  );
-
-  const activeFlagsCount = useMemo(
-    () => featureFlags.filter((flag) => flag.is_enabled).length,
-    [featureFlags],
   );
 
   const statusCodesForTransition = useMemo(() => {
@@ -937,7 +1033,9 @@ export default function OKRConfigurationPage() {
     setExistingConfigKeys(keys);
 
     if (payload?.menu) {
-      setMenuDraft(normalizeMenu(payload.menu));
+      const normalized = normalizeMenu(payload.menu);
+      setMenuDraft(normalized);
+      setOriginalMenu(normalized);
     }
   }, []);
 
@@ -949,7 +1047,9 @@ export default function OKRConfigurationPage() {
     });
 
     const menu = extractPayload<unknown>(response);
-    setMenuDraft(normalizeMenu(menu));
+    const normalized = normalizeMenu(menu);
+    setMenuDraft(normalized);
+    setOriginalMenu(normalized);
   }, []);
 
   const fetchByKey = useCallback(
@@ -999,6 +1099,49 @@ export default function OKRConfigurationPage() {
     [configKeySet],
   );
 
+  const loadMetricCategories = useCallback(async () => {
+    const response = await makeCall({
+      method: "GET",
+      route: apiRoutes.okr.metricCategories,
+      isSecureRoute: true,
+    });
+
+    const payload = extractPayload<unknown>(response);
+    const list = Array.isArray(payload) ? payload : [];
+
+    const normalized = list
+      .map((item) => {
+        if (!isRecord(item)) return null;
+        const behaviorCandidate = String(
+          item.behavior_type || item.behaviorType || "CUSTOM",
+        ).toUpperCase();
+        const behavior = METRIC_BEHAVIOR_TYPES.includes(
+          behaviorCandidate as OkrMetricCategory,
+        )
+          ? (behaviorCandidate as OkrMetricCategory)
+          : "CUSTOM";
+
+        return {
+          id: Number(item.id || 0),
+          code: toCode(String(item.code || "")),
+          name: String(item.name || "").trim(),
+          behavior_type: behavior,
+          description:
+            item.description === null || item.description === undefined
+              ? null
+              : String(item.description),
+          is_active: asBoolean(item.is_active, true),
+        } as MetricCategoryOption;
+      })
+      .filter(
+        (item): item is MetricCategoryOption =>
+          item !== null && item.id > 0 && Boolean(item.name),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    setMetricCategories(normalized);
+  }, []);
+
   const loadMetrics = useCallback(async () => {
     const response = await makeCall({
       method: "GET",
@@ -1009,11 +1152,267 @@ export default function OKRConfigurationPage() {
     setMetrics(normalizeMetricList(payload));
   }, []);
 
+  const loadMetricWorkspace = useCallback(async () => {
+    await Promise.all([loadMetrics(), loadMetricCategories()]);
+  }, [loadMetrics, loadMetricCategories]);
+
+  const openCreateMetricModal = () => {
+    setEditingMetricId(null);
+    setMetricForm(EMPTY_METRIC_FORM);
+    setMetricModalOpen(true);
+  };
+
+  const openEditMetricModal = (metric: MetricDefinition) => {
+    setEditingMetricId(metric.id);
+    setMetricForm({
+      id: metric.id,
+      code: metric.code,
+      name: metric.name,
+      category_code:
+        metric.category_code ||
+        toCode(metric.category_label || metric.category),
+      unit_of_measure: metric.unit_of_measure || "",
+      is_financial: metric.is_financial,
+      requires_target_value: metric.requires_target_value,
+      allows_binary_completion: metric.allows_binary_completion,
+      value_based_progress: metric.value_based_progress || false,
+    });
+    setMetricModalOpen(true);
+  };
+
+  const submitMetricModal = async () => {
+    if (!metricForm.name.trim()) {
+      ToastService.error("Metric name is required.");
+      return;
+    }
+
+    if (!metricForm.category_code.trim()) {
+      ToastService.error("Category is required.");
+      return;
+    }
+
+    setSavingMetric(true);
+    try {
+      const route = editingMetricId
+        ? apiRoutes.okr.metricById(editingMetricId)
+        : apiRoutes.okr.metrics;
+      const method = editingMetricId ? "PUT" : "POST";
+
+      await makeCall({
+        method,
+        route,
+        isSecureRoute: true,
+        body: {
+          code: metricForm.code.trim() || undefined,
+          name: metricForm.name.trim(),
+          category_code: toCode(metricForm.category_code),
+          unit_of_measure: metricForm.unit_of_measure.trim() || undefined,
+          isFinancial: metricForm.is_financial,
+          requiresTargetValue: metricForm.requires_target_value,
+          allowsBinaryCompletion: metricForm.allows_binary_completion,
+          valueBasedProgress: metricForm.value_based_progress,
+        },
+      });
+
+      setMetricModalOpen(false);
+      setMetricForm(EMPTY_METRIC_FORM);
+      setEditingMetricId(null);
+      await loadMetricWorkspace();
+      ToastService.success(
+        editingMetricId
+          ? "Metric updated successfully."
+          : "Metric created successfully.",
+      );
+    } catch (error) {
+      ToastService.error(
+        extractMessage(
+          error,
+          editingMetricId
+            ? "Failed to update metric."
+            : "Failed to create metric.",
+        ),
+      );
+    } finally {
+      setSavingMetric(false);
+    }
+  };
+
+  const removeMetric = async (metricId: number) => {
+    setDeletingMetricId(metricId);
+    try {
+      await makeCall({
+        method: "DELETE",
+        route: apiRoutes.okr.metricById(metricId),
+        isSecureRoute: true,
+      });
+
+      await loadMetricWorkspace();
+      ToastService.success("Metric deleted.");
+    } catch (error) {
+      ToastService.error(extractMessage(error, "Failed to delete metric."));
+    } finally {
+      setDeletingMetricId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!metricCategoryDraft.name.trim()) {
+      return;
+    }
+
+    const matched = metricCategories.find(
+      (category) =>
+        category.name.toLowerCase() === metricCategoryDraft.name.toLowerCase(),
+    );
+
+    if (matched) {
+      setMetricCategoryDraft((prev) => ({
+        ...prev,
+        id: matched.id,
+        code: matched.code,
+        behavior_type: matched.behavior_type,
+        description: String(matched.description || ""),
+      }));
+    }
+  }, [metricCategories, metricCategoryDraft.name]);
+
+  // const createMetricCategory = async (value: string) => {
+  const createMetricCategory = async (value: string, description: string = "") => {
+    const name = value.trim();
+    if (!name) throw new Error("Category name is required.");
+
+    const response = await makeCall({
+      method: "POST",
+      route: apiRoutes.okr.metricCategories,
+      isSecureRoute: true,
+      body: {
+        name,
+        code: toCode(name),
+        behavior_type: "CUSTOM",
+        description: description || "",
+      },
+    });
+
+    const created = extractPayload<any>(response);
+    const normalized = {
+      id: Number(created?.id || 0),
+      code: toCode(String(created?.code || name)),
+      name: String(created?.name || name),
+      behavior_type: String(
+        created?.behavior_type || "CUSTOM",
+      ).toUpperCase() as OkrMetricCategory,
+      description:
+        created?.description === null || created?.description === undefined
+          ? null
+          : String(created.description),
+      is_active: asBoolean(created?.is_active, true),
+    } as MetricCategoryOption;
+
+    await loadMetricCategories();
+    setEditingCategoryId(null);
+    setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+    ToastService.success("Category created.");
+
+    return normalized;
+  };
+
+  const saveMetricCategory = async (
+    categoryId: number,
+    payload: {
+      name: string;
+      code: string;
+      behavior_type: OkrMetricCategory;
+      description?: string;
+    },
+  ) => {
+    setSavingCategoryId(categoryId);
+    try {
+      await makeCall({
+        method: "PUT",
+        route: apiRoutes.okr.metricCategoryById(categoryId),
+        isSecureRoute: true,
+        body: {
+          name: payload.name.trim(),
+          code: toCode(payload.code || payload.name),
+          behavior_type: payload.behavior_type,
+          description: payload.description || "",
+        },
+      });
+
+      await loadMetricWorkspace();
+      ToastService.success("Category updated.");
+    } catch (error) {
+      ToastService.error(extractMessage(error, "Failed to update category."));
+    } finally {
+      setSavingCategoryId(null);
+    }
+  };
+
+  const handleApplyCategoryDraft = async () => {
+    const name = metricCategoryDraft.name.trim();
+    if (!name) {
+      ToastService.error("Category name is required.");
+      return;
+    }
+
+    const code = toCode(metricCategoryDraft.code || name);
+    const behavior = metricCategoryDraft.behavior_type;
+    const description = metricCategoryDraft.description.trim();
+
+    if (editingCategoryId) {
+      const oldCode = metricCategories.find(
+        (c) => c.id === editingCategoryId,
+      )?.code;
+
+      await saveMetricCategory(editingCategoryId, {
+        name,
+        code,
+        behavior_type: behavior,
+        description,
+      });
+
+      if (metricModalOpen && metricForm.category_code === oldCode) {
+        setMetricForm((prev) => ({ ...prev, category_code: code }));
+      }
+
+      setEditingCategoryId(null);
+      setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+      return;
+    }
+
+    const created = await createMetricCategory(name, description);
+    if (metricModalOpen && created) {
+      setMetricForm((prev) => ({ ...prev, category_code: created.code }));
+    }
+  };
+
+  const deleteMetricCategory = async (categoryId: number) => {
+    try {
+      await makeCall({
+        method: "DELETE",
+        route: apiRoutes.okr.metricCategoryById(categoryId),
+        isSecureRoute: true,
+      });
+
+      await loadMetricWorkspace();
+      setMetricCategoryDraft((prev) => {
+        if (prev.id === categoryId) {
+          setEditingCategoryId(null);
+          return EMPTY_METRIC_CATEGORY_DRAFT;
+        }
+        return prev;
+      });
+      ToastService.success("Category deleted.");
+    } catch (error) {
+      ToastService.error(extractMessage(error, "Failed to delete category."));
+    }
+  };
+
   const loadStatusesAndTransitions = useCallback(async () => {
-    const [statusRaw, transitionRaw] = await Promise.all([
+    const [statusRaw, transitionRaw] = (await Promise.all([
       fetchByKey(CONFIG_KEYS.statuses),
       fetchByKey(CONFIG_KEYS.transitions),
-    ]);
+    ])) as [unknown, unknown];
 
     const fetchedStatuses = normalizeStatuses(statusRaw);
     const fetchedTransitions = normalizeTransitions(transitionRaw);
@@ -1041,7 +1440,7 @@ export default function OKRConfigurationPage() {
       } else if (tab === "statuses") {
         await loadStatusesAndTransitions();
       } else if (tab === "metrics") {
-        await Promise.all([loadMetrics(), fetchMenu()]);
+        await Promise.all([loadMetricWorkspace(), fetchMenu()]);
       } else if (tab === "profiles") {
         await loadProfiles();
       } else {
@@ -1057,7 +1456,7 @@ export default function OKRConfigurationPage() {
     fetchMenu,
     fetchSummary,
     loadFeatureFlags,
-    loadMetrics,
+    loadMetricWorkspace,
     loadProfiles,
     loadStatusesAndTransitions,
     tab,
@@ -1072,7 +1471,7 @@ export default function OKRConfigurationPage() {
         await Promise.all([
           fetchSummary(),
           fetchMenu(),
-          loadMetrics(),
+          loadMetricWorkspace(),
           loadStatusesAndTransitions(),
           loadProfiles(),
           loadFeatureFlags(),
@@ -1102,7 +1501,7 @@ export default function OKRConfigurationPage() {
     fetchMenu,
     fetchSummary,
     loadFeatureFlags,
-    loadMetrics,
+    loadMetricWorkspace,
     loadProfiles,
     loadStatusesAndTransitions,
   ]);
@@ -1196,40 +1595,6 @@ export default function OKRConfigurationPage() {
     }
   };
 
-  const handleCreateMetric = async () => {
-    if (!metricForm.name.trim()) {
-      ToastService.error("Metric name is required.");
-      return;
-    }
-
-    setCreatingMetric(true);
-    try {
-      await makeCall({
-        method: "POST",
-        route: apiRoutes.okr.metrics,
-        isSecureRoute: true,
-        body: {
-          code: metricForm.code.trim() || undefined,
-          name: metricForm.name.trim(),
-          category: metricForm.category,
-          unit_of_measure: metricForm.unit_of_measure.trim() || undefined,
-          isFinancial: metricForm.is_financial,
-          requiresTargetValue: metricForm.requires_target_value,
-          allowsBinaryCompletion: metricForm.allows_binary_completion,
-        },
-      });
-
-      setMetricModalOpen(false);
-      setMetricForm(EMPTY_METRIC_FORM);
-      await loadMetrics();
-      ToastService.success("Metric created successfully.");
-    } catch (error) {
-      ToastService.error(extractMessage(error, "Failed to create metric."));
-    } finally {
-      setCreatingMetric(false);
-    }
-  };
-
   const openCreateStatusModal = () => {
     setStatusDraft({
       id: "",
@@ -1250,14 +1615,11 @@ export default function OKRConfigurationPage() {
   };
 
   const submitStatusModal = () => {
-    const normalizedCode = toCode(
-      statusDraft.status_code || statusDraft.display_name,
-    );
-    const displayName =
-      statusDraft.display_name.trim() || titleize(normalizedCode);
+    const normalizedCode = toCode(statusDraft.display_name);
+    const displayName = statusDraft.display_name.trim();
 
     if (!normalizedCode || !displayName) {
-      ToastService.error("Status code and display name are required.");
+      ToastService.error("Status name is required.");
       return;
     }
 
@@ -1267,7 +1629,7 @@ export default function OKRConfigurationPage() {
       ...statusDraft,
       id: currentId,
       status_code: normalizedCode,
-      display_name: displayName,
+      display_name: toPascalWords(displayName),
       sort_order: statusDraft.sort_order > 0 ? statusDraft.sort_order : 1,
     };
 
@@ -1425,8 +1787,8 @@ export default function OKRConfigurationPage() {
   };
 
   const renderGeneralTab = () => (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-      <section className="xl:col-span-8 rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
+    <div className="max-w-5xl">
+      <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6 border border-slate-100">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="space-y-2">
             <span className="text-sm font-semibold text-gray-700">
@@ -1701,6 +2063,26 @@ export default function OKRConfigurationPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="flex items-center justify-between rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium">
+            Auto-Publish on Approval
+            <input
+              type="checkbox"
+              checked={
+                menuDraft.additional_configuration.auto_publish_on_approval
+              }
+              onChange={(event) =>
+                setMenuDraft((prev) => ({
+                  ...prev,
+                  additional_configuration: {
+                    ...prev.additional_configuration,
+                    auto_publish_on_approval: event.target.checked,
+                  },
+                }))
+              }
+              className="h-4 w-4 accent-primary"
+            />
+          </label>
+
+          <label className="flex items-center justify-between rounded-2xl bg-slate-100 px-4 py-3 text-sm font-medium">
             Allow Financial Metrics
             <input
               type="checkbox"
@@ -1740,7 +2122,7 @@ export default function OKRConfigurationPage() {
         </div>
 
         <div className="rounded-2xl bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3 capitalize">
             Level Cadence Permissions
           </h3>
           <div className="overflow-x-auto">
@@ -1832,397 +2214,286 @@ export default function OKRConfigurationPage() {
         </div>
 
         <div className="flex flex-wrap justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={fetchMenu}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-slate-50"
+          <Button
+            variant="secondary"
+            onClick={() => setMenuDraft(originalMenu)}
+            disabled={savingGeneral || !isMenuDirty}
           >
-            Restore Saved Values
-          </button>
-          <button
-            type="button"
+            Undo
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleSaveGeneral}
-            disabled={savingGeneral}
-            className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
+            disabled={savingGeneral || !isMenuDirty}
+            loading={savingGeneral}
           >
-            {savingGeneral ? "Saving..." : "Apply Configuration"}
-          </button>
+            Apply Configuration
+          </Button>
         </div>
       </section>
-
-      <aside className="xl:col-span-4 space-y-6">
-        {/*<section className="rounded-3xl bg-white p-6 shadow-sm">*/}
-        {/*<div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-900">
-              Status Matrix Preview
-            </h3>
-            <button
-              type="button"
-              onClick={() => setTab("statuses")}
-              className="text-sm font-semibold text-primary"
-            >
-              Manage
-            </button>
-          </div>*/}
-        {/*<div className="space-y-2">
-            {statusPreview.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                Start by adding simple steps like Draft, In Progress, and
-                Completed.
-              </p>
-            ) : (
-              statusPreview.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl bg-slate-100 px-3 py-2 flex items-center justify-between"
-                >
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-gray-500">
-                      {titleize(item.entity_type)}
-                    </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {item.display_name}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-gray-700">
-                    {item.status_code}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>*/}
-        {/*</section>*/}
-
-        {/*<section className="rounded-3xl bg-primary p-6 text-white shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Active Metrics</h3>
-            <button
-              type="button"
-              onClick={() => setTab("metrics")}
-              className="text-xs font-semibold bg-white/15 px-2 py-1 rounded-lg"
-            >
-              Open
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {metrics.slice(0, 6).map((metric) => (
-              <span
-                key={metric.id}
-                className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold"
-              >
-                {metric.code}
-              </span>
-            ))}
-            {metrics.length === 0 && (
-              <span className="text-sm text-white/80">
-                No Metrics Configured Yet.
-              </span>
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <h3 className="font-semibold text-gray-900 mb-2">
-            Saved Setup Overview
-          </h3>
-          <p className="text-sm text-gray-600">
-            Sections already saved:{" "}
-            <span className="font-semibold text-gray-900">
-              {existingConfigKeys.length}
-            </span>
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {existingConfigKeys.length > 0 ? (
-              existingConfigKeys.map((key) => (
-                <span
-                  key={key}
-                  className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-gray-700"
-                >
-                  {CONFIG_KEY_LABELS[key] || titleize(key)}
-                </span>
-              ))
-            ) : (
-              <span className="text-sm text-gray-500">
-                No saved sections yet. You can start with the defaults and press
-                save.
-              </span>
-            )}
-          </div>
-        </section>*/}
-      </aside>
     </div>
   );
 
   const renderStatusesTab = () => (
-    <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-6">
+      <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">
-            Status Definitions
+          <h2 className="text-xl font-bold text-gray-900 capitalize flex items-center gap-2">
+            Workflow Statuses
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-600/20">
+              Preview
+            </span>
           </h2>
-          <p className="text-sm text-gray-600">
-            Define the simple step-by-step flow your goals move through.
+          <p className="text-sm text-gray-600 mt-1">
+            Define the lifecycle of OKRs (Draft, Review, Approved, etc.) to
+            control workflow and visibility across the organization.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setShowTransitionsEditor((prev) => !prev)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-slate-50"
-          >
-            <MdSwapHoriz className="text-base" />
-            {showTransitionsEditor ? "Hide Transitions" : "Edit Transitions"}
-          </button>
-          <button
-            type="button"
-            onClick={openCreateStatusModal}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-95"
-          >
-            <MdAdd className="text-base" />
-            Add Status
-          </button>
+        <Button variant="primary" onClick={openCreateStatusModal} icon={MdAdd}>
+          Add Status
+        </Button>
+      </div>
+
+      <div className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowTransitionsEditor((prev) => !prev)}
+              icon={MdSwapHoriz}
+            >
+              {showTransitionsEditor ? "Hide Transitions" : "Edit Transitions"}
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="rounded-2xl border border-primary/20 bg-primary-light/40 p-4 text-sm text-gray-700">
-        <p>
-          This section controls your goal flow. Start with Draft, In Progress,
-          and Completed, then adjust to match your team's process.
-        </p>
-      </div>
-
-      <div className="overflow-x-auto rounded-2xl bg-slate-50">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-500">
-              <th className="px-4 py-3 font-semibold">Used For</th>
-              <th className="px-4 py-3 font-semibold">Status Tag</th>
-              <th className="px-4 py-3 font-semibold">Status Name</th>
-              <th className="px-4 py-3 font-semibold">Starting Step</th>
-              <th className="px-4 py-3 font-semibold">Final Step</th>
-              <th className="px-4 py-3 font-semibold text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {statuses.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-gray-500" colSpan={6}>
-                  No statuses yet. Add your first workflow step to get started.
-                </td>
+        <div className="overflow-x-auto rounded-2xl bg-slate-50">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-500">
+                <th className="px-4 py-3 font-semibold">Used For</th>
+                <th className="px-4 py-3 font-semibold">Status Name</th>
+                <th className="px-4 py-3 font-semibold">Starting Step</th>
+                <th className="px-4 py-3 font-semibold">Final Step</th>
+                <th className="px-4 py-3 font-semibold text-right">Actions</th>
               </tr>
-            ) : (
-              statuses.map((row) => (
-                <tr key={row.id} className="border-t border-slate-200/80">
-                  <td className="px-4 py-3 font-medium text-gray-800">
-                    {titleize(row.entity_type)}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{row.status_code}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
-                      {row.display_name}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {row.is_initial ? "Yes" : "No"}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {row.is_terminal ? "Yes" : "No"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openEditStatusModal(row)}
-                        className="rounded-lg p-1.5 text-gray-600 hover:bg-slate-200"
-                        aria-label={`Edit ${row.display_name}`}
-                      >
-                        <MdEdit className="text-base" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeStatus(row)}
-                        className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600"
-                        aria-label={`Delete ${row.display_name}`}
-                      >
-                        <MdDelete className="text-base" />
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {statuses.length === 0 ? (
+                <tr>
+                  <td
+                    className="px-4 py-8 text-center text-gray-500"
+                    colSpan={5}
+                  >
+                    No statuses yet. Add your first workflow step to get
+                    started.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                statuses.map((row) => (
+                  <tr key={row.id} className="border-t border-slate-200/80">
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      {titleize(row.entity_type)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-semibold text-primary">
+                        {row.display_name}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {row.is_initial ? "Yes" : "No"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {row.is_terminal ? "Yes" : "No"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditStatusModal(row)}
+                          className="p-1.5 h-auto text-gray-600 hover:bg-slate-200"
+                          icon={MdEdit}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeStatus(row)}
+                          className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
+                          icon={MdDelete}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-      {showTransitionsEditor && (
-        <div className="rounded-2xl bg-slate-50 p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold text-gray-900">
-              How Items Move Between Steps
-            </h3>
-            <span className="text-xs text-gray-500">
-              {transitions.length} rule(s)
-            </span>
-          </div>
+        {showTransitionsEditor && (
+          <div className="rounded-2xl bg-slate-50 p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-semibold text-gray-900 capitalize">
+                How Items Move Between Steps
+              </h3>
+              <span className="text-xs text-gray-500">
+                {transitions.length} rule(s)
+              </span>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-            <select
-              value={newTransition.entity_type}
-              onChange={(event) =>
-                setNewTransition((prev) => ({
-                  ...prev,
-                  entity_type: event.target.value as OkrEntityType,
-                  from_status_code: "",
-                  to_status_code: "",
-                }))
-              }
-              className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {ENTITY_TYPES.map((entity) => (
-                <option key={entity} value={entity}>
-                  {titleize(entity)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newTransition.from_status_code}
-              onChange={(event) =>
-                setNewTransition((prev) => ({
-                  ...prev,
-                  from_status_code: event.target.value,
-                }))
-              }
-              className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">From</option>
-              {statusCodesForTransition.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newTransition.to_status_code}
-              onChange={(event) =>
-                setNewTransition((prev) => ({
-                  ...prev,
-                  to_status_code: event.target.value,
-                }))
-              }
-              className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">To</option>
-              {statusCodesForTransition.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
-            <select
-              value={newTransition.required_role}
-              onChange={(event) =>
-                setNewTransition((prev) => ({
-                  ...prev,
-                  required_role: event.target.value,
-                }))
-              }
-              className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role || "any-role"} value={role}>
-                  {role || "Any role"}
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm">
-              Approval
-              <input
-                type="checkbox"
-                checked={newTransition.requires_approval}
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+              <select
+                value={newTransition.entity_type}
                 onChange={(event) =>
                   setNewTransition((prev) => ({
                     ...prev,
-                    requires_approval: event.target.checked,
+                    entity_type: event.target.value as OkrEntityType,
+                    from_status_code: "",
+                    to_status_code: "",
                   }))
                 }
-                className="h-4 w-4 accent-primary"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addTransition}
-              className="rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white"
-            >
-              Add
-            </button>
-          </div>
+                className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {ENTITY_TYPES.map((entity) => (
+                  <option key={entity} value={entity}>
+                    {titleize(entity)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newTransition.from_status_code}
+                onChange={(event) =>
+                  setNewTransition((prev) => ({
+                    ...prev,
+                    from_status_code: event.target.value,
+                  }))
+                }
+                className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">From</option>
+                {statusCodesForTransition.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newTransition.to_status_code}
+                onChange={(event) =>
+                  setNewTransition((prev) => ({
+                    ...prev,
+                    to_status_code: event.target.value,
+                  }))
+                }
+                className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="">To</option>
+                {statusCodesForTransition.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={newTransition.required_role}
+                onChange={(event) =>
+                  setNewTransition((prev) => ({
+                    ...prev,
+                    required_role: event.target.value,
+                  }))
+                }
+                className="rounded-xl bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                {ROLE_OPTIONS.map((role: string) => (
+                  <option key={role || "any-role"} value={role}>
+                    {role || "Any role"}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-sm">
+                Approval
+                <input
+                  type="checkbox"
+                  checked={newTransition.requires_approval}
+                  onChange={(event) =>
+                    setNewTransition((prev) => ({
+                      ...prev,
+                      requires_approval: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 accent-primary"
+                />
+              </label>
+              <Button variant="primary" size="sm" onClick={addTransition}>
+                Add
+              </Button>
+            </div>
 
-          <div className="space-y-2">
-            {transitions.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                No transition rules configured.
-              </p>
-            ) : (
-              transitions.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-xl bg-white px-3 py-2 flex items-center justify-between"
-                >
-                  <div className="text-sm text-gray-800">
-                    <span className="font-medium">
-                      {titleize(item.entity_type)}
-                    </span>
-                    <span className="mx-2 text-gray-400">|</span>
-                    <span>{item.from_status_code}</span>
-                    <span className="mx-2 text-gray-400">→</span>
-                    <span>{item.to_status_code}</span>
-                    {item.required_role && (
-                      <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-gray-600">
-                        {item.required_role}
-                      </span>
-                    )}
-                    {item.requires_approval && (
-                      <span className="ml-2 rounded-full bg-primary-light px-2 py-0.5 text-xs text-primary">
-                        Approval Required
-                      </span>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTransitions((prev) =>
-                        prev.filter((transition) => transition.id !== item.id),
-                      )
-                    }
-                    className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600"
-                    aria-label="Delete transition"
+            <div className="space-y-2">
+              {transitions.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No transition rules configured.
+                </p>
+              ) : (
+                transitions.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl bg-white px-3 py-2 flex items-center justify-between"
                   >
-                    <MdDelete className="text-base" />
-                  </button>
-                </div>
-              ))
-            )}
+                    <div className="text-sm text-gray-800">
+                      <span className="font-medium">
+                        {titleize(item.entity_type)}
+                      </span>
+                      <span className="mx-2 text-gray-400">|</span>
+                      <span>{item.from_status_code}</span>
+                      <span className="mx-2 text-gray-400">→</span>
+                      <span>{item.to_status_code}</span>
+                      {item.required_role && (
+                        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-gray-600">
+                          {item.required_role}
+                        </span>
+                      )}
+                      {item.requires_approval && (
+                        <span className="ml-2 rounded-full bg-primary-light px-2 py-0.5 text-xs text-primary">
+                          Approval Required
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setTransitions((prev) =>
+                          prev.filter(
+                            (transition) => transition.id !== item.id,
+                          ),
+                        )
+                      }
+                      className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
+                      icon={MdDelete}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="flex justify-end gap-3">
-        <button
-          type="button"
-          onClick={loadStatusesAndTransitions}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-slate-50"
-        >
-          Restore Saved Values
-        </button>
-        <button
-          type="button"
-          onClick={handleSaveStatuses}
-          disabled={savingStatuses}
-          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
-        >
-          {savingStatuses ? "Saving..." : "Save Status Flow"}
-        </button>
+        <div className="flex justify-end gap-3">
+          <Button variant="secondary" onClick={loadStatusesAndTransitions}>
+            Undo
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveStatuses}
+            disabled={savingStatuses}
+            loading={savingStatuses}
+          >
+            Save Status Flow
+          </Button>
+        </div>
       </div>
     </section>
   );
@@ -2231,7 +2502,7 @@ export default function OKRConfigurationPage() {
     <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-xl font-semibold text-gray-900 capitalize">
             Metric Definitions
           </h2>
           <p className="text-sm text-gray-600">
@@ -2239,14 +2510,13 @@ export default function OKRConfigurationPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setMetricModalOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-black text-white uppercase tracking-widest font-space shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all"
+          <Button
+            variant="primary"
+            onClick={openCreateMetricModal}
+            icon={MdAdd}
           >
-            <MdAdd className="text-lg" />
             Add Metric Type
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -2254,12 +2524,12 @@ export default function OKRConfigurationPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-500">
-              <th className="px-4 py-3 font-semibold">Code</th>
               <th className="px-4 py-3 font-semibold">Name</th>
               <th className="px-4 py-3 font-semibold">Category</th>
               <th className="px-4 py-3 font-semibold">Financial</th>
-              <th className="px-4 py-3 font-semibold">Roll-up</th>
-              <th className="px-4 py-3 font-semibold">Binary</th>
+              <th className="px-4 py-3 font-semibold">Milestone</th>
+              <th className="px-4 py-3 font-semibold">Value-Based</th>
+              <th className="px-4 py-3 font-semibold text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -2272,21 +2542,42 @@ export default function OKRConfigurationPage() {
             ) : (
               metrics.map((row) => (
                 <tr key={row.id} className="border-t border-slate-200/80">
-                  <td className="px-4 py-3 font-semibold text-primary">
-                    {row.code}
+                  <td className="px-4 py-3 text-gray-800 font-semibold">
+                    {row.name}
                   </td>
-                  <td className="px-4 py-3 text-gray-800">{row.name}</td>
                   <td className="px-4 py-3 text-gray-700">
-                    {titleize(row.category)}
+                    {row.category_label || titleize(row.category)}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
                     {row.is_financial ? "Yes" : "No"}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {row.supports_value_rollup ? "Enabled" : "Disabled"}
+                    {row.allows_binary_completion ? "Enabled" : "Disabled"}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {row.allows_binary_completion ? "Enabled" : "Disabled"}
+                    {row.value_based_progress ? "Direct Value" : "Score Aggregated"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditMetricModal(row)}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-slate-200"
+                        aria-label={`Edit ${row.name}`}
+                        disabled={savingMetric || deletingMetricId === row.id}
+                        icon={MdEdit}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void removeMetric(row.id)}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
+                        aria-label={`Delete ${row.name}`}
+                        disabled={deletingMetricId === row.id}
+                        icon={MdDelete}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))
@@ -2297,7 +2588,7 @@ export default function OKRConfigurationPage() {
 
       <div className="rounded-2xl bg-slate-50 p-4 space-y-4">
         <div>
-          <h3 className="font-semibold text-gray-900">
+          <h3 className="font-semibold text-gray-900 capitalize">
             Metric Availability Settings
           </h3>
           <p className="text-sm text-gray-600">
@@ -2344,312 +2635,331 @@ export default function OKRConfigurationPage() {
           </label>
         </div>
 
-        <div>
-          {/*<p className="text-sm font-medium text-gray-800 mb-2">
-            Metric types your teams can use
-          </p>*/}
-          {/*<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-            {metrics.map((metric) => {
-              const selected =
-                menuDraft.metric_configuration.allowed_metric_definition_ids.includes(
-                  metric.id,
-                );
-              return (
-                <label
-                  key={metric.id}
-                  className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={(event) =>
-                      setMenuDraft((prev) => {
-                        const current =
-                          prev.metric_configuration
-                            .allowed_metric_definition_ids;
-                        const next = event.target.checked
-                          ? Array.from(new Set([...current, metric.id]))
-                          : current.filter((id) => id !== metric.id);
-                        return {
-                          ...prev,
-                          metric_configuration: {
-                            ...prev.metric_configuration,
-                            allowed_metric_definition_ids: next,
-                          },
-                        };
-                      })
-                    }
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="text-gray-700">
-                    {metric.name}
-                    {metric.code ? (
-                      <span className="text-xs text-gray-500 ml-1">
-                        ({metric.code})
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              );
-            })}
-          </div>*/}
-        </div>
-
         <div className="flex justify-end">
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={handleSaveMetricRules}
             disabled={savingMetricRules}
-            className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
+            loading={savingMetricRules}
           >
-            {savingMetricRules ? "Saving..." : "Save Metric Rules"}
-          </button>
+            Save Metric Rules
+          </Button>
         </div>
       </div>
     </section>
   );
-
-  const renderProfilesTab = () => (
+  const renderCategoriesTab = () => (
     <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Profiles</h2>
+          <h2 className="text-xl font-semibold text-gray-900 capitalize">
+            Metric Categoriess
+          </h2>
           <p className="text-sm text-gray-600">
-            Group planning styles so each team can work in the way that fits
-            them best.
+            Group metrics into categories to help teams easily find the right measurement tools.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={openCreateProfileModal}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-95"
+          <Button
+            variant="primary"
+            onClick={() => {
+              setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+              setEditingCategoryId(null);
+              setCategoryModalOpen(true);
+            }}
+            icon={MdAdd}
           >
-            <MdAdd className="text-base" />
-            Create Profile
-          </button>
+            Add Category
+          </Button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-primary/20 bg-primary-light/40 p-4 text-sm text-gray-700">
-        <p>
-          Profiles help you set common planning patterns for different groups,
-          such as leadership planning or department execution.
-        </p>
+      <div className="overflow-x-auto rounded-2xl bg-slate-50">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-500">
+              <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Description</th>
+              <th className="px-4 py-3 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metricCategories.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-gray-500" colSpan={4}>
+                  No Metric Categories Defined Yet
+                </td>
+              </tr>
+            ) : (
+              metricCategories.map((row) => (
+                <tr key={row.id} className="border-t border-slate-200/80">
+                  <td className="px-4 py-3 text-gray-800 font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 text-gray-700 max-w-sm truncate">
+                    {row.description || "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingCategoryId(row.id);
+                          setMetricCategoryDraft({
+                            id: row.id,
+                            name: row.name,
+                            code: row.code,
+                            behavior_type: row.behavior_type,
+                            description: row.description || "",
+                          });
+                          setCategoryModalOpen(true);
+                        }}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-slate-200"
+                        aria-label={`Edit ${row.name}`}
+                        icon={MdEdit}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCategoryToDelete({ id: row.id, name: row.name })}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
+                        aria-label={`Delete ${row.name}`}
+                        icon={MdDelete}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+
+
+
+  const renderProfilesTab = () => (
+    <section className="space-y-6">
+      <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">
+            Cycle Profiles
+            <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+              Preview
+            </span>
+          </h3>
+          <p className="text-sm text-gray-600 mt-1">
+            Configure cycle templates with specific deadlines, mandatory
+            approval layers, and submission behaviors.
+          </p>
+        </div>
+        <Button variant="primary" onClick={openCreateProfileModal} icon={MdAdd}>
+          Create Profile
+        </Button>
       </div>
 
-      {profiles.length === 0 ? (
-        <div className="rounded-2xl bg-slate-50 p-6 text-sm text-gray-500">
-          No profiles yet. Create one to guide how teams set and track goals.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {profiles.map((profile) => (
-            <article
-              key={profile.id}
-              className="rounded-2xl bg-slate-50 p-4 space-y-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    {profile.name}
-                  </h3>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    {titleize(profile.scope_type)}
+      <div className="rounded-3xl bg-white p-6 md:p-8 shadow-sm">
+        {profiles.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-6 text-sm text-gray-500">
+            No profiles yet. Create one to guide how teams set and track goals.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {profiles.map((profile) => (
+              <article
+                key={profile.id}
+                className="rounded-2xl bg-slate-50 p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 capitalize">
+                      {profile.name}
+                    </h3>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                      {titleize(profile.scope_type)}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setProfileDraft(profile);
+                        setProfileModalOpen(true);
+                      }}
+                      className="rounded-lg p-1.5 text-gray-600 hover:bg-white h-auto"
+                      aria-label={`Edit ${profile.name}`}
+                      icon={MdEdit}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setProfiles((prev) =>
+                          prev.filter((item) => item.id !== profile.id),
+                        )
+                      }
+                      className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600 h-auto"
+                      aria-label={`Delete ${profile.name}`}
+                      icon={MdDelete}
+                    />
+                  </div>
+                </div>
+                {profile.description && (
+                  <p className="text-sm text-gray-600">{profile.description}</p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600">
+                  <p>
+                    <span className="font-semibold text-gray-700">
+                      Assignment:
+                    </span>{" "}
+                    {profile.assignment || "N/A"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-gray-700">Access:</span>{" "}
+                    {profile.access_level || "N/A"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-gray-700">Sync:</span>{" "}
+                    {profile.sync_frequency || "N/A"}
                   </p>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setProfileDraft(profile);
-                      setProfileModalOpen(true);
-                    }}
-                    className="rounded-lg p-1.5 text-gray-600 hover:bg-white"
-                    aria-label={`Edit ${profile.name}`}
-                  >
-                    <MdEdit className="text-base" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setProfiles((prev) =>
-                        prev.filter((item) => item.id !== profile.id),
-                      )
-                    }
-                    className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600"
-                    aria-label={`Delete ${profile.name}`}
-                  >
-                    <MdDelete className="text-base" />
-                  </button>
-                </div>
-              </div>
-              {profile.description && (
-                <p className="text-sm text-gray-600">{profile.description}</p>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-gray-600">
-                <p>
-                  <span className="font-semibold text-gray-700">
-                    Assignment:
-                  </span>{" "}
-                  {profile.assignment || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-700">Access:</span>{" "}
-                  {profile.access_level || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-700">Sync:</span>{" "}
-                  {profile.sync_frequency || "N/A"}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+              </article>
+            ))}
+          </div>
+        )}
 
-      <div className="flex justify-end gap-3">
-        <button
-          type="button"
-          onClick={loadProfiles}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-slate-50"
-        >
-          Restore Saved Values
-        </button>
-        <button
-          type="button"
-          onClick={handleSaveProfiles}
-          disabled={savingProfiles}
-          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
-        >
-          {savingProfiles ? "Saving..." : "Save Profiles"}
-        </button>
+        <div className="flex justify-end gap-3 pt-6">
+          <Button variant="secondary" onClick={loadProfiles}>
+            Restore Saved Values
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveProfiles}
+            disabled={savingProfiles}
+            loading={savingProfiles}
+          >
+            Save Profiles
+          </Button>
+        </div>
       </div>
     </section>
   );
 
   const renderFeatureFlagsTab = () => (
-    <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="space-y-6">
+      <div className="rounded-3xl bg-white p-8 shadow-sm border border-slate-100 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Feature Flags</h2>
-          <p className="text-sm text-gray-600">
-            Turn important planning features on or off for the right audience.
-            Currently {activeFlagsCount} feature(s) are enabled.
+          <h3 className="text-lg font-bold text-gray-900">
+            Feature Flags
+            <span className="ml-2 inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+              Preview
+            </span>
+          </h3>
+          <p className="text-sm text-gray-600 mt-1">
+            Toggle experimental OKR features on or off for specific scopes to
+            control feature rollouts.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreateFlagModal}
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-white hover:opacity-95"
-        >
-          <MdAdd className="text-base" />
+        <Button variant="primary" onClick={openCreateFlagModal} icon={MdAdd}>
           New Flag
-        </button>
+        </Button>
       </div>
 
-      <div className="rounded-2xl border border-primary/20 bg-primary-light/40 p-4 text-sm text-gray-700">
-        <p>
-          Feature flags let you roll out new planning features safely and in
-          stages.
-        </p>
-      </div>
+      <div className="rounded-3xl bg-white p-6 md:p-8 shadow-sm">
+        {featureFlags.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-6 text-sm text-gray-500">
+            No feature flags yet. Add one to control feature rollout.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {featureFlags.map((flag) => (
+              <article
+                key={flag.id}
+                className="rounded-2xl bg-slate-50 p-4 space-y-3 border-l-4 border-primary/70"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 capitalize">
+                      {flag.feature_name}
+                    </h3>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">
+                      {titleize(flag.scope_type)}
+                    </p>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    Enabled
+                    <input
+                      type="checkbox"
+                      checked={flag.is_enabled}
+                      onChange={(event) =>
+                        setFeatureFlags((prev) =>
+                          prev.map((item) =>
+                            item.id === flag.id
+                              ? { ...item, is_enabled: event.target.checked }
+                              : item,
+                          ),
+                        )
+                      }
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </label>
+                </div>
 
-      {featureFlags.length === 0 ? (
-        <div className="rounded-2xl bg-slate-50 p-6 text-sm text-gray-500">
-          No feature flags yet. Add one to control feature rollout.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {featureFlags.map((flag) => (
-            <article
-              key={flag.id}
-              className="rounded-2xl bg-slate-50 p-4 space-y-3 border-l-4 border-primary/70"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-semibold text-gray-900">
-                    {flag.feature_name}
-                  </h3>
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    {titleize(flag.scope_type)}
+                {flag.description && (
+                  <p className="text-sm text-gray-600">{flag.description}</p>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600">
+                  <p>
+                    <span className="font-semibold text-gray-700">Target:</span>{" "}
+                    {flag.target_audience || "N/A"}
+                  </p>
+                  <p>
+                    <span className="font-semibold text-gray-700">Impact:</span>{" "}
+                    {flag.impact_radius || "N/A"}
                   </p>
                 </div>
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  Enabled
-                  <input
-                    type="checkbox"
-                    checked={flag.is_enabled}
-                    onChange={(event) =>
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
                       setFeatureFlags((prev) =>
-                        prev.map((item) =>
-                          item.id === flag.id
-                            ? { ...item, is_enabled: event.target.checked }
-                            : item,
-                        ),
+                        prev.filter((item) => item.id !== flag.id),
                       )
                     }
-                    className="h-4 w-4 accent-primary"
+                    className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600 h-auto"
+                    aria-label={`Delete ${flag.feature_name}`}
+                    icon={MdDelete}
                   />
-                </label>
-              </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
-              {flag.description && (
-                <p className="text-sm text-gray-600">{flag.description}</p>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-600">
-                <p>
-                  <span className="font-semibold text-gray-700">Target:</span>{" "}
-                  {flag.target_audience || "N/A"}
-                </p>
-                <p>
-                  <span className="font-semibold text-gray-700">Impact:</span>{" "}
-                  {flag.impact_radius || "N/A"}
-                </p>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFeatureFlags((prev) =>
-                      prev.filter((item) => item.id !== flag.id),
-                    )
-                  }
-                  className="rounded-lg p-1.5 text-gray-600 hover:bg-red-100 hover:text-red-600"
-                  aria-label={`Delete ${flag.feature_name}`}
-                >
-                  <MdDelete className="text-base" />
-                </button>
-              </div>
-            </article>
-          ))}
+        <div className="flex justify-end gap-3 pt-6">
+          <Button variant="secondary" onClick={loadFeatureFlags}>
+            Restore Saved Values
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSaveFeatureFlags}
+            disabled={savingFlags}
+            loading={savingFlags}
+          >
+            Save Feature Flags
+          </Button>
         </div>
-      )}
-
-      <div className="flex justify-end gap-3">
-        <button
-          type="button"
-          onClick={loadFeatureFlags}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-slate-50"
-        >
-          Restore Saved Values
-        </button>
-        <button
-          type="button"
-          onClick={handleSaveFeatureFlags}
-          disabled={savingFlags}
-          className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-95 disabled:opacity-60"
-        >
-          {savingFlags ? "Saving..." : "Save Feature Flags"}
-        </button>
       </div>
     </section>
   );
 
   const renderActiveTab = () => {
     if (tab === "general") return renderGeneralTab();
+    if (tab === "categories") return renderCategoriesTab();
     if (tab === "statuses") return renderStatusesTab();
     if (tab === "metrics") return renderMetricsTab();
     if (tab === "profiles") return renderProfilesTab();
@@ -2674,24 +2984,16 @@ export default function OKRConfigurationPage() {
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => navigate(routeConstants.okr)}
-                    className="p-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all active:scale-95 shadow-inner ring-1 ring-white/20"
-                    title="Back to OKR"
-                  >
-                    <MdChevronLeft className="text-2xl" />
-                  </button>
                   <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
                     <MdSettings className="text-3xl text-white" />
                   </div>
                   <div>
-                    <h1 className="text-2xl font-black tracking-tighter text-white">
-                      OKR Configuration
+                    <h1 className="text-2xl font-semibold text-white capitalize">
+                      Okr Configuration
                     </h1>
-                    <p className="text-white/60 text-xs font-medium mt-1">
-                      Architectural governance, workflow definitions, and
-                      feature orchestration.
+                    <p className="text-white/80 text-sm mt-1">
+                      Set up planning rules, status flow, and metric options for
+                      your teams.
                     </p>
                   </div>
                 </div>
@@ -2708,29 +3010,25 @@ export default function OKRConfigurationPage() {
 
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-2xl w-fit">
             {TABS.map((t) => (
-              <button
+              <Button
                 key={t.id}
+                variant="ghost"
                 onClick={() => setTab(t.id)}
-                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest font-space rounded-xl transition-all ${
-                  tab === t.id
-                    ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl transition-all h-auto ${tab === t.id ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"}`}
               >
                 {t.label}
-              </button>
+                {t.isPreview && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${tab === t.id ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-500"}`}
+                  >
+                    Preview
+                  </span>
+                )}
+              </Button>
             ))}
           </div>
 
-          {loadingInitial ? (
-            <section className="rounded-3xl bg-white p-8 shadow-sm">
-              <p className="text-sm text-gray-500">
-                Loading configuration workspace...
-              </p>
-            </section>
-          ) : (
-            renderActiveTab()
-          )}
+          {loadingInitial ? <ConfigurationSkeleton /> : renderActiveTab()}
         </div>
       </div>
 
@@ -2769,23 +3067,7 @@ export default function OKRConfigurationPage() {
           </select>
         </label>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="space-y-2 block">
-            <span className="text-sm font-semibold text-gray-700">
-              Status Tag
-            </span>
-            <input
-              value={statusDraft.status_code}
-              onChange={(event) =>
-                setStatusDraft((prev) => ({
-                  ...prev,
-                  status_code: toCode(event.target.value),
-                }))
-              }
-              placeholder="e.g. DRAFT"
-              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
+        <div className="grid grid-cols-1 gap-4">
           <label className="space-y-2 block">
             <span className="text-sm font-semibold text-gray-700">
               Status Name
@@ -2856,50 +3138,49 @@ export default function OKRConfigurationPage() {
           setMetricModalOpen(false);
           setMetricForm(EMPTY_METRIC_FORM);
         }}
-        title="Add Metric Type"
-        maxWidthClass="max-w-2xl"
+        title={editingMetricId ? "Edit Metric Type" : "Add Metric Type"}
+        maxWidthClass="max-w-4xl"
+        fullHeight
         footer={
           <ApprovalFooter
             onCancel={() => {
               setMetricModalOpen(false);
               setMetricForm(EMPTY_METRIC_FORM);
+              setEditingMetricId(null);
             }}
-            onConfirm={handleCreateMetric}
-            confirmText={creatingMetric ? "Creating..." : "Create Metric"}
-            confirmDisabled={creatingMetric}
+            onConfirm={submitMetricModal}
+            confirmText={
+              savingMetric
+                ? editingMetricId
+                  ? "Updating..."
+                  : "Creating..."
+                : editingMetricId
+                  ? "Update Metric"
+                  : "Create Metric"
+            }
+            confirmDisabled={savingMetric}
           />
         }
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <label className="space-y-2 block">
-            <span className="text-sm font-semibold text-gray-700">
-              Metric Name
-            </span>
-            <input
-              value={metricForm.name}
-              onChange={(event) =>
-                setMetricForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-              placeholder="e.g. Net Recurring Revenue"
-              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
-          <label className="space-y-2 block">
-            <span className="text-sm font-semibold text-gray-700">
-              Short Tag (Optional)
-            </span>
-            <input
-              value={metricForm.code}
-              onChange={(event) =>
-                setMetricForm((prev) => ({
-                  ...prev,
-                  code: toCode(event.target.value),
-                }))
-              }
-              placeholder="e.g. FIN_REV_01"
-              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="md:col-span-2">
+            <label className="space-y-2 block">
+              <span className="text-sm font-semibold text-gray-700">
+                Metric Name
+              </span>
+              <input
+                value={metricForm.name}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    name: event.target.value,
+                  }))
+                }
+                placeholder="e.g. Net Recurring Revenue"
+                className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2908,18 +3189,21 @@ export default function OKRConfigurationPage() {
               Category
             </span>
             <select
-              value={metricForm.category}
+              value={metricForm.category_code}
               onChange={(event) =>
                 setMetricForm((prev) => ({
                   ...prev,
-                  category: event.target.value as OkrMetricCategory,
+                  category_code: event.target.value,
                 }))
               }
               className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              {METRIC_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {titleize(category)}
+              <option value="" disabled>
+                Select a category
+              </option>
+              {metricCategories.map((category) => (
+                <option key={category.code} value={category.code}>
+                  {category.name}
                 </option>
               ))}
             </select>
@@ -2942,49 +3226,75 @@ export default function OKRConfigurationPage() {
           </label>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
-            Financial Metric
-            <input
-              type="checkbox"
-              checked={metricForm.is_financial}
-              onChange={(event) =>
-                setMetricForm((prev) => ({
-                  ...prev,
-                  is_financial: event.target.checked,
-                }))
-              }
-              className="h-4 w-4 accent-primary"
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
-            Requires Target Value
-            <input
-              type="checkbox"
-              checked={metricForm.requires_target_value}
-              onChange={(event) =>
-                setMetricForm((prev) => ({
-                  ...prev,
-                  requires_target_value: event.target.checked,
-                }))
-              }
-              className="h-4 w-4 accent-primary"
-            />
-          </label>
-          <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
-            Allows Binary Completion
-            <input
-              type="checkbox"
-              checked={metricForm.allows_binary_completion}
-              onChange={(event) =>
-                setMetricForm((prev) => ({
-                  ...prev,
-                  allows_binary_completion: event.target.checked,
-                }))
-              }
-              className="h-4 w-4 accent-primary"
-            />
-          </label>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
+              Financial Metric
+              <input
+                type="checkbox"
+                checked={metricForm.is_financial}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    is_financial: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
+              Requires Target Value
+              <input
+                type="checkbox"
+                checked={metricForm.requires_target_value}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    requires_target_value: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
+              Allows Milestone Completion
+              <input
+                type="checkbox"
+                checked={metricForm.allows_binary_completion}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    allows_binary_completion: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
+              Value Based Progress
+              <input
+                type="checkbox"
+                checked={metricForm.value_based_progress}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    value_based_progress: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+          </div>
+
+          {metricForm.value_based_progress && (
+            <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+              <p className="text-[11px] leading-relaxed text-amber-700 font-medium">
+                <span className="font-bold block mb-0.5">Value-Based Calculation Enabled:</span>
+                This metric will calculate progress purely as <code className="bg-amber-100/50 px-1 rounded">Current / Target</code>.
+                It will bypass the standard weighted score aggregation for all associated plans and hierarchies.
+              </p>
+            </div>
+          )}
         </div>
       </ModalLayout>
 
@@ -3240,6 +3550,122 @@ export default function OKRConfigurationPage() {
           />
         </label>
       </ModalLayout>
+
+      {/* Category Management Modal */}
+      <ModalLayout
+        isOpen={categoryModalOpen}
+        onClose={() => {
+          setCategoryModalOpen(false);
+          setEditingCategoryId(null);
+          setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+        }}
+        title={
+          editingCategoryId ? "Edit Metric Category" : "Add Metric Category"
+        }
+        maxWidthClass="max-w-xl"
+        footer={
+          <ApprovalFooter
+            onCancel={() => {
+              setCategoryModalOpen(false);
+              setEditingCategoryId(null);
+              setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+            }}
+            onConfirm={async () => {
+              await handleApplyCategoryDraft();
+              setCategoryModalOpen(false);
+            }}
+            confirmText={savingCategoryId ? "Updating..." : "Update Category"}
+            confirmDisabled={Boolean(savingCategoryId)}
+          />
+        }
+      >
+        <div className="space-y-4">
+          <label className="space-y-2 block">
+            <span className="text-sm font-semibold text-gray-700">Name</span>
+            <input
+              value={metricCategoryDraft.name}
+              onChange={(event) =>
+                setMetricCategoryDraft((prev) => ({
+                  ...prev,
+                  name: event.target.value,
+                  code: toCode(event.target.value),
+                }))
+              }
+              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+
+          {/* <label className="space-y-2 block">
+            <span className="text-sm font-semibold text-gray-700">
+              Behavior Type
+            </span>
+            <select
+              value={metricCategoryDraft.behavior_type}
+              onChange={(event) =>
+                setMetricCategoryDraft((prev) => ({
+                  ...prev,
+                  behavior_type: event.target.value as OkrMetricCategory,
+                }))
+              }
+              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {METRIC_BEHAVIOR_TYPES.map((behavior) => (
+                <option key={behavior} value={behavior}>
+                  {titleize(behavior)}
+                </option>
+              ))}
+            </select>
+          </label> */}
+          <label className="space-y-2 block">
+            <span className="text-sm font-semibold text-gray-700">
+              Description
+            </span>
+            <textarea
+              value={metricCategoryDraft.description}
+              onChange={(event) =>
+                setMetricCategoryDraft((prev) => ({
+                  ...prev,
+                  description: event.target.value,
+                }))
+              }
+              rows={2}
+              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </label>
+        </div>
+      </ModalLayout>
+
+      <ConfirmationModal
+        isOpen={Boolean(categoryToDelete)}
+        title="Delete Metric Category"
+        message={`Are you sure you want to delete the metric category "${categoryToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete Category"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          if (categoryToDelete) {
+            await deleteMetricCategory(categoryToDelete.id);
+            setCategoryToDelete(null);
+          }
+        }}
+        onClose={() => setCategoryToDelete(null)}
+        type="danger"
+      />
+
+      <ConfirmationModal
+        isOpen={Boolean(metricToDelete)}
+        title="Delete Metric"
+        message={`Are you sure you want to delete the metric "${metricToDelete?.name}"? This action cannot be undone.`}
+        confirmText="Delete Metric"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          if (metricToDelete) {
+            await removeMetric(metricToDelete.id);
+            setMetricToDelete(null);
+          }
+        }}
+        onClose={() => setMetricToDelete(null)}
+        type="danger"
+      />
     </AdminLayout>
   );
 }

@@ -1,5 +1,6 @@
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
+import BulletTextarea from "../../../../components/common/BulletTextarea";
 
 type Props = {
   isOpen: boolean;
@@ -196,9 +197,9 @@ export default function ProgressUpdateModal({
           <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
             Comments
           </label>
-          <textarea
+          <BulletTextarea
             value={note}
-            onChange={(e) => onChangeNote(e.target.value)}
+            onValueChange={(val) => onChangeNote(val)}
             className="min-h-[88px] w-full resize-y rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             placeholder="What moved, results, dependencies..."
           />

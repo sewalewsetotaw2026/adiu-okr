@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
 import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
-import InfoBanner from "../../../../components/common/InfoBanner";
+import Button from "../../../../components/Core/ui/Button";
 import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
-import MetricStat from "../components/MetricStat";
 import { okrFeatureFlags } from "../okrFeatureFlags";
-import { routeConstants } from "../../../../../utils/constants";
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
 import {
@@ -16,7 +13,19 @@ import {
   okrUnwrap,
 } from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
-import { MdWarningAmber, MdChevronRight } from "react-icons/md";
+import {
+  MdBusinessCenter,
+  MdPieChart,
+  MdTrendingUp,
+  MdWarningAmber,
+  MdCameraAlt,
+  MdTrackChanges,
+  MdOutlineHub,
+  MdBarChart,
+  MdHistory,
+  MdChevronRight,
+} from "react-icons/md";
+import { useNavigate } from "react-router-dom";
 
 type DeptRow = {
   name: string;
@@ -26,6 +35,7 @@ type DeptRow = {
   risk: number;
   objectiveCount: number;
   krCount: number;
+  indirectScore?: number;
 };
 
 type AtRiskRow = { kr: string; dept: string; score: number };
@@ -45,19 +55,17 @@ type CompletionStatusRow = {
 export default function CEOStrategicDashboardPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [rollupRefreshLoading, setRollupRefreshLoading] = useState(false);
+  const [snapshotGeneratingLoading, setSnapshotGeneratingLoading] =
+    useState(false);
   const [cycleId, setCycleId] = useState<number | null>(null);
   const [totalCompanyObjectives, setTotalCompanyObjectives] = useState(0);
   const [totalCompanyKrs, setTotalCompanyKrs] = useState(0);
   const [avgCompanyScore, setAvgCompanyScore] = useState(0);
-  const [totalCompanyValue, setTotalCompanyValue] = useState(0);
   const [totalDepartmentObjectives, setTotalDepartmentObjectives] = useState(0);
   const [completionRate, setCompletionRate] = useState(0);
   const [departments, setDepartments] = useState<DeptRow[]>([]);
   const [atRiskRows, setAtRiskRows] = useState<AtRiskRow[]>([]);
-  const [financialCount, setFinancialCount] = useState(0);
-  const [financialItems, setFinancialItems] = useState<
-    Array<{ id: number; title: string; unit: string; target: string }>
-  >([]);
   const [companyObjectives, setCompanyObjectives] = useState<
     CompanyObjectiveOption[]
   >([]);
@@ -65,6 +73,22 @@ export default function CEOStrategicDashboardPage() {
     useState<number | null>(null);
   const [completionStatus, setCompletionStatus] =
     useState<CompletionStatusRow | null>(null);
+  const [recentSnapshots, setRecentSnapshots] = useState<any[]>([]);
+
+  const loadSnapshots = useCallback(async (cid: number) => {
+    try {
+      const res = await makeCall({
+        method: "GET",
+        route: apiRoutes.okr.dashboardSnapshots(cid),
+        isSecureRoute: true,
+      });
+      const data = okrAsArray<any>(okrUnwrap<any>(res) ?? []);
+      if (data.length > 0) setRecentSnapshots(data);
+      return data.length;
+    } catch {
+      return 0;
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -83,11 +107,12 @@ export default function CEOStrategicDashboardPage() {
         setCompanyObjectives([]);
         setSelectedCompletionObjectiveId(null);
         setCompletionStatus(null);
+        setRecentSnapshots([]);
         return;
       }
       setCycleId(cid);
 
-      const [ceoRes, deptRes, atRiskRes, finRes] = await Promise.all([
+      const [ceoRes, deptRes, atRiskRes] = await Promise.all([
         makeCall({
           method: "GET",
           route: apiRoutes.okr.dashboardCeo,
@@ -106,12 +131,6 @@ export default function CEOStrategicDashboardPage() {
           query: { cycle_id: cid },
           isSecureRoute: true,
         }),
-        makeCall({
-          method: "GET",
-          route: apiRoutes.okr.dashboardFinancial,
-          query: { cycle_id: cid },
-          isSecureRoute: true,
-        }),
       ]);
 
       const ceo = okrUnwrap<any>(ceoRes) ?? {};
@@ -121,10 +140,13 @@ export default function CEOStrategicDashboardPage() {
       );
       setTotalCompanyKrs(Number(summary.totalCompanyKRs ?? 0) || 0);
       setAvgCompanyScore(Number(summary.avgCompanyScore ?? 0) || 0);
-      setTotalCompanyValue(Number(summary.totalCompanyValue ?? 0) || 0);
       setTotalDepartmentObjectives(
         Number(summary.totalDepartmentObjectives ?? 0) || 0,
       );
+      const ceoSnapshots = okrAsArray<any>(ceo.recentSnapshots);
+      if (ceoSnapshots.length > 0) setRecentSnapshots(ceoSnapshots);
+      // Also fetch directly from the dedicated endpoint for freshest data.
+      void loadSnapshots(cid);
 
       const ceoObjectives = okrAsArray<any>(ceo.objectives ?? []);
       const objectiveOptions = ceoObjectives
@@ -140,7 +162,6 @@ export default function CEOStrategicDashboardPage() {
       });
 
       const riskBody = okrUnwrap<any>(atRiskRes) ?? {};
-
       const riskItems = okrAsArray<any>(riskBody.items ?? []);
       setAtRiskRows(
         riskItems.slice(0, 10).map((r) => ({
@@ -156,7 +177,6 @@ export default function CEOStrategicDashboardPage() {
         })),
       );
 
-      // Fallback completion rate from CEO summary; refined via /completion endpoint below.
       const completedObj = Number(summary.completedCompanyObjectives ?? 0) || 0;
       const totalObjectives = Number(summary.totalCompanyObjectives ?? 0) || 0;
       const completion =
@@ -173,6 +193,7 @@ export default function CEOStrategicDashboardPage() {
             d.departmentName ?? d.department_name ?? d.name ?? "Department",
           ),
           score: Number(d.avgScore ?? 0) || 0,
+          indirectScore: Number(d.avgIndirectScore ?? 0) || 0,
           value: Number(d.totalValue ?? 0) || 0,
           completion: Number(d.completionRate ?? 0) || 0,
           risk: Number(d.completedKRs ?? 0) || 0,
@@ -180,28 +201,14 @@ export default function CEOStrategicDashboardPage() {
           krCount: Number(d.krCount ?? 0) || 0,
         })),
       );
-
-      const finBody = okrUnwrap<any>(finRes) ?? {};
-      const fin = finBody.financial ?? {};
-      setFinancialCount(Number(fin.count ?? 0) || 0);
-      const finRows = okrAsArray<any>(fin.items ?? []);
-      setFinancialItems(
-        finRows.slice(0, 6).map((x) => ({
-          id: Number(x.id),
-          title: String(x.title ?? "KR"),
-          unit: String(x.unit ?? ""),
-          target: String(x.target ?? ""),
-        })),
-      );
     } catch (e) {
       ToastService.error(okrErrorMessage(e));
       setDepartments([]);
       setAtRiskRows([]);
-      setFinancialItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadSnapshots]);
 
   useEffect(() => {
     const loadCompletion = async () => {
@@ -212,7 +219,6 @@ export default function CEOStrategicDashboardPage() {
 
       const objectiveId =
         selectedCompletionObjectiveId ?? companyObjectives[0]?.id ?? null;
-
       if (!objectiveId) {
         setCompletionStatus(null);
         return;
@@ -267,34 +273,82 @@ export default function CEOStrategicDashboardPage() {
   }, [avgCompanyScore]);
 
   const runRollupRefresh = async () => {
-    if (!cycleId) return;
+    if (!cycleId) {
+      ToastService.error("No active cycle found.");
+      return;
+    }
     try {
-      await makeCall({
+      setRollupRefreshLoading(true);
+      const res = await makeCall({
         method: "POST",
         route: apiRoutes.okr.dashboardRollupRefresh,
         body: { cycle_id: cycleId },
         isSecureRoute: true,
       });
-      ToastService.success("Rollup refreshed.");
-      await loadData();
+
+      if (res.status >= 400) {
+        throw new Error(res.data?.message || "Failed to refresh rollup");
+      }
+
+      ToastService.success(
+        "Rollup refresh started. Dashboard will reload in a few seconds.",
+      );
+      // Give the background job ~8s to finish then reload dashboard data.
+      setTimeout(() => {
+        void loadData();
+        setRollupRefreshLoading(false);
+      }, 8000);
     } catch (e) {
+      console.error("Rollup refresh error:", e);
       ToastService.error(okrErrorMessage(e));
+      setRollupRefreshLoading(false);
     }
   };
 
   const generateSnapshots = async () => {
-    if (!cycleId) return;
+    if (!cycleId) {
+      ToastService.error("No active cycle found.");
+      return;
+    }
     try {
-      await makeCall({
+      setSnapshotGeneratingLoading(true);
+      const res = await makeCall({
         method: "POST",
         route: apiRoutes.okr.dashboardSnapshotsGenerate,
         body: { cycle_id: cycleId },
         isSecureRoute: true,
       });
-      ToastService.success("Snapshot generated.");
-      await loadData();
+
+      if (res.status >= 400) {
+        throw new Error(res.data?.message || "Failed to generate snapshot");
+      }
+
+      ToastService.success(
+        "Snapshot generation started. It will appear in Snapshot History shortly.",
+      );
+      // Poll for the new snapshot at 8s, 20s, and 40s — stops early if found.
+      const pollCid = cycleId;
+      const delays = [8000, 12000, 20000];
+      let attempt = 0;
+      const poll = async () => {
+        attempt++;
+        const count = await loadSnapshots(pollCid);
+        if (count > 0 || attempt >= delays.length) {
+          setSnapshotGeneratingLoading(false);
+          if (attempt >= delays.length && count === 0) {
+            ToastService.error(
+              "Snapshot may still be processing — refresh the page in a moment.",
+            );
+          }
+          return;
+        }
+        setTimeout(poll, delays[attempt]);
+      };
+      setTimeout(poll, delays[0]);
     } catch (e) {
+      console.error("Snapshot generation error:", e);
       ToastService.error(okrErrorMessage(e));
+      setSnapshotGeneratingLoading(false);
     }
   };
 
@@ -311,313 +365,368 @@ export default function CEOStrategicDashboardPage() {
   return (
     <AdminLayout>
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-2 space-y-6">
-          <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
-            <button
-              type="button"
-              onClick={() => navigate(routeConstants.okr)}
-              className="text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              OKR
-            </button>
-            <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
-            <span className="text-gray-800 font-medium">
-              Strategic Dashboard
-            </span>
-          </nav>
-
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-6 space-y-8">
           <PageHeader>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                Strategic Dashboard
-              </h1>
-              <p className="text-white/80 text-sm mt-1">
-                Company rollup for the active OKR cycle.
-              </p>
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-4 text-white">
+                <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner shrink-0">
+                  <MdTrendingUp className="text-3xl" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tighter capitalize">
+                    CEO Strategic Insights
+                  </h1>
+                  <p className="text-white/60 text-xs font-medium mt-1">
+                    Real-time organizational performance rollup for the active
+                    cycle
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <RefreshButton onClick={loadData} loading={loading} />
+                <Button
+                  variant="white"
+                  size="sm"
+                  onClick={runRollupRefresh}
+                  disabled={!cycleId || loading || rollupRefreshLoading}
+                  loading={rollupRefreshLoading}
+                  className="tracking-widest font-space text-[10px] font-black"
+                >
+                  {rollupRefreshLoading ? "Refreshing..." : "Refresh Rollup"}
+                </Button>
+                <Button
+                  variant="white"
+                  size="sm"
+                  onClick={generateSnapshots}
+                  disabled={!cycleId || loading || snapshotGeneratingLoading}
+                  loading={snapshotGeneratingLoading}
+                  className="tracking-widest font-space text-[10px] font-black"
+                >
+                  {snapshotGeneratingLoading ? "Saving..." : "Save Snapshot"}
+                </Button>
+              </div>
             </div>
           </PageHeader>
 
-          <div className="flex flex-wrap gap-2 text-sm">
-            <Link
-              to={routeConstants.okrDepartmentComparison}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200 text-gray-700 hover:bg-slate-50"
-            >
-              Department comparison
-            </Link>
-            <Link
-              to={routeConstants.okrCompanyGallery}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200 text-gray-700 hover:bg-slate-50"
-            >
-              OKR gallery
-            </Link>
-            <Link
-              to={routeConstants.okrDepartmentApprovalQueue}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200 text-gray-700 hover:bg-slate-50 flex items-center gap-1"
-            >
-              Approvals
-            </Link>
-            <RefreshButton onClick={loadData} loading={loading} />
-            <button
-              type="button"
-              onClick={runRollupRefresh}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200 text-gray-700 hover:bg-slate-50"
-              disabled={!cycleId || loading}
-            >
-              Refresh rollup
-            </button>
-            <button
-              type="button"
-              onClick={generateSnapshots}
-              className="rounded-xl bg-white px-3 py-2 ring-1 ring-gray-200 text-gray-700 hover:bg-slate-50"
-              disabled={!cycleId || loading}
-            >
-              Generate snapshot
-            </button>
-          </div>
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              {
+                label: "Company Objectives",
+                value: totalCompanyObjectives,
+                icon: MdTrackChanges,
+                color: "text-primary",
+                progress: null,
+              },
+              {
+                label: "Company Key Results",
+                value: totalCompanyKrs,
+                icon: MdOutlineHub,
+                color: "text-emerald-500",
+                progress: null,
+              },
+              {
+                label: "Overall Progress",
+                value: `${avgCompanyScore}%`,
+                icon: MdTrendingUp,
+                color: "text-blue-500",
+                progress: avgCompanyScore,
+              },
+              {
+                label: "Department Objectives",
+                value: totalDepartmentObjectives,
+                icon: MdBusinessCenter,
+                color: "text-amber-500",
+                progress: null,
+              },
+            ].map((stat, idx) => (
+              <div
+                key={idx}
+                className="group relative overflow-hidden rounded-3xl bg-white p-6 shadow-xl shadow-slate-200/40 ring-1 ring-slate-100 transition-all hover:shadow-2xl hover:shadow-primary/10"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[10px] font-black tracking-widest text-slate-400 font-space mb-1 uppercase">
+                      {stat.label}
+                    </p>
+                    <h3 className="text-3xl font-black text-slate-900 tracking-tighter capitalize">
+                      {cycleId ? stat.value : "—"}
+                    </h3>
+                  </div>
+                  <div
+                    className={`p-3 rounded-2xl ${stat.color} bg-current/5 group-hover:bg-current/10 transition-colors`}
+                  >
+                    <stat.icon className="text-2xl" />
+                  </div>
+                </div>
+                {stat.progress !== null && (
+                  <div className="mt-4 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-1000 liquid-progress"
+                      style={{ width: `${stat.progress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
 
-          <InfoBanner variant="info">
-            <strong>Progress</strong> is based on current vs target value;{" "}
-            <strong>value</strong> is business outcome.
-          </InfoBanner>
-
-          <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm hover-premium">
-              <MetricStat
-                label="Company objectives"
-                value={cycleId ? totalCompanyObjectives : "—"}
-                loading={loading}
-              />
+          {/* Department Performance — Full Width */}
+          <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary">
+                  <MdBusinessCenter className="text-xl" />
+                </div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tighter capitalize">
+                  Department Performance
+                </h2>
+              </div>
+              <span className="text-[10px] font-black text-primary bg-primary/5 px-3 py-1 rounded-full uppercase tracking-widest font-space">
+                Live Rollup
+              </span>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm hover-premium">
-              <MetricStat
-                label="Company KRs"
-                value={cycleId ? totalCompanyKrs : "—"}
-                loading={loading}
-              />
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm hover-premium">
-              <MetricStat
-                label="Avg progress"
-                value={cycleId ? `${avgCompanyScore}%` : "—"}
-                progress={avgCompanyScore}
-                loading={loading}
-              />
-            </div>
-            <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm hover-premium">
-              <MetricStat
-                label="Department objectives"
-                value={cycleId ? totalDepartmentObjectives : "—"}
-                loading={loading}
-              />
+            <div className="grid grid-cols-1 gap-4">
+              {loading ? (
+                <LoadingSkeleton variant="table-row" count={4} />
+              ) : departments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                  <MdWarningAmber className="text-4xl text-slate-300 mb-4" />
+                  <p className="text-sm font-bold text-slate-400 uppercase tracking-widest font-space">
+                    No participating departments
+                  </p>
+                </div>
+              ) : (
+                departments.map((d) => (
+                  <div
+                    key={d.name}
+                    className="group flex items-center justify-between p-5 rounded-2xl bg-white border border-slate-100 hover:border-primary/30 hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-300"
+                  >
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-base font-black text-slate-900 group-hover:text-primary transition-colors tracking-tight">
+                        {d.name}
+                      </span>
+                      <div className="flex items-center gap-3  text-slate-400 font-black uppercase tracking-widest font-space">
+                        <span className="flex items-center gap-1">
+                          <MdTrackChanges className="text-xs" />{" "}
+                          {d.objectiveCount}
+                        </span>
+                        <span className="text-slate-200">•</span>
+                        <span className="flex items-center gap-1">
+                          <MdOutlineHub className="text-xs" /> {d.krCount}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <div className="text-xl font-black text-slate-900 tracking-tighter">
+                          {d.score}%
+                        </div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                          Direct
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-black text-slate-900 tracking-tighter">
+                          {d.indirectScore ?? 0}%
+                        </div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                          Indirect
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-black text-slate-900 tracking-tighter">
+                          {d.completion}%
+                        </div>
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space">
+                          Done
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <section className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-sm font-bold text-slate-800 uppercase tracking-widest font-space">
-                  Departments
+          {/* Strategic Health + At Risk — Side by Side */}
+          {/* <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500">
+                  <MdBarChart className="text-xl" />
+                </div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tighter capitalize">
+                  Strategic Health
                 </h2>
-                <span className="text-[10px] font-bold text-primary bg-primary/5 px-2 py-1 rounded-lg uppercase tracking-tighter">
-                  Live Tracking
-                </span>
               </div>
+              <div className="space-y-6">
+                {companyObjectives.length > 0 && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest font-space mb-2">
+                      Completion Focus
+                    </p>
+                    <select
+                      value={selectedCompletionObjectiveId ?? ""}
+                      onChange={(e) =>
+                        setSelectedCompletionObjectiveId(Number(e.target.value))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    >
+                      {companyObjectives.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-4 gap-3">
+                  {quarterlySnapshot.map((x) => (
+                    <div
+                      key={x.q}
+                      className="rounded-2xl border border-slate-50 bg-white p-3 text-center transition-all hover:border-blue-200"
+                    >
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space mb-1">
+                        {x.q}
+                      </div>
+                      <div className="text-sm font-black text-slate-900 tracking-tighter">
+                        {x.v}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="group rounded-2xl bg-white p-5 border border-slate-100 shadow-sm transition-all hover:border-primary/20">
+                  <div className="flex justify-between items-start mb-4">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 font-space">
+                      Completion Rate
+                    </p>
+                    <MdPieChart className="text-xl text-primary" />
+                  </div>
+                  <div className="text-4xl font-black tracking-tighter mb-4 text-slate-900">
+                    {completionRate}%
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary transition-all duration-1000"
+                      style={{ width: `${completionRate}%` }}
+                    />
+                  </div>
+                  {completionStatus?.mandatoryKRs != null && (
+                    <p className="text-[10px] font-medium text-slate-500 mt-4 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                      Mandatory: {completionStatus.mandatoryCompleted ?? 0}/
+                      {completionStatus.mandatoryKRs} items
+                      {completionStatus.isBlocked && (
+                        <span className="text-red-500 font-bold ml-auto uppercase tracking-tighter">
+                          Blocked
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
 
+            <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500">
+                  <MdWarningAmber className="text-xl" />
+                </div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tighter capitalize">
+                  At Risk Insights
+                </h2>
+              </div>
               <div className="space-y-3">
                 {loading ? (
-                  <LoadingSkeleton variant="table-row" count={4} />
-                ) : departments.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                      <MdWarningAmber className="text-3xl text-slate-300" />
-                    </div>
-                    <p className="text-sm font-medium text-slate-400">
-                      No departments participating in this cycle.
-                    </p>
-                  </div>
+                  <LoadingSkeleton variant="text" count={3} />
+                ) : atRiskRows.length === 0 ? (
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest text-center py-4">
+                    All goals on track
+                  </p>
                 ) : (
-                  departments.map((d) => (
+                  atRiskRows.slice(0, 5).map((r, i) => (
                     <div
-                      key={d.name}
-                      className="group flex items-center justify-between p-4 rounded-xl bg-slate-50/50 border border-slate-100 hover:bg-white hover:border-primary/20 hover:shadow-md transition-all duration-300"
+                      key={i}
+                      className="flex items-center justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100/50"
                     >
-                      <div className="flex flex-col gap-1">
-                        <span className="font-bold text-slate-900 group-hover:text-primary transition-colors">
-                          {d.name}
-                        </span>
-                        <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest font-space">
-                          <span>{d.objectiveCount} Objectives</span>
-                          <span className="text-slate-200">|</span>
-                          <span>{d.krCount} Key Results</span>
-                        </div>
+                      <div className="min-w-0 flex-1 pr-4">
+                        <p className="text-xs font-black text-slate-900 truncate tracking-tight">
+                          {r.kr}
+                        </p>
+                        <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest font-space mt-1">
+                          {r.dept}
+                        </p>
                       </div>
-
-                      <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <div className="text-sm font-bold text-slate-900">
-                            {d.score}%
-                          </div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                            Progress
-                          </div>
-                        </div>
-                        <div className="w-12 h-12 rounded-full border-2 border-slate-100 flex items-center justify-center group-hover:border-primary/20 transition-colors">
-                          <div className="text-[10px] font-black text-slate-800">
-                            {d.completion}%
-                          </div>
-                        </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-black text-amber-700">
+                          {r.score}%
+                        </span>
                       </div>
                     </div>
                   ))
                 )}
               </div>
             </section>
+          </div> */}
 
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="font-semibold text-gray-900 mb-4">
-                Quarterly snapshot
-              </h2>
-
-              {companyObjectives.length > 0 ? (
-                <label className="mb-3 block">
-                  <span className="text-xs text-gray-500">
-                    Completion focus objective
-                  </span>
-                  <select
-                    value={
-                      selectedCompletionObjectiveId != null
-                        ? String(selectedCompletionObjectiveId)
-                        : ""
-                    }
-                    onChange={(e) =>
-                      setSelectedCompletionObjectiveId(Number(e.target.value))
-                    }
-                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-primary focus:ring-2 focus:ring-primary/25"
-                  >
-                    {companyObjectives.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              <div className="grid grid-cols-4 gap-2">
-                {quarterlySnapshot.map((x) => (
+          {/* Snapshot History — Full Width */}
+          {/* <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tighter capitalize">
+                  Snapshot History
+                </h2>
+                <p className="text-xs text-slate-400 font-medium mt-1">
+                  Audit trail of company performance captures
+                </p>
+              </div>
+              <MdHistory className="text-3xl text-slate-200" />
+            </div>
+            {recentSnapshots.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {recentSnapshots.map((s) => (
                   <div
-                    key={x.q}
-                    className="rounded-lg border border-gray-100 bg-slate-50 py-3 text-center text-sm"
+                    key={s.id}
+                    onClick={() => {
+                      if (cycleId) navigate(`/admin/okr/archive`);
+                    }}
+                    className="flex items-center justify-between p-4 rounded-2xl border border-slate-50 bg-slate-50/30 hover:bg-white hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 transition-all cursor-pointer group"
                   >
-                    <div className="text-gray-500 text-xs">{x.q}</div>
-                    <div className="font-semibold text-gray-900">{x.v}%</div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                        <MdCameraAlt className="text-xl" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-black text-slate-900 uppercase tracking-tighter">
+                          {new Date(s.snapshot_date).toLocaleDateString(
+                            undefined,
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-space">
+                          Score: {Number(s.score_value ?? 0).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                    <MdChevronRight className="text-slate-300 group-hover:text-primary transition-colors text-xl" />
                   </div>
                 ))}
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-slate-50 ring-1 ring-gray-100 p-3">
-                  <p className="text-xs text-gray-500">Completion</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">
-                    {completionRate}%
-                  </p>
-                  {completionStatus?.mandatoryKRs != null ? (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Mandatory {completionStatus.mandatoryCompleted ?? 0}/
-                      {completionStatus.mandatoryKRs}
-                      {completionStatus.isBlocked ? " (blocked)" : ""}
-                    </p>
-                  ) : null}
+            ) : (
+              <div className="py-12 text-center">
+                <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto mb-4">
+                  <MdHistory className="text-2xl text-slate-300" />
                 </div>
-                <div className="rounded-xl bg-slate-50 ring-1 ring-gray-100 p-3">
-                  <p className="text-xs text-gray-500">Total value</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">
-                    {totalCompanyValue}
-                  </p>
-                </div>
+                <p className="text-sm text-slate-400 font-medium">
+                  No snapshots available yet.
+                </p>
+                <p className="text-[10px] text-slate-300 uppercase tracking-widest mt-1">
+                  Use 'Save Snapshot' to create one
+                </p>
               </div>
-            </section>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            <section className="lg:col-span-2 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="font-semibold text-gray-900 mb-3">At risk</h2>
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-left">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold text-gray-700">
-                      KR
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-gray-700">
-                      Dept
-                    </th>
-                    <th className="px-3 py-2 font-semibold text-gray-700">
-                      Score
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td
-                        colSpan={3}
-                        className="px-3 py-4 text-center text-gray-500"
-                      >
-                        Loading…
-                      </td>
-                    </tr>
-                  ) : atRiskRows.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={3}
-                        className="px-3 py-4 text-center text-gray-500"
-                      >
-                        No at-risk items.
-                      </td>
-                    </tr>
-                  ) : (
-                    atRiskRows.map((r) => (
-                      <tr key={r.kr} className="border-t border-gray-100">
-                        <td className="px-3 py-2 text-gray-900">{r.kr}</td>
-                        <td className="px-3 py-2 text-gray-600">{r.dept}</td>
-                        <td className="px-3 py-2">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-amber-800 ring-1 ring-amber-100 text-xs">
-                            <MdWarningAmber className="text-sm" />
-                            {r.score}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </section>
-
-            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-              <h2 className="font-semibold text-gray-900 mb-3">
-                Financial OKRs
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">
-                {loading ? "Loading…" : `${financialCount} items`}
-              </p>
-              {financialItems.length === 0 ? (
-                <p className="text-sm text-gray-500">No items.</p>
-              ) : (
-                <div className="space-y-2 text-sm">
-                  {financialItems.map((x) => (
-                    <div
-                      key={x.id}
-                      className="rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-gray-100"
-                    >
-                      <p className="font-medium text-gray-900">{x.title}</p>
-                      <p className="text-xs text-gray-600 mt-0.5">
-                        Target {x.target} {x.unit}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
+            )}
+          </section> */}
         </div>
       </div>
     </AdminLayout>

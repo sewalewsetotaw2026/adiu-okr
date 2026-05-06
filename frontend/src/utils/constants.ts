@@ -40,13 +40,16 @@ export const routeConstants = {
   okrAuditLogs: "/admin/okr/audit/logs",
   okrConfigSnapshotDetail: "/admin/okr/audit/snapshots/:snapshotId",
   okrDepartmentApprovalQueue: "/admin/okr/approvals",
+  okrApprovalQueue: "/manager/okr/approvals",
 
   okrContributorAssignment: "/manager/okr/contributors",
   okrManagerDepartmentPlanning: "/manager/okr/planning",
   okrMyExecution: "/employee/execution",
   okrEmployeeObjectiveDetail: "/employee/execution/objectives/:objectiveId",
   okrTeamExecutionMonitor: "/manager/okr/team-execution",
-  okrApprovalQueue: "/manager/okr/approvals",
+  okrReviews: "/okr/reviews",
+  okrReviewDetail: "/okr/reviews/:planId",
+  okrChangeRequestReview: "/okr/reviews/change-requests/:id",
   okrPlanningCompliance: "/manager/okr/planning-compliance",
 
   createUser: "/admin/users/create",

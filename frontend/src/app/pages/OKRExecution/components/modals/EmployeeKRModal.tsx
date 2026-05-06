@@ -1,14 +1,14 @@
-import { useState } from "react";
-import { MdGroupAdd } from "react-icons/md";
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
 import BulletTextarea from "../../../../components/common/BulletTextarea";
-import Button from "../../../../components/Core/ui/Button";
+import { useMemo } from "react";
 
 export type MetricPick = {
   id: number;
   name: string;
   unit_of_measure?: string;
+  allows_binary_completion?: boolean;
+  requires_target_value?: boolean;
 };
 
 type Props = {
@@ -31,13 +31,15 @@ type Props = {
   isEdit: boolean;
   submitting?: boolean;
   onAssignContributor?: () => void;
+  contributesToScore?: boolean;
+  contributesToValue?: boolean;
+  onChangeContributesToScore?: (v: boolean) => void;
+  onChangeContributesToValue?: (v: boolean) => void;
   teamMembers?: Array<{ id: string; name: string }>;
   assignedEmployeeIds?: string[];
   lockedEmployeeIds?: string[];
   onChangeAssignedEmployees?: (ids: string[]) => void;
   objectiveTitle?: string;
-  isDirect: boolean;
-  onChangeIsDirect: (v: boolean) => void;
 };
 
 /** Create / edit employee KR (matches POST/PUT `/okr/employee/.../key-results`). */
@@ -60,16 +62,22 @@ export default function EmployeeKRModal({
   onSubmit,
   isEdit,
   submitting,
-  onAssignContributor,
+  contributesToScore = true,
+  contributesToValue = true,
+  onChangeContributesToScore,
+  onChangeContributesToValue,
   teamMembers,
   assignedEmployeeIds,
   lockedEmployeeIds,
   onChangeAssignedEmployees,
-  objectiveTitle,
-  isDirect,
-  onChangeIsDirect,
 }: Props) {
-  const [search, setSearch] = useState("");
+  const selectedMetric = useMemo(
+    () =>
+      metricDefinitions.find((m) => m.id === Number(metricDefinitionId)) || null,
+    [metricDefinitions, metricDefinitionId],
+  );
+  const isBinaryMetric = !!selectedMetric?.allows_binary_completion;
+
   return (
     <ModalLayout
       isOpen={isOpen}
@@ -135,20 +143,22 @@ export default function EmployeeKRModal({
           </div>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
-              Target Value
-            </label>
-            <input
-              type="number"
-              value={targetValue === "" ? "" : targetValue}
-              onChange={(e) => {
-                const raw = e.target.value;
-                onChangeTargetValue(raw === "" ? "" : Number(raw));
-              }}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+          {!isBinaryMetric && (
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
+                Target Value
+              </label>
+              <input
+                type="number"
+                value={targetValue === "" ? "" : targetValue}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onChangeTargetValue(raw === "" ? "" : Number(raw));
+                }}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
               Unit Of Measure
@@ -161,6 +171,11 @@ export default function EmployeeKRModal({
             />
           </div>
         </div>
+        {isBinaryMetric && (
+          <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-3 py-2 text-xs font-semibold text-blue-700">
+            This metric is binary. Numeric target/current values are not required.
+          </div>
+        )}
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
             Weight %
@@ -179,19 +194,28 @@ export default function EmployeeKRModal({
           />
         </div>
 
-        <div className="flex items-center gap-2 py-2">
-          <input
-            type="checkbox"
-            id="is_direct"
-            checked={isDirect}
-            onChange={(e) => onChangeIsDirect(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-          />
-          <label
-            htmlFor="is_direct"
-            className="text-sm font-semibold text-k-medium-grey"
-          >
-            Directly contribute to Objective progress
+        <div className="pt-2 flex flex-col gap-2">
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-all cursor-pointer accent-primary"
+              checked={contributesToScore}
+              onChange={(e) => onChangeContributesToScore?.(e.target.checked)}
+            />
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 transition-colors uppercase tracking-wider font-space">
+              Contributes to Score
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-all cursor-pointer accent-primary"
+              checked={contributesToValue}
+              onChange={(e) => onChangeContributesToValue?.(e.target.checked)}
+            />
+            <span className="text-xs font-semibold text-slate-600 group-hover:text-slate-900 transition-colors uppercase tracking-wider font-space">
+              Contributes to Value
+            </span>
           </label>
         </div>
 
@@ -200,19 +224,8 @@ export default function EmployeeKRModal({
             <label className="mb-2 block text-xs font-semibold text-k-medium-grey tracking-wide">
               Assigned Employees
             </label>
-            <div className="mb-2">
-              <input
-                type="text"
-                placeholder="Search team members..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/25"
-              />
-            </div>
             <div className="max-h-40 overflow-auto rounded-xl border border-gray-200 bg-white p-3 space-y-2">
-              {teamMembers
-                .filter(tm => tm.name.toLowerCase().includes(search.toLowerCase()))
-                .map((tm) => {
+              {teamMembers.map((tm) => {
                 const checked = (assignedEmployeeIds || []).includes(tm.id);
                 const isLocked = (lockedEmployeeIds || []).includes(tm.id);
                 return (

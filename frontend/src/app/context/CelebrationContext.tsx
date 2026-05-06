@@ -55,15 +55,10 @@ export const CelebrationProvider: React.FC<CelebrationProviderProps> = ({
       token,
       (event: MessageEvent) => {
         try {
-          console.log("[Celebration SSE] Received event:", event.data);
           const celebrationEvent: CelebrationEvent = JSON.parse(event.data);
 
           switch (celebrationEvent.type) {
             case "new_celebration":
-              console.log(
-                "[Celebration SSE] Adding new celebration:",
-                celebrationEvent.data,
-              );
               dispatch(
                 celebrationActions.addCelebration(
                   celebrationEvent.data as Celebration,
@@ -78,7 +73,6 @@ export const CelebrationProvider: React.FC<CelebrationProviderProps> = ({
               );
               break;
             case "new_message":
-              console.log("[Celebration SSE] Received new message:", celebrationEvent.data);
               dispatch(
                 celebrationActions.sendMessageSuccess(
                   celebrationEvent.data as unknown as any // Cast to any to avoid type check issues if CelebrationMessage mismatch
@@ -87,7 +81,6 @@ export const CelebrationProvider: React.FC<CelebrationProviderProps> = ({
               break;
             case "connected":
               // Initial connection event - ignore
-              console.log("[Celebration SSE] Connection confirmed by server");
               break;
             default:
               console.warn("Unknown celebration event type:", celebrationEvent);
@@ -98,7 +91,6 @@ export const CelebrationProvider: React.FC<CelebrationProviderProps> = ({
       },
       () => {
         setIsConnected(true);
-        console.log("SSE connection established");
       },
       () => {
         setIsConnected(false);

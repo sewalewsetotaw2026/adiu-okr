@@ -11,8 +11,6 @@ import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
 import { okrAsArray, okrErrorMessage, okrUnwrap } from "../../../utils/okrApi";
 import ToastService from "../../../../utils/ToastService";
-import { useManagerSlice } from "../../../slice/managerSlice";
-import { selectTeamMembers } from "../../../slice/managerSlice/selectors";
 import { useDepartments } from "../../Admin/Departments/slice";
 import {
   selectDepartments,
@@ -40,22 +38,6 @@ type DepartmentContributorSummary = {
   approved_objectives: number;
   published_objectives: number;
 };
-
-function resolveUserIdFromTeamMember(member: any): string | null {
-  const candidate =
-    member?.employee?.user?.id ?? 
-    member?.user?.id ??           
-    member?.user_id ??            
-    member?.userId ??
-    member?.employee?.user_id ??
-    member?.app_user_id ??
-    member?.employee?.app_user_id ??
-    member?.employee?.appUserId ??
-    null;
-  if (candidate == null) return null;
-  const value = String(candidate).trim();
-  return value && value !== "undefined" ? value : null;
-}
 
 /** Real backend `department_kr_id` values for POST /okr/contributors. */
 async function fetchDepartmentKrRows(
@@ -152,8 +134,8 @@ export default function ContributorAssignmentPage() {
   const isAdmin = [1, 2].includes(Number(user?.role_id)) || 
     ["Admin", "HR", "Super Admin"].includes(user?.role?.name);
 
-  const [departmentEmployees, setDepartmentEmployees] = useState<any[]>([]);
-  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [allSubordinates, setAllSubordinates] = useState<any[]>([]);
+  const [subordinatesLoaded, setSubordinatesLoaded] = useState(false);
 
   const [rows, setRows] = useState<KrRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,30 +155,27 @@ export default function ContributorAssignmentPage() {
     dispatch(deptActions.fetchDepartmentsStart({ page: 1, limit: 500 }));
   }, [dispatch, deptActions]);
 
-  const fetchEmployeesInDepartment = useCallback(async (deptId: number) => {
-    setEmployeesLoading(true);
+  const fetchAllSubordinates = useCallback(async () => {
+    if (subordinatesLoaded) return;
     try {
       const res = await makeCall({
         method: "GET",
-        route: apiRoutes.employees,
-        query: { department_id: deptId, limit: 1000 },
+        route: apiRoutes.okr.managerSubordinatePositions,
         isSecureRoute: true,
       });
-      const data = okrUnwrap(res) as { employees: any[] };
-      setDepartmentEmployees(data?.employees || []);
+      const data = okrUnwrap(res);
+      setAllSubordinates(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error("Failed to fetch department employees:", e);
-      setDepartmentEmployees([]);
+      console.error("Failed to fetch subordinates:", e);
+      setAllSubordinates([]);
     } finally {
-      setEmployeesLoading(false);
+      setSubordinatesLoaded(true);
     }
-  }, []);
+  }, [subordinatesLoaded]);
 
   useEffect(() => {
-    if (typeof departmentId === "number") {
-      void fetchEmployeesInDepartment(departmentId);
-    }
-  }, [departmentId, fetchEmployeesInDepartment]);
+    void fetchAllSubordinates();
+  }, [fetchAllSubordinates]);
 
   useEffect(() => {
     if (departmentId !== "") return;
@@ -208,21 +187,19 @@ export default function ContributorAssignmentPage() {
     }
   }, [departments, departmentId, userDeptId, isAdmin]);
 
-  const employees = useMemo(
-    () =>
-      departmentEmployees
-        .map((m) => {
-          const userId = resolveUserIdFromTeamMember(m);
-          return {
-            id: userId ?? "",
-            employeeId: String(m.employee_id ?? m.id ?? ""),
-            name: m.full_name ?? m.fullName ?? "—",
-            role: m.job_title ?? m.jobTitle ?? m.role,
-          };
-        })
-        .filter((m) => m.id !== ""),
-    [departmentEmployees],
-  );
+  const employees = useMemo(() => {
+    const source = typeof departmentId === "number"
+      ? allSubordinates.filter((m: any) => m.department_id === departmentId)
+      : allSubordinates;
+    return source
+      .map((m: any) => ({
+        id: String(m.employee_user_id ?? m.user_id ?? ""),
+        employeeId: String(m.employee_id ?? ""),
+        name: m.employee_name ?? m.full_name ?? "—",
+        role: m.job_title ?? "—",
+      }))
+      .filter((m) => m.id !== "");
+  }, [allSubordinates, departmentId]);
 
   const loadSummary = useCallback(async () => {
     if (departmentId === "") {
@@ -382,9 +359,9 @@ export default function ContributorAssignmentPage() {
                 </span>
               </div>
             )}
-            {cycleId != null ? (
+            {/* {cycleId != null ? (
               <span className="text-xs text-k-medium-grey">Cycle ID: {cycleId}</span>
-            ) : null}
+            ) : null} */}
           </div>
 
           {summary ? (

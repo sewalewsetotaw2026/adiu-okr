@@ -122,6 +122,18 @@
   50% { transform: scale(1.05); }
 }
 
+@keyframes focusHighlightPulse {
+  0% { outline: 0px solid transparent; border-color: inherit; }
+  50% { outline: 4px solid #ffda00; border-color: #ffda00; background-color: #fffbeb; }
+  100% { outline: 0px solid transparent; border-color: inherit; }
+}
+
+.focus-highlight-pulse {
+  animation: focusHighlightPulse 2s ease-in-out;
+  border-radius: 1rem;
+  z-index: 10;
+}
+
 .hover-premium {
   @apply transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1;
 }

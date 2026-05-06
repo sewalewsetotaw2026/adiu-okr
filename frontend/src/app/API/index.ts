@@ -16,7 +16,31 @@ export interface IAPICallConfig {
     | "stream";
 }
 
-const makeCall = async (config: IAPICallConfig): Promise<AxiosResponse> => {
+const makeCall = async (
+  configOrMethod: IAPICallConfig | Method,
+  routeArg?: string,
+  bodyArg?: any,
+  queryArg?: any,
+  isSecureRouteArg: boolean = true,
+  headersArg?: Record<string, string>,
+  responseTypeArg?: any
+): Promise<AxiosResponse> => {
+  let config: IAPICallConfig;
+
+  if (typeof configOrMethod === "string") {
+    config = {
+      method: configOrMethod as Method,
+      route: routeArg!,
+      body: bodyArg,
+      query: queryArg,
+      isSecureRoute: isSecureRouteArg,
+      headers: headersArg,
+      responseType: responseTypeArg,
+    };
+  } else {
+    config = configOrMethod;
+  }
+
   try {
     const {
       method,
@@ -65,7 +89,7 @@ const makeCall = async (config: IAPICallConfig): Promise<AxiosResponse> => {
   } catch (error: any) {
     // For blob responses, we need to handle errors differently
     if (
-      config.responseType === "blob" &&
+      (config as IAPICallConfig).responseType === "blob" &&
       error.response?.data instanceof Blob
     ) {
       // Try to read the blob as JSON to get the actual error message

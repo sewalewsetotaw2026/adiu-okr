@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
-import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
+import Button from "../../../../components/Core/ui/Button";
 import { routeConstants } from "../../../../../utils/constants";
 import ArchiveQuarterModal, {
   type ArchiveQuarterOption,
@@ -20,8 +20,10 @@ import {
   MdArchive,
   MdChecklist,
   MdCloudDownload,
-  MdOpenInNew,
   MdTrendingUp,
+  MdCalendarToday,
+  MdAssessment,
+  MdChevronRight,
 } from "react-icons/md";
 import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
 
@@ -215,175 +217,136 @@ export default function ArchiveManagementPage() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-2 space-y-6">
-          <PageHeader>
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                  Archive Management
-                </h1>
-                <p className="text-white/85 text-sm mt-1">
-                  Quarterly archives, reports, insights, and exports.
-                </p>
+      <div className="min-h-screen bg-slate-50">
+        {/* Header */}
+        <div className="bg-white border-b border-slate-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 pb-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+                  <MdArchive size={24} className="text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black tracking-tighter leading-none text-slate-900">
+                    Archive Management
+                  </h1>
+                  <p className="text-slate-500 text-sm mt-1">
+                    Quarterly performance archives, reports &amp; exports
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <RefreshButton
-                  onClick={load}
-                  loading={loading}
-                  className="bg-white/10 ring-white/30 text-white hover:bg-white/20"
-                />
-                <button
-                  type="button"
+              <div className="flex items-center gap-3">
+                <RefreshButton onClick={load} loading={loading} />
+                <Button
+                  variant="primary"
+                  size="sm"
                   disabled={creatingArchive || archiveQuarterOptions.length === 0}
                   onClick={() => setModalOpen(true)}
-                  className="rounded-xl bg-white/15 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/30 hover:bg-white/25 disabled:opacity-50 disabled:pointer-events-none"
+                  icon={MdArchive}
+                  className="uppercase tracking-widest font-space text-[10px] font-black"
                 >
-                  {creatingArchive ? "Archiving..." : "Archive Quarter"}
+                  {creatingArchive ? "Archiving…" : "Archive Quarter"}
+                </Button>
+              </div>
+            </div>
+
+            {/* Stat strip */}
+            <div className="mt-6 grid grid-cols-3 gap-4">
+              {[
+                { label: "Total Archives", value: totalArchives,  icon: <MdArchive size={18} />,       color: "text-primary",    bg: "bg-primary/10" },
+                { label: "With Reports",   value: reportsReady,   icon: <MdChecklist size={18} />,      color: "text-amber-600",  bg: "bg-amber-50" },
+                { label: "Export Jobs",    value: exportsReady,   icon: <MdCloudDownload size={18} />,  color: "text-sky-600",    bg: "bg-sky-50" },
+              ].map((s) => (
+                <div key={s.label} className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4">
+                  <div className={`inline-flex p-2 rounded-xl ${s.bg} ${s.color} mb-2`}>{s.icon}</div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{s.label}</p>
+                  <p className="text-3xl font-black tracking-tighter text-slate-900 mt-0.5">{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Archive list */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {[1,2,3,4,5,6].map(i => <LoadingSkeleton key={i} className="h-44 rounded-3xl" />)}
+            </div>
+          ) : archives.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24">
+              <div className="w-20 h-20 rounded-3xl bg-slate-100 flex items-center justify-center mb-5">
+                <MdArchive size={36} className="text-slate-300" />
+              </div>
+              <p className="text-slate-600 font-bold text-lg">No archives yet</p>
+              <p className="text-slate-400 text-sm mt-1 max-w-xs text-center">
+                Close an OKR cycle and archive it to build your performance history.
+              </p>
+              {archiveQuarterOptions.length > 0 && (
+                <button
+                  onClick={() => setModalOpen(true)}
+                  className="mt-6 flex items-center gap-2 px-6 py-3 rounded-2xl bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-700 transition-all"
+                >
+                  <MdArchive size={15} /> Archive a Quarter
                 </button>
-              </div>
+              )}
             </div>
-          </PageHeader>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+              {archives.map((r) => (
+                <Link
+                  key={r.id}
+                  to={routeConstants.okrArchiveDetail.replace(":archiveId", String(r.id))}
+                  className="group bg-white rounded-3xl border border-slate-100 shadow-xl shadow-slate-200/30 hover:shadow-2xl hover:shadow-slate-200/60 hover:-translate-y-1 hover:border-primary/20 transition-all overflow-hidden flex flex-col"
+                >
+                  {/* Card header */}
+                  <div className="bg-slate-50 border-b border-slate-100 px-6 py-5 flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        {statusBadge(r.status)}
+                      </div>
+                      <h3 className="text-lg font-black tracking-tighter leading-tight text-slate-900">
+                        {r.quarter}
+                      </h3>
+                      <p className="text-slate-500 text-xs mt-0.5">{r.cycle}</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                      <MdArchive size={20} className="text-primary" />
+                    </div>
+                  </div>
 
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="relative overflow-hidden group rounded-3xl p-6 text-white shadow-2xl shadow-primary/20 bg-primary">
-              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-500">
-                <MdArchive className="text-8xl" />
-              </div>
-              <div className="relative z-10">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-white/20 mb-6 backdrop-blur-sm">
-                  <MdArchive className="text-2xl" />
-                </div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60 font-space mb-1">Total Archives</p>
-                <div className="flex items-baseline gap-2">
-                  <p className="text-4xl font-black tracking-tighter">{totalArchives}</p>
-                  <MdTrendingUp className="text-white/40" />
-                </div>
-              </div>
+                  {/* Card body */}
+                  <div className="flex-1 px-6 py-5 space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <MdCalendarToday size={13} className="text-slate-400" />
+                      <span>Archived {formatDate(r.archivedAt)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      {[
+                        { label: "Reports",  value: r.reports,  icon: <MdAssessment size={14} />,    color: "text-primary" },
+                        { label: "Insights", value: r.insights, icon: <MdTrendingUp size={14} />,    color: "text-amber-500" },
+                        { label: "Exports",  value: r.exports,  icon: <MdCloudDownload size={14} />, color: "text-sky-500" },
+                      ].map((m) => (
+                        <div key={m.label} className="bg-slate-50 rounded-2xl px-3 py-2.5 text-center">
+                          <div className={`flex justify-center mb-1 ${m.color}`}>{m.icon}</div>
+                          <p className="text-lg font-black text-slate-900 tracking-tighter leading-none">{m.value}</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">{m.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Card footer */}
+                  <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">View Details</span>
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all">
+                      <MdChevronRight size={18} className="text-slate-400 group-hover:text-white transition-colors" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
-
-            <div className="group rounded-3xl border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/40 hover:border-primary/20 transition-all">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 mb-6 group-hover:scale-110 transition-transform">
-                <MdChecklist className="text-2xl" />
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 font-space mb-1">Reports Ready</p>
-              <p className="text-4xl font-black text-slate-900 tracking-tighter">
-                {reportsReady}
-              </p>
-            </div>
-
-            <div className="group rounded-3xl border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/40 hover:border-primary/20 transition-all">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 mb-6 group-hover:scale-110 transition-transform">
-                <MdCloudDownload className="text-2xl" />
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 font-space mb-1">Export Jobs</p>
-              <p className="text-4xl font-black text-slate-900 tracking-tighter">
-                {exportsReady}
-              </p>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest font-space">
-                Historical Performance Archives
-              </h2>
-            </div>
-
-            {loading ? (
-              <div className="p-8 space-y-4">
-                <LoadingSkeleton variant="table-row" count={4} />
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-sm text-left">
-                  <thead>
-                    <tr className="bg-slate-50/50">
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">
-                        Cycle / Quarter
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">
-                        Archived Date
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">
-                        Reports
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space">
-                        Insights
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">
-                        Status
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-right">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {archives.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={6}
-                          className="px-6 py-20 text-center"
-                        >
-                          <div className="flex flex-col items-center">
-                            <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-                              <MdArchive className="text-2xl text-slate-300" />
-                            </div>
-                            <p className="text-slate-400 font-medium">No archives available yet.</p>
-                            <p className="text-slate-400 text-xs mt-1">Close a cycle to start archiving quarterly performance.</p>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
-                      archives.map((r) => (
-                        <tr
-                          key={r.id}
-                          className="hover:bg-slate-50/50 transition-colors group"
-                        >
-                          <td className="px-6 py-5">
-                            <p className="font-bold text-slate-900 uppercase tracking-tight">
-                              {r.quarter}
-                            </p>
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest font-space mt-1">
-                              {r.cycle}
-                            </p>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="text-slate-600 font-medium">
-                              {formatDate(r.archivedAt)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5">
-                            <span className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-100 text-slate-900 font-bold font-space">
-                              {String(r.reports).padStart(2, '0')}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5 text-slate-900 font-bold font-space">
-                            {String(r.insights).padStart(2, '0')}
-                          </td>
-                          <td className="px-6 py-5 text-center">
-                            {statusBadge(r.status)}
-                          </td>
-                          <td className="px-6 py-5 text-right">
-                            <Link
-                              to={routeConstants.okrArchiveDetail.replace(
-                                ":archiveId",
-                                String(r.id),
-                              )}
-                              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-widest font-space hover:border-primary hover:text-primary hover:shadow-lg hover:shadow-primary/5 transition-all"
-                            >
-                              Open <MdOpenInNew className="text-sm" />
-                            </Link>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+          )}
         </div>
       </div>
 

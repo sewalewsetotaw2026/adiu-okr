@@ -46,13 +46,13 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     // Size tokens - sm for table/row actions, md as default CTA, lg for hero actions
     const sizeClasses: Record<ButtonSize, string> = {
       sm: "h-8 px-3 text-xs rounded-lg gap-1.5",
-      md: "h-12 px-6 text-base",
-      lg: "h-14 px-8 text-base",
+      md: "h-10 px-5 text-sm",
+      lg: "h-12 px-6 text-base",
     };
 
     const iconSizeClasses: Record<ButtonSize, string> = {
-      sm: "text-sm",
-      md: "text-xl",
+      sm: "text-base",
+      md: "text-lg",
       lg: "text-xl",
     };
 

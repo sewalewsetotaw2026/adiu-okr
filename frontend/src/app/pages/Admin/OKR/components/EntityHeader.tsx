@@ -38,9 +38,7 @@ export default function EntityHeader({
 
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             <h1
-              className={`text-xl font-bold truncate min-w-0 ${
-                isHeader ? "text-white" : "text-gray-900"
-              }`}
+              className={`text-xl font-bold truncate min-w-0 ${ isHeader ? "text-white" : "text-gray-900" }`}
               title={title}
             >
               {title}

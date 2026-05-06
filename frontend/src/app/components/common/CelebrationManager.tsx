@@ -44,11 +44,6 @@ export const CelebrationManager: React.FC = () => {
   // We rely on server-side dismissal instead of localStorage suppression,
   // so users reliably see new/updated celebrations.
   React.useEffect(() => {
-    console.log(
-      "[CelebrationManager] Active celebrations:",
-      activeCelebrations.length,
-      activeCelebrations,
-    );
 
     // If we have an overlay, check if it's still valid
     if (currentOverlayId) {
@@ -64,7 +59,6 @@ export const CelebrationManager: React.FC = () => {
     // If no overlay shown, look for next one
     const pending = activeCelebrations.find((c) => !c.isDismissed);
     if (pending) {
-      console.log("[CelebrationManager] Showing overlay for:", pending.id);
       setCurrentOverlayId(pending.id);
     }
   }, [activeCelebrations, currentOverlayId]);

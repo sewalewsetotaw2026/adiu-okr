@@ -1,5 +1,8 @@
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
+import Button from "../../../../components/Core/ui/Button";
+import { MdAdd, MdClose } from "react-icons/md";
+import BulletTextarea from "../../../../components/common/BulletTextarea";
 
 type MonthlyPlanItem = {
   id: string;
@@ -9,7 +12,8 @@ type MonthlyPlanItem = {
   initial: number | "";
   metricId: number | "";
   managerMonthPlanItemId: number | "";
-  isDirect: boolean;
+  contributesToScore?: boolean;
+  contributesToValue?: boolean;
 };
 
 type Props = {
@@ -18,8 +22,10 @@ type Props = {
   krOptions: Array<{ id: number; title: string; targetValue: number }>;
 
   monthNumber: number;
+  title: string;
   description: string;
   onChangeMonthNumber: (n: number) => void;
+  onChangeTitle: (v: string) => void;
   onChangeDescription: (v: string) => void;
 
   items: MonthlyPlanItem[];
@@ -34,7 +40,7 @@ type Props = {
     krTitle?: string;
   }>;
   requireAlignment?: boolean;
-  metrics: Array<{ id: number; name: string; unit_of_measure?: string }>;
+  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean }>;
   onSubmit: () => void;
   isEdit: boolean;
   submitting?: boolean;
@@ -46,8 +52,10 @@ export default function MonthlyPlanModal({
   onClose,
   krOptions,
   monthNumber,
+  title,
   description,
   onChangeMonthNumber,
+  onChangeTitle,
   onChangeDescription,
   items,
   onAddItem,
@@ -68,8 +76,8 @@ export default function MonthlyPlanModal({
       maxWidthClass="max-w-xl"
     >
       <div className="space-y-4">
-        <div className="flex justify-between items-end gap-4">
-          <div className="flex-1">
+        <div className="grid grid-cols-4 gap-4 items-end">
+          <div className="col-span-1">
             <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
               Month #
             </label>
@@ -86,14 +94,26 @@ export default function MonthlyPlanModal({
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
           </div>
+          <div className="col-span-3">
+            <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
+              Plan Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => onChangeTitle(e.target.value)}
+              placeholder="E.g., May Sales Push..."
+              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey tracking-wide">
-            Monthly Plan
+            Monthly Plan / Description
           </label>
-          <textarea
+          <BulletTextarea
             value={description}
-            onChange={(e) => onChangeDescription(e.target.value)}
+            onValueChange={(val) => onChangeDescription(val)}
             className="min-h-[80px] w-full resize-y rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
             placeholder="Focus for this month..."
           />
@@ -116,25 +136,13 @@ export default function MonthlyPlanModal({
                     className="p-4 rounded-2xl border border-gray-100 bg-gray-50/30 relative group"
                   >
                     {!isEdit && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="white"
+                        size="sm"
                         onClick={() => onRemoveItem(item.id)}
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 shadow-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <svg
-                          className="w-3.5 h-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2.5}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+                        className="absolute -top-2 -right-2 h-7 w-7 !p-0 rounded-full border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 shadow-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                        icon={MdClose}
+                      />
                     )}
 
                     <div className="grid grid-cols-1 gap-4">
@@ -247,72 +255,90 @@ export default function MonthlyPlanModal({
                             {metrics.map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.name}
-                                {m.unit_of_measure
-                                  ? ` (${m.unit_of_measure})`
+                                {(m.unit_of_measure || m.unit)
+                                  ? ` (${m.unit_of_measure || m.unit})`
                                   : ""}
                               </option>
                             ))}
                           </select>
                         </div>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">
-                              Target
-                            </label>
-                            <input
-                              type="number"
-                              value={item.target}
-                              onChange={(e) =>
-                                onChangeItem(
-                                  item.id,
-                                  "target",
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value),
-                                )
-                              }
-                              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-                              placeholder="0"
-                            />
+                        {!metrics.find((m) => m.id === item.metricId)?.allows_binary_completion && (
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">
+                                Target
+                              </label>
+                              <input
+                                type="number"
+                                value={item.target}
+                                onChange={(e) =>
+                                  onChangeItem(
+                                    item.id,
+                                    "target",
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
+                                  )
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                                placeholder="0"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">
+                                Initial
+                              </label>
+                              <input
+                                type="number"
+                                value={item.initial}
+                                onChange={(e) =>
+                                  onChangeItem(
+                                    item.id,
+                                    "initial",
+                                    e.target.value === ""
+                                      ? ""
+                                      : Number(e.target.value),
+                                  )
+                                }
+                                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+                                placeholder="0"
+                              />
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">
-                              Initial
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-gray-50">
+                        {(() => {
+                          const selectedMetric = metrics.find(m => m.id === Number(item.metricId));
+                          if (selectedMetric?.value_based_progress) return null;
+                          return (
+                            <label className="flex items-center gap-2 cursor-pointer group">
+                              <input
+                                type="checkbox"
+                                checked={item.contributesToScore ?? true}
+                                onChange={(e) =>
+                                  onChangeItem(item.id, "contributesToScore", e.target.checked)
+                                }
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
+                              />
+                              <span className="text-[11px] font-semibold text-gray-600 group-hover:text-primary transition-colors">
+                                Contribute to Score
+                              </span>
                             </label>
-                            <input
-                              type="number"
-                              value={item.initial}
-                              onChange={(e) =>
-                                onChangeItem(
-                                  item.id,
-                                  "initial",
-                                  e.target.value === ""
-                                    ? ""
-                                    : Number(e.target.value),
-                                )
-                              }
-                              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
+                          );
+                        })()}
+                        <label className="flex items-center gap-2 text-[10px] font-bold text-gray-500 tracking-wider cursor-pointer">
                           <input
                             type="checkbox"
-                            id={`is_direct_${item.id}`}
-                            checked={item.isDirect !== false}
+                            checked={item.contributesToValue ?? true}
                             onChange={(e) =>
-                              onChangeItem(item.id, "isDirect", e.target.checked)
+                              onChangeItem(item.id, "contributesToValue", e.target.checked)
                             }
-                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                            className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
                           />
-                          <label
-                            htmlFor={`is_direct_${item.id}`}
-                            className="text-[11px] font-semibold text-k-medium-grey"
-                          >
-                            Directly contribute to parent KR
-                          </label>
-                        </div>
+                          Contributes to Value
+                        </label>
                       </div>
                     </div>
                   </div>
@@ -321,26 +347,14 @@ export default function MonthlyPlanModal({
             </div>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             onClick={onAddItem}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/20 py-4 text-sm font-bold text-primary transition-all hover:bg-primary/5 hover:border-primary/40"
+            className="w-full py-6 h-auto border-2 border-dashed border-primary/20 text-sm font-bold text-primary transition-all hover:bg-primary/5 hover:border-primary/40"
+            icon={MdAdd}
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.5}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
             Add Another Plan Item
-          </button>
+          </Button>
         </div>
       </div>
       <ApprovalFooter

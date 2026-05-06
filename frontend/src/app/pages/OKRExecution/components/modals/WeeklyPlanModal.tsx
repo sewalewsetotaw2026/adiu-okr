@@ -1,6 +1,8 @@
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
 import BulletTextarea from "../../../../components/common/BulletTextarea";
+import Button from "../../../../components/Core/ui/Button";
+import { MdAdd, MdClose } from "react-icons/md";
 
 type MonthPlanOpt = { id: number; label: string };
 
@@ -11,7 +13,8 @@ type WeeklyPlanItem = {
   blockers: string;
   tasks: Array<{ title: string; targetValue: number; currentValue: number }>;
   managerWeeklyPlanId?: number | "";
-  isDirect: boolean;
+  contributesToScore?: boolean;
+  contributesToValue?: boolean;
 };
 
 type Props = {
@@ -35,7 +38,7 @@ type Props = {
   onRemoveItem: (id: string) => void;
   onChangeItem: (id: string, field: keyof WeeklyPlanItem, val: any) => void;
 
-  metrics: Array<{ id: number; name: string; unit_of_measure?: string }>;
+  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean }>;
   alignmentOptions?: Array<{ id: number; title: string; targetValue: number; krTitle?: string }>;
   requireAlignment?: boolean;
   onSubmit: () => void;
@@ -131,17 +134,15 @@ export default function WeeklyPlanModal({
              <label className="mb-1.5 block text-xs font-semibold text-k-medium-grey uppercase tracking-wide opacity-0">
               Spacer
             </label>
-            <button
-              type="button"
+            <Button
+              variant="subtle"
               disabled={!employeeMonthPlanId}
               onClick={onAddItem}
-              className="w-full flex items-center justify-center gap-2 rounded-xl bg-primary/10 px-4 py-2.5 text-sm font-bold text-primary transition-all hover:bg-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full h-11"
+              icon={MdAdd}
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-              </svg>
               Add Weekly Item
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -154,22 +155,19 @@ export default function WeeklyPlanModal({
           ) : (
             <div className="space-y-8">
               {items.map((item) => {
-                const kr = krOptions.find((o) => o.id === item.krId);
                 const weeklyTarget = item.tasks?.reduce((sum, t) => sum + (t.targetValue || 0), 0) || 0;
                 const weeklyInitial = item.tasks?.reduce((sum, t) => sum + (t.currentValue || 0), 0) || 0;
                 
                 return (
                   <div key={item.id} className="p-4 rounded-2xl border border-gray-100 bg-gray-50/30 relative group">
                     {!isEdit && (
-                       <button
-                       type="button"
-                       onClick={() => onRemoveItem(item.id)}
-                       className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 shadow-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-                     >
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                     </button>
+                       <Button
+                        variant="white"
+                        size="sm"
+                        onClick={() => onRemoveItem(item.id)}
+                        className="absolute -top-2 -right-2 h-7 w-7 !p-0 rounded-full border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-100 shadow-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                        icon={MdClose}
+                      />
                     )}
 
                     <div className="grid grid-cols-1 gap-4">
@@ -228,10 +226,42 @@ export default function WeeklyPlanModal({
                           >
                             <option value="">Metric...</option>
                             {metrics.map((m) => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
+                              <option key={m.id} value={m.id}>
+                                {m.name}{(m.unit_of_measure || m.unit) ? ` (${m.unit_of_measure || m.unit})` : ""}
+                              </option>
                             ))}
                           </select>
                         </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 pt-1">
+                          {(() => {
+                            const selectedMetric = metrics.find(m => m.id === Number(item.metricId));
+                            if (selectedMetric?.value_based_progress) return null;
+                            return (
+                              <label className="flex items-center gap-2 text-[10px] font-bold text-gray-500 tracking-wider cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={item.contributesToScore ?? true}
+                                  onChange={(e) => onChangeItem(item.id, "contributesToScore", e.target.checked)}
+                                  className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                />
+                                Contributes to Score
+                              </label>
+                            );
+                          })()}
+
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={item.contributesToValue ?? true}
+                            onChange={(e) => onChangeItem(item.id, "contributesToValue", e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
+                          />
+                          <span className="text-xs font-semibold text-k-dark-grey group-hover:text-primary transition-colors">
+                            Contributes to Value Rollup
+                          </span>
+                        </label>
                       </div>
 
                       <div>
@@ -244,40 +274,23 @@ export default function WeeklyPlanModal({
                         />
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`is_direct_${item.id}`}
-                          checked={item.isDirect !== false}
-                          onChange={(e) => onChangeItem(item.id, "isDirect", e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        <label
-                          htmlFor={`is_direct_${item.id}`}
-                          className="text-[11px] font-semibold text-k-medium-grey"
-                        >
-                          Directly contribute to parent Monthly Item
-                        </label>
-                      </div>
-
                       <div className="pt-2">
                         <div className="flex justify-between items-center mb-2">
                           <label className="text-[10px] font-bold text-gray-500 tracking-wider flex items-center gap-1.5">
                             Actionable Tasks
                           </label>
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-auto py-1 px-2 text-[10px] font-bold text-primary hover:text-primary-dark transition-colors"
                             onClick={() => {
                               const newTasks = [...(item.tasks || []), { title: "", targetValue: 0, currentValue: 0 }];
                               onChangeItem(item.id, "tasks", newTasks);
                             }}
-                            className="text-[10px] font-bold text-primary hover:text-primary-dark transition-colors flex items-center gap-1"
+                            icon={MdAdd}
                           >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                            </svg>
                             Add Task
-                          </button>
+                          </Button>
                         </div>
 
                         <div className="space-y-2">
@@ -294,47 +307,47 @@ export default function WeeklyPlanModal({
                                   className="w-full text-xs font-medium text-k-dark-grey bg-transparent outline-none border-b border-transparent focus:border-primary/30"
                                   placeholder="Task Title..."
                                 />
-                                <div className="flex gap-3">
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-gray-400 font-medium">Target:</span>
-                                    <input
-                                      type="number"
-                                      value={t.targetValue}
-                                      onChange={(e) => {
-                                        const newTasks = [...item.tasks];
-                                        newTasks[idx] = { ...t, targetValue: Number(e.target.value) };
-                                        onChangeItem(item.id, "tasks", newTasks);
-                                      }}
-                                      className="w-12 text-[10px] bg-gray-50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary/20"
-                                    />
+                                {!metrics.find((m) => m.id === item.metricId)?.allows_binary_completion && (
+                                  <div className="flex gap-3">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-gray-400 font-medium">Target:</span>
+                                      <input
+                                        type="number"
+                                        value={t.targetValue}
+                                        onChange={(e) => {
+                                          const newTasks = [...item.tasks];
+                                          newTasks[idx] = { ...t, targetValue: Number(e.target.value) };
+                                          onChangeItem(item.id, "tasks", newTasks);
+                                        }}
+                                        className="w-12 text-[10px] bg-gray-50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary/20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] text-gray-400 font-medium">Current:</span>
+                                      <input
+                                        type="number"
+                                        value={t.currentValue}
+                                        onChange={(e) => {
+                                          const newTasks = [...item.tasks];
+                                          newTasks[idx] = { ...t, currentValue: Number(e.target.value) };
+                                          onChangeItem(item.id, "tasks", newTasks);
+                                        }}
+                                        className="w-12 text-[10px] bg-gray-50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary/20"
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[10px] text-gray-400 font-medium">Current:</span>
-                                    <input
-                                      type="number"
-                                      value={t.currentValue}
-                                      onChange={(e) => {
-                                        const newTasks = [...item.tasks];
-                                        newTasks[idx] = { ...t, currentValue: Number(e.target.value) };
-                                        onChangeItem(item.id, "tasks", newTasks);
-                                      }}
-                                      className="w-12 text-[10px] bg-gray-50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-primary/20"
-                                    />
-                                  </div>
-                                </div>
+                                )}
                               </div>
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 onClick={() => {
                                   const newTasks = item.tasks.filter((_, i) => i !== idx);
                                   onChangeItem(item.id, "tasks", newTasks);
                                 }}
-                                className="text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover/task:opacity-100 p-1"
-                              >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
+                                className="text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover/task:opacity-100 p-1 h-auto"
+                                icon={MdClose}
+                              />
                             </div>
                           ))}
                         </div>
@@ -346,17 +359,15 @@ export default function WeeklyPlanModal({
             </div>
           )}
 
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             disabled={!employeeMonthPlanId}
             onClick={onAddItem}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/20 py-4 text-sm font-bold text-primary transition-all hover:bg-primary/5 hover:border-primary/40 disabled:opacity-50"
+            className="w-full py-6 h-auto border-2 border-dashed border-primary/20 text-sm font-bold text-primary transition-all hover:bg-primary/5 hover:border-primary/40 disabled:opacity-50"
+            icon={MdAdd}
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
             Add Another Weekly Item
-          </button>
+          </Button>
         </div>
 
         <div>

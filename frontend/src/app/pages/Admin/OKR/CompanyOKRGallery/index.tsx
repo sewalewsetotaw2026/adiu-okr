@@ -10,6 +10,7 @@ import ToastService from "../../../../../utils/ToastService";
 import { useNavigate } from "react-router-dom";
 import { routeConstants } from "../../../../../utils/constants";
 import { MdChevronRight, MdSearch, MdFilterList, MdWarningAmber } from "react-icons/md";
+import Button from "../../../../components/Core/ui/Button";
 import ObjectiveCard from "../../../../components/common/ObjectiveCard";
 import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
 
@@ -129,23 +130,29 @@ export default function CompanyOKRGalleryPage() {
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-2 space-y-6">
           <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => navigate(routeConstants.okr)}
-              className="text-gray-500 hover:text-gray-800 transition-colors"
+              className="text-gray-500 hover:text-gray-800 transition-colors p-0 h-auto font-normal"
             >
               OKR
-            </button>
+            </Button>
             <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
             <span className="text-gray-800 font-medium">Gallery</span>
           </nav>
 
           <PageHeader>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                OKR Gallery
-              </h1>
-              <p className="text-white/80 text-sm mt-1">Current cycle.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight capitalize">
+                  OKR gallery
+                </h1>
+                <p className="text-white/80 text-sm mt-1">Current cycle.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <RefreshButton onClick={load} loading={loading} />
+              </div>
             </div>
           </PageHeader>
 
@@ -176,7 +183,6 @@ export default function CompanyOKRGalleryPage() {
                 </select>
                 <MdChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
               </div>
-              <RefreshButton onClick={load} loading={loading} />
             </div>
           </div>
 
@@ -189,7 +195,7 @@ export default function CompanyOKRGalleryPage() {
               <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
                 <MdWarningAmber className="text-3xl text-slate-300" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1">No matches found</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-1 capitalize">No matches found</h3>
               <p className="text-sm text-slate-400">Try adjusting your search or filters.</p>
             </div>
           ) : (

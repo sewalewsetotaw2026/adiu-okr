@@ -7,6 +7,13 @@ import {
   MdAccessTime,
   MdClose,
   MdStars,
+  MdTimeline,
+  MdAssignment,
+  MdVisibility,
+  MdComment,
+  MdCancel,
+  MdCheckCircle,
+  MdPublish,
 } from "react-icons/md";
 import {
   useNotificationSlice,
@@ -54,42 +61,78 @@ const formatTimeAgo = (dateString: string) => {
 const getNotificationIcon = (type: NotificationType) => {
   switch (type) {
     case NotificationType.LEAVE_APPROVED:
-    case NotificationType.LEAVE_APPROVED_BY_MANAGER:
-      return (
-        <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
-          <MdCheck size={16} />
-        </div>
-      );
-    case NotificationType.LEAVE_REJECTED:
-      return (
-        <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-          <MdClose size={16} />
-        </div>
-      );
-    case NotificationType.LEAVE_SUBMITTED:
-      return (
-        <div className="w-8 h-8 rounded-full bg-orange-100 text-k-orange flex items-center justify-center">
-          <MdNotifications size={16} />
-        </div>
-      );
-    case NotificationType.RECALL_REQUEST:
-      return (
-        <div className="w-8 h-8 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center">
-          <MdNotifications size={16} />
-        </div>
-      );
-    case NotificationType.PROMOTION:
-      return (
-        <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
-          <MdStars size={16} />
-        </div>
-      );
-    default:
-      return (
-        <div className="w-8 h-8 rounded-full bg-orange-50 text-k-orange flex items-center justify-center">
-          <MdNotifications size={16} />
-        </div>
-      );
+      case NotificationType.LEAVE_APPROVED_BY_MANAGER:
+        return (
+          <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+            <MdCheck size={16} />
+          </div>
+        );
+      case NotificationType.LEAVE_REJECTED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+            <MdClose size={16} />
+          </div>
+        );
+      case NotificationType.LEAVE_SUBMITTED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-orange-100 text-k-orange flex items-center justify-center">
+            <MdNotifications size={16} />
+          </div>
+        );
+      case NotificationType.RECALL_REQUEST:
+        return (
+          <div className="w-8 h-8 rounded-full bg-yellow-100 text-yellow-600 flex items-center justify-center">
+            <MdNotifications size={16} />
+          </div>
+        );
+      case NotificationType.PROMOTION:
+        return (
+          <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+            <MdStars size={16} />
+          </div>
+        );
+      case NotificationType.OKR_PLAN_SUBMITTED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+            <MdAssignment size={16} />
+          </div>
+        );
+      case NotificationType.OKR_PLAN_UNDER_REVIEW:
+        return (
+          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+            <MdVisibility size={16} />
+          </div>
+        );
+      case NotificationType.OKR_COMMENT_ADDED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+            <MdComment size={16} />
+          </div>
+        );
+      case NotificationType.OKR_PLAN_REJECTED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+            <MdCancel size={16} />
+          </div>
+        );
+      case NotificationType.OKR_PLAN_APPROVED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+            <MdCheckCircle size={16} />
+          </div>
+        );
+      case NotificationType.OKR_PLAN_PUBLISHED:
+        return (
+          <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+            <MdPublish size={16} />
+          </div>
+        );
+      default:
+        return (
+          <div className="w-8 h-8 rounded-full bg-orange-50 text-k-orange flex items-center justify-center">
+            <MdNotifications size={16} />
+          </div>
+        );
   }
 };
 
@@ -146,7 +189,6 @@ export default function NotificationBell() {
             }
 
             setSseConnected(true);
-            console.log("[SSE] Connected");
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
@@ -217,16 +259,16 @@ export default function NotificationBell() {
     };
   }, [dispatch]);
 
-  // Initial load only + Very slow fallback polling (60s) just in case
+  // Initial load + Slow fallback polling (120s) when SSE is disconnected
   useEffect(() => {
     dispatch(notificationActions.getUnreadCount());
 
-    // Fallback polling only if SSE is disconnected
+    // Fallback polling only if SSE is disconnected and tab is visible
     const interval = setInterval(() => {
-      if (!sseConnected) {
+      if (!sseConnected && !document.hidden) {
         dispatch(notificationActions.getUnreadCount());
       }
-    }, 60000);
+    }, 120_000);
 
     return () => clearInterval(interval);
   }, [dispatch, sseConnected]);
@@ -337,8 +379,20 @@ export default function NotificationBell() {
         }
       }
 
-      if (notification.type === NotificationType.PROMOTION && notification.action_url) {
-        navigate(notification.action_url);
+      // 2. OKR Notifications - Use action_url (deep_link)
+      if (
+        notification.type === NotificationType.OKR_PLAN_SUBMITTED ||
+        notification.type === NotificationType.OKR_PLAN_UNDER_REVIEW ||
+        notification.type === NotificationType.OKR_COMMENT_ADDED ||
+        notification.type === NotificationType.OKR_PLAN_REJECTED ||
+        notification.type === NotificationType.OKR_PLAN_APPROVED ||
+        notification.type === NotificationType.OKR_PLAN_PUBLISHED
+      ) {
+        if (notification.action_url) {
+          navigate(notification.action_url);
+        } else {
+          navigate("/employee/execution");
+        }
         return;
       }
     }

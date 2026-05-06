@@ -118,3 +118,5 @@ export function ActionMenu({ actions, className }: ActionMenuProps) {
     </div>
   );
 }
+
+export default ActionMenu;
