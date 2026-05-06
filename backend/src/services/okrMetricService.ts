@@ -19,9 +19,6 @@ interface CreateMetricInput {
   isFinancial?: boolean;
   requiresTargetValue?: boolean;
   allowsBinaryCompletion?: boolean;
-  supportsValueRollup?: boolean;
-  supportsWeightedScore?: boolean;
-  valueBasedProgress?: boolean;
 }
 
 interface UpdateMetricInput {
@@ -35,9 +32,6 @@ interface UpdateMetricInput {
   isFinancial?: boolean;
   requiresTargetValue?: boolean;
   allowsBinaryCompletion?: boolean;
-  supportsValueRollup?: boolean;
-  supportsWeightedScore?: boolean;
-  valueBasedProgress?: boolean;
   isActive?: boolean;
 }
 
@@ -254,9 +248,6 @@ function normalizeMetricResponse(metric: any) {
       ? normalizeStatusCode(String(metric.category_label))
       : behavior,
     category_label: metric.category_label || titleize(behavior),
-    value_based_progress: metric.value_based_progress ?? false,
-    supports_value_rollup: metric.supports_value_rollup ?? true,
-    supports_weighted_score: metric.supports_weighted_score ?? true,
   };
 }
 
@@ -284,11 +275,6 @@ export async function createMetric(input: CreateMetricInput) {
   );
 
   // Idempotent write to avoid duplicate key crashes on (company_id, code)
-  // Validation: value_based_progress requires supports_value_rollup
-  const valueBasedProgress = input.valueBasedProgress ?? false;
-  const supportsValueRollup = valueBasedProgress ? true : (input.supportsValueRollup ?? true);
-  const supportsWeightedScore = input.supportsWeightedScore ?? true;
-
   const metric = await prisma.okrMetricDefinition.upsert({
     where: {
       company_id_code: {
@@ -308,9 +294,6 @@ export async function createMetric(input: CreateMetricInput) {
         input.requiresTargetValue ?? behaviorConfig.requiresTargetValue,
       allows_binary_completion:
         input.allowsBinaryCompletion ?? behaviorConfig.allowsBinaryCompletion,
-      supports_value_rollup: supportsValueRollup,
-      supports_weighted_score: supportsWeightedScore,
-      value_based_progress: valueBasedProgress,
     },
     update: {
       name: metricName,
@@ -322,9 +305,6 @@ export async function createMetric(input: CreateMetricInput) {
         input.requiresTargetValue ?? behaviorConfig.requiresTargetValue,
       allows_binary_completion:
         input.allowsBinaryCompletion ?? behaviorConfig.allowsBinaryCompletion,
-      supports_value_rollup: supportsValueRollup,
-      supports_weighted_score: supportsWeightedScore,
-      value_based_progress: valueBasedProgress,
       is_active: true,
     },
   });
@@ -371,12 +351,6 @@ export async function updateMetric(input: UpdateMetricInput) {
     throw new Error("Metric name cannot be empty.");
   }
 
-  // Validation: value_based_progress requires supports_value_rollup
-  let resolvedSupportsValueRollup = input.supportsValueRollup;
-  if (input.valueBasedProgress === true) {
-    resolvedSupportsValueRollup = true;
-  }
-
   const updated = await prisma.okrMetricDefinition.update({
     where: { id: existingMetric.id },
     data: {
@@ -400,9 +374,6 @@ export async function updateMetric(input: UpdateMetricInput) {
           : behaviorConfig
             ? behaviorConfig.allowsBinaryCompletion
             : undefined,
-      supports_value_rollup: resolvedSupportsValueRollup,
-      supports_weighted_score: input.supportsWeightedScore,
-      value_based_progress: input.valueBasedProgress,
       is_active: input.isActive,
     },
   });

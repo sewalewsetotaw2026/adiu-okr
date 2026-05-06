@@ -160,8 +160,6 @@ export const fetchUser = async (
       },
       select: {
         id: true,
-        employee_id: true,
-        company_id: true,
         email: true,
         role_id: true,
         is_active: true,
@@ -195,10 +193,6 @@ export const fetchUser = async (
             company_code: true,
           },
         },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
-        },
       },
     });
 
@@ -209,26 +203,13 @@ export const fetchUser = async (
       });
     }
 
-    // Check if user is a manager (has direct reports)
-    const directReportCount = await prisma.employment.count({
-      where: {
-        manager_id: user.employee_id || "",
-        company_id: companyId,
-        is_active: true,
-      },
-    });
-    const isManager = directReportCount > 0;
-
     res.status(200).json({
       status: "success",
       message: "User fetched successfully",
       data: {
         user: {
           ...user,
-          company_code: user.company?.company_code,
-          is_department_head: (user as any).headedDepartments?.length > 0,
-          headed_department_id: (user as any).headedDepartments?.[0]?.id,
-          is_manager: isManager,
+          company_code: user.company?.company_code
         }
       },
     });
@@ -625,10 +606,6 @@ export const getMe = async (
             },
           },
         },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
-        },
       },
     });
 
@@ -640,16 +617,6 @@ export const getMe = async (
     }
 
     const primaryDeptId = user.employee?.employments?.[0]?.department_id || null;
-    
-    // Check if user is a manager (has direct reports)
-    const directReportCount = await prisma.employment.count({
-      where: {
-        manager_id: user.employee_id || "",
-        company_id: companyId,
-        is_active: true,
-      },
-    });
-    const isManager = directReportCount > 0;
 
     return res.status(200).json({
       status: "success",
@@ -657,9 +624,6 @@ export const getMe = async (
         user: {
           ...user,
           department_id: primaryDeptId,
-          is_department_head: user.headedDepartments?.length > 0,
-          headed_department_id: user.headedDepartments?.[0]?.id,
-          is_manager: isManager,
           employee: user.employee ? {
             ...user.employee,
             signature_url: user.employee.signature_url || "",

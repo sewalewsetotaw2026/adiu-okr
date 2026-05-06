@@ -265,22 +265,6 @@ export const deleteMonthlyPlan = async (
   }
 };
 
-export const listManagerMonthlyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const u = requireUser(req);
-    const monthNumber = parseId(req.query.monthNumber, "monthNumber");
-    const cycleId = parseId(req.query.cycleId, "cycleId");
-    const data = await svc.getManagerMonthlyPlans(u.employee_id, monthNumber, cycleId);
-    res.json({ status: "success", data });
-  } catch (e) {
-    next(e);
-  }
-};
-
 // ────────────── Weekly Plan Endpoints ──────────────────────────────────
 
 export const listWeeklyPlans = async (
@@ -409,22 +393,6 @@ export const deleteWeeklyPlan = async (
     const id = parseId(req.params.id);
     const result = await svc.deleteWeeklyPlan(id, u.employee_id);
     res.json({ status: "success", data: result });
-  } catch (e) {
-    next(e);
-  }
-};
-
-export const listManagerWeeklyPlans = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const u = requireUser(req);
-    const monthlyId = parseId(req.query.monthlyId, "monthlyId");
-    const weekNumber = parseId(req.query.weekNumber, "weekNumber");
-    const data = await svc.getManagerWeeklyPlans(u.employee_id, monthlyId, weekNumber);
-    res.json({ status: "success", data });
   } catch (e) {
     next(e);
   }

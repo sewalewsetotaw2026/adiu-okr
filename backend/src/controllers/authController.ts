@@ -132,13 +132,6 @@ export const login = async (
           employee: (user as any).employee,
           is_department_head: (user as any).headedDepartments?.length > 0,
           headed_department_id: (user as any).headedDepartments?.[0]?.id,
-          is_manager: await prisma.employment.count({
-            where: {
-              manager_id: user.employee_id || "",
-              company_id: user.company_id,
-              is_active: true,
-            },
-          }) > 0,
           onboarding_status: user.onboarding_status,
           permissions: await getUserPermissionMatrix(user.role_id),
         },

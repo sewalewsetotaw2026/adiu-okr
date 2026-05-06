@@ -36,17 +36,18 @@ async function resolveDirectManager(
   };
 }
 
-// ─── Helper: Resolve reviewer_id (AppUser.id) for a manager employee_id ────────
-
-async function resolveReviewerUserId(
+export async function resolveReviewerUserId(
   managerEmployeeId: string,
   companyId: number,
 ): Promise<string | null> {
   const appUser = await prisma.appUser.findFirst({
     where: { employee_id: managerEmployeeId, company_id: companyId },
-    select: { employee_id: true },
+    select: { id: true, employee_id: true },
   });
-  return appUser ? appUser.employee_id : null;
+  if (!appUser) return null;
+  // Return employee_id if available, otherwise fallback to the user_id (stringified)
+  // to match the controller's logic: req.user!.employee_id || req.user!.user_id
+  return appUser.employee_id || appUser.id.toString();
 }
 
 // ─── Submit For Approval (Plan-Based) ──────────────────────────────────────────
@@ -57,9 +58,10 @@ export async function submitForApproval(params: {
   submitterId: string;
   departmentId?: number;
   entityId?: number;
+  entityType?: "EMPLOYEE_OBJECTIVE" | "EMPLOYEE_KR" | "EMPLOYEE_MONTH_PLAN" | "WEEKLY_PLAN";
   type: OkrSubmissionType;
 }) {
-  const { companyId, cycleId, submitterId, departmentId, entityId, type } = params;
+  const { companyId, cycleId, submitterId, departmentId, entityId, entityType, type } = params;
 
   // 1. Identify items to include in this submission
   let items: Array<{ id: number; entityType: string }> = [];
@@ -67,16 +69,29 @@ export async function submitForApproval(params: {
 
   if (type === "QUARTERLY_PLANNING") {
     if (entityId) {
-      // Single Objective Submission
-      const objective = await prisma.employeeObjective.findUnique({
-        where: { id: entityId },
-        include: { keyResults: { where: { status_code: "draft" } } },
-      });
-      if (objective && objective.status_code === "draft") {
-        items = [
-          { id: objective.id, entityType: "EMPLOYEE_OBJECTIVE" },
-          ...objective.keyResults.map((kr) => ({ id: kr.id, entityType: "EMPLOYEE_KR" })),
-        ];
+      if (entityType === "EMPLOYEE_KR") {
+        // Single Key Result Submission
+        const kr = await prisma.employeeKeyResult.findUnique({
+          where: { id: entityId },
+        });
+        if (kr && kr.status_code === "draft") {
+          items = [{ id: kr.id, entityType: "EMPLOYEE_KR" }];
+        }
+      } else {
+        // Single Objective Submission (default if no entityType or objective)
+        const objective = await prisma.employeeObjective.findUnique({
+          where: { id: entityId },
+          include: { keyResults: { where: { status_code: "draft" } } },
+        });
+        if (objective && objective.status_code === "draft") {
+          items = [
+            { id: objective.id, entityType: "EMPLOYEE_OBJECTIVE" },
+            ...objective.keyResults.map((kr) => ({
+              id: kr.id,
+              entityType: "EMPLOYEE_KR",
+            })),
+          ];
+        }
       }
     } else if (departmentId) {
       // Department Level
@@ -215,16 +230,9 @@ export async function submitForApproval(params: {
       include: { employee: { select: { id: true, full_name: true } } },
     });
 
-    if (adminAppUser?.employee) {
-      reviewerUserId = adminAppUser.employee.id;
-      reviewerName = adminAppUser.employee.full_name || "Admin";
-    } else if (adminAppUser?.employee_id) {
-      reviewerUserId = adminAppUser.employee_id;
-      const emp = await prisma.employee.findFirst({
-        where: { id: adminAppUser.employee_id },
-        select: { full_name: true },
-      });
-      reviewerName = emp?.full_name || "Admin";
+    if (adminAppUser?.id) {
+      reviewerUserId = adminAppUser.employee_id || adminAppUser.id.toString();
+      reviewerName = adminAppUser.employee?.full_name || "Admin";
     } else {
       // Fallback: find employees with admin roles directly
       const adminEmployees = await prisma.employee.findMany({
@@ -1175,7 +1183,7 @@ export async function getSubmissionComments(params: {
   submissionId: number;
 }) {
   const { companyId, submissionId } = params;
-  
+
   const submission = await prisma.okrSubmission.findFirst({
     where: { id: submissionId, company_id: companyId },
     include: {

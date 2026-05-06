@@ -465,7 +465,6 @@ model AppUser {
   employeeObjectives EmployeeObjective[]
   headedDepartments  Department[]        @relation("DepartmentHead")
   krContributors     KrContributor[]
-  employeeMonthPlans EmployeeMonthPlan[]
 
   @@unique([company_id, employee_id])
   @@index([company_id], map: "idx_app_user_company")

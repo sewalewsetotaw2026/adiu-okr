@@ -182,8 +182,6 @@ export async function getObjectiveDetail(id: number, companyId: number) {
                 select: {
                   employee: {
                     select: {
-                      id: true,
-                      full_name: true,
                       employments: {
                         where: { is_active: true },
                         select: {

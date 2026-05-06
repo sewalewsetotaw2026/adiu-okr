@@ -41,13 +41,8 @@ async function getManagedEmployeeIds(
     allTargetManagerIds = [...managerIds];
   } else {
     // Recursive subordinates (for dashboards, admin views)
-    const subordinateIds = await getAllSubordinateIds(
-      manager?.employee_id || managerId,
-      companyId,
-    );
-    allTargetManagerIds = Array.from(
-      new Set([...managerIds, ...subordinateIds]),
-    );
+    const subordinateIds = await getAllSubordinateIds(manager?.employee_id || managerId, companyId);
+    allTargetManagerIds = Array.from(new Set([...managerIds, ...subordinateIds]));
   }
 
   const employments = await prisma.employment.findMany({
@@ -125,13 +120,8 @@ export async function listSubordinatePositions(
 
 // ─── Team Health Summary ──────────────────────────────────────────────────────
 
-export async function getTeamHealthSummary(
-  managerId: string,
-  companyId: number,
-) {
-  const managed = await getManagedEmployeeIds(managerId, companyId, {
-    directOnly: false,
-  });
+export async function getTeamHealthSummary(managerId: string, companyId: number) {
+  const managed = await getManagedEmployeeIds(managerId, companyId, { directOnly: false });
   const managedIds = managed.map((e) => e.id);
 
   if (managedIds.length === 0) {
@@ -174,9 +164,7 @@ export async function getTeamExecutionSummary(
     progressUpdates: true,
   } as any;
 
-  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
-    directOnly: false,
-  });
+  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, { directOnly: false });
   const managedIds = managedEmployees.map((e) => e.id);
 
   if (managedIds.length === 0) {
@@ -195,10 +183,7 @@ export async function getTeamExecutionSummary(
       department: { select: { name: true } },
     },
   });
-  const employmentByEmployeeId = new Map<
-    string,
-    { job_title: string; department_name: string }
-  >();
+  const employmentByEmployeeId = new Map<string, { job_title: string; department_name: string }>();
   for (const emp of employments) {
     if (!employmentByEmployeeId.has(emp.employee_id)) {
       employmentByEmployeeId.set(emp.employee_id, {
@@ -257,9 +242,7 @@ export async function getTeamExecutionSummary(
     const allKRs = empObjectives.flatMap((o: any) => o.keyResults);
 
     const totalKRs = allKRs.length;
-    const draftKRs = allKRs.filter(
-      (kr: any) => kr.status_code === "draft",
-    ).length;
+    const draftKRs = allKRs.filter((kr: any) => kr.status_code === "draft").length;
     const activeKRs = allKRs.filter((kr: any) =>
       ["approved", "published", "in_progress"].includes(kr.status_code),
     ).length;
@@ -316,19 +299,15 @@ export async function getTeamExecutionSummary(
     // Quarterly progress (average final_score across all employee objectives)
     const progress =
       empObjectives.length > 0
-        ? empObjectives.reduce(
-            (s: number, o: any) => s + Number(o.final_score ?? 0),
-            0,
-          ) / empObjectives.length
+        ? empObjectives.reduce((s: number, o: any) => s + Number(o.final_score ?? 0), 0) /
+          empObjectives.length
         : 0;
 
     // Quarterly indirect progress
     const indirect_progress =
       empObjectives.length > 0
-        ? empObjectives.reduce(
-            (s: number, o: any) => s + Number(o.indirect_score ?? 0),
-            0,
-          ) / empObjectives.length
+        ? empObjectives.reduce((s: number, o: any) => s + Number(o.indirect_score ?? 0), 0) /
+          empObjectives.length
         : 0;
 
     // Build monthly_progress map: { [month_number]: avg progress_pct across all KRs' monthly plans }
@@ -343,8 +322,7 @@ export async function getTeamExecutionSummary(
     }
     const monthly_progress: Record<number, number> = {};
     for (const [m, { sum, count }] of Object.entries(monthlyMap)) {
-      monthly_progress[Number(m)] =
-        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+      monthly_progress[Number(m)] = count > 0 ? Number((sum / count).toFixed(2)) : 0;
     }
 
     // Build weekly_progress map: { [week_number]: avg progress_pct across all weekly plans }
@@ -361,8 +339,7 @@ export async function getTeamExecutionSummary(
     }
     const weekly_progress: Record<number, number> = {};
     for (const [w, { sum, count }] of Object.entries(weeklyMap)) {
-      weekly_progress[Number(w)] =
-        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+      weekly_progress[Number(w)] = count > 0 ? Number((sum / count).toFixed(2)) : 0;
     }
 
     const empInfo = employmentByEmployeeId.get(employee.id) ?? {
@@ -379,16 +356,10 @@ export async function getTeamExecutionSummary(
       objective_title: empObjectives[0]?.title ?? "—",
       objectives_count: empObjectives.length,
       objectives_status: {
-        draft: empObjectives.filter((o: any) => o.status_code === "draft")
-          .length,
-        submitted: empObjectives.filter(
-          (o: any) => o.status_code === "submitted",
-        ).length,
-        approved: empObjectives.filter((o: any) => o.status_code === "approved")
-          .length,
-        published: empObjectives.filter(
-          (o: any) => o.status_code === "published",
-        ).length,
+        draft: empObjectives.filter((o: any) => o.status_code === "draft").length,
+        submitted: empObjectives.filter((o: any) => o.status_code === "submitted").length,
+        approved: empObjectives.filter((o: any) => o.status_code === "approved").length,
+        published: empObjectives.filter((o: any) => o.status_code === "published").length,
       },
       total_krs: totalKRs,
       draft_krs: draftKRs,
@@ -401,8 +372,7 @@ export async function getTeamExecutionSummary(
       indirect_weekly_progress: {},
       progress_updates_count: totalProgressUpdates,
       confidence: confidenceCounts,
-      is_blocked:
-        confidenceCounts.at_risk > 0 || confidenceCounts.off_track > 0,
+      is_blocked: confidenceCounts.at_risk > 0 || confidenceCounts.off_track > 0,
     };
   });
 
@@ -421,9 +391,7 @@ export async function listPendingApprovals(
   cycleId: number,
   role?: string,
 ) {
-  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
-    directOnly: false,
-  });
+  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, { directOnly: false });
   const managedIds = managedEmployees.map((e) => e.id);
 
   // Get pending employee objectives (status = "submitted")
@@ -474,7 +442,7 @@ export async function listPendingApprovals(
           where: {
             company_id: companyId,
             status_code: { in: ["submitted", "pending_approval"] },
-            ...({ employee_objective_id: { in: pendingObjectiveIds } } as any),
+            ...( { employee_objective_id: { in: pendingObjectiveIds } } as any),
           } as any,
         })
       : [];
@@ -542,9 +510,7 @@ export async function listPendingApprovals(
     pending_month_plans: pendingMonthPlans.map((plan) => ({
       ...plan,
       employee_name:
-        nameMap.get(
-          objectiveUserMap.get((plan as any).employee_objective_id) || "",
-        ) ||
+        nameMap.get(objectiveUserMap.get((plan as any).employee_objective_id) || "") ||
         objectiveUserMap.get((plan as any).employee_objective_id) ||
         "—",
     })),
@@ -1143,7 +1109,6 @@ export async function getPlanningInsights(params: {
   role?: string;
   scope: PlanningInsightScope;
   departmentId?: number;
-  forceOrganizationView?: boolean;
 }) {
   const planCountSelect = {
     monthlyPlans: true,
@@ -1201,14 +1166,12 @@ export async function getPlanningInsights(params: {
     requester.employee_id || String(requester.id),
     params.companyId,
   );
-  const managerScopeIds = Array.from(
-    new Set([...requesterIds, ...subordinateIds]),
-  );
+  const managerScopeIds = Array.from(new Set([...requesterIds, ...subordinateIds]));
 
   const role = normalizeRole(params.role);
-  const isOrganizationRole =
-    ["admin", "hr", "ceo", "super admin", "superadmin"].includes(role) ||
-    params.forceOrganizationView === true;
+  const isOrganizationRole = ["admin", "hr", "ceo", "super admin", "superadmin"].includes(
+    role,
+  );
 
   const employmentWhere: any = {
     company_id: params.companyId,
@@ -1244,10 +1207,7 @@ export async function getPlanningInsights(params: {
       employee: { select: { id: true, full_name: true } },
       department: { select: { id: true, name: true } },
     },
-    orderBy: [
-      { department: { name: "asc" } },
-      { employee: { full_name: "asc" } },
-    ],
+    orderBy: [{ department: { name: "asc" } }, { employee: { full_name: "asc" } }],
   });
 
   const memberByEmployeeId = new Map<
@@ -1369,9 +1329,7 @@ export async function getPlanningInsights(params: {
 
     row.kr_count += objective.keyResults.length;
     for (const kr of objective.keyResults) {
-      const allWeeklyPlans = kr.monthlyPlans.flatMap(
-        (mp: any) => mp.weeklyPlans,
-      );
+      const allWeeklyPlans = kr.monthlyPlans.flatMap((mp: any) => mp.weeklyPlans);
 
       row.monthly_plan_count += kr._count.monthlyPlans;
       row.weekly_plan_count += allWeeklyPlans.length;
@@ -1442,10 +1400,7 @@ export async function getPlanningInsights(params: {
     monthly_plans: memberRows.reduce((s, m) => s + m.monthly_plan_count, 0),
     weekly_plans: memberRows.reduce((s, m) => s + m.weekly_plan_count, 0),
     daily_plans: memberRows.reduce((s, m) => s + m.daily_plan_count, 0),
-    progress_updates: memberRows.reduce(
-      (s, m) => s + m.progress_update_count,
-      0,
-    ),
+    progress_updates: memberRows.reduce((s, m) => s + m.progress_update_count, 0),
   };
 
   return {
@@ -1470,38 +1425,36 @@ export async function getPlanningCompliance(params: {
     companyId: params.companyId,
     cycleId: params.cycleId,
     role: params.role,
-    scope: "organization",
-    forceOrganizationView: true, // Allow all users to see organization-wide compliance data
+    scope: "organization", // Or "department" if we want to restrict, but organization works for CEO/Admin
   });
 
   const memberRows = insights.members;
 
   // Transform memberRows into the structure expected by the frontend
   // The frontend expects: { objectives: [], monthly: [], weekly: [], daily: [], reporting: [] }
-
-  const objectives = memberRows.map((m) => ({
+  
+  const objectives = memberRows.map(m => ({
     employee_id: m.employee_id,
     employee_name: m.employee_name,
     department_name: m.department_name,
-    is_planned:
-      m.objective_status.approved > 0 || m.objective_status.published > 0,
+    is_planned: m.objective_status.approved > 0 || m.objective_status.published > 0
   }));
 
-  const monthly = memberRows.map((m) => ({
+  const monthly = memberRows.map(m => ({
     employee_id: m.employee_id,
     employee_name: m.employee_name,
     department_name: m.department_name,
-    has_month_plan: m.monthly_plan_count > 0,
+    has_month_plan: m.monthly_plan_count > 0
   }));
 
-  const weekly = memberRows.map((m) => ({
+  const weekly = memberRows.map(m => ({
     employee_id: m.employee_id,
     employee_name: m.employee_name,
     department_name: m.department_name,
-    weekly_plans: m.weekly_plan_count > 0 ? [1] : [], // Frontend checks weekly_plans?.length > 0
+    weekly_plans: m.weekly_plan_count > 0 ? [1] : [] // Frontend checks weekly_plans?.length > 0
   }));
 
-  const reporting = memberRows.map((m) => ({
+  const reporting = memberRows.map(m => ({
     employee_id: m.employee_id,
     employee_name: m.employee_name,
     department_name: m.department_name,
@@ -1514,7 +1467,7 @@ export async function getPlanningCompliance(params: {
       monthly: m.monthly_plan_count,
       direct: m.progress_update_count,
       indirect: 0,
-    },
+    }
   }));
 
   return {

@@ -32,7 +32,6 @@ export interface CreateMonthlyPlanInput {
   target_value?: number;
   contribute_to_score?: boolean;
   contribute_to_value?: boolean;
-  aligned_manager_plan_id?: number | null;
 }
 
 export interface CreateWeeklyPlanInput {
@@ -48,7 +47,6 @@ export interface CreateWeeklyPlanInput {
   target_value?: number;
   contribute_to_score?: boolean;
   contribute_to_value?: boolean;
-  aligned_manager_plan_id?: number | null;
 }
 
 export interface CreateDailyPlanInput {
@@ -56,13 +54,13 @@ export interface CreateDailyPlanInput {
   companyId: number;
   ownerId: string;
   completionDay:
-    | "MONDAY"
-    | "TUESDAY"
-    | "WEDNESDAY"
-    | "THURSDAY"
-    | "FRIDAY"
-    | "SATURDAY"
-    | "SUNDAY";
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
   title: string;
   targetValue?: number;
   startValue?: number;
@@ -141,58 +139,6 @@ async function ensureKrOwned(krId: number, ownerId: string) {
     throw new Error("Not authorized — key result does not belong to you.");
   }
   return kr;
-}
-
-export async function getManagerId(employeeId: string): Promise<string | null> {
-  const employment = await prisma.employment.findFirst({
-    where: { employee_id: employeeId, is_active: true },
-    select: { manager_id: true },
-  });
-  return employment?.manager_id ?? null;
-}
-
-export async function getManagerMonthlyPlans(
-  employeeId: string,
-  monthNumber: number,
-  cycleId: number,
-) {
-  const managerId = await getManagerId(employeeId);
-  if (!managerId) return [];
-
-  return prisma.employeeMonthPlan.findMany({
-    where: {
-      owner_id: managerId,
-      month_number: monthNumber,
-      cycle_id: cycleId,
-      plan_status: "PUBLISHED",
-    },
-    orderBy: { created_at: "asc" },
-  });
-}
-
-export async function getManagerWeeklyPlans(
-  employeeId: string,
-  employeeMonthlyPlanId: number,
-  weekNumber: number,
-) {
-  const managerId = await getManagerId(employeeId);
-  if (!managerId) return [];
-
-  const employeeMonthPlan = await prisma.employeeMonthPlan.findUnique({
-    where: { id: employeeMonthlyPlanId },
-    select: { aligned_manager_plan_id: true },
-  });
-
-  if (!employeeMonthPlan?.aligned_manager_plan_id) return [];
-
-  return prisma.weeklyPlan.findMany({
-    where: {
-      employee_month_plan_id: employeeMonthPlan.aligned_manager_plan_id,
-      week_number: weekNumber,
-      plan_status: "PUBLISHED",
-    },
-    orderBy: { created_at: "asc" },
-  });
 }
 
 async function ensureMonthlyPublishedAndOwned(
@@ -316,35 +262,9 @@ export async function getKrAvailableWeight(krId: number, ownerId: string) {
       plan_status: firstPlan?.plan_status ?? null,
     };
   });
-
-  // Fetch target value info for dynamic autofill
-  const kr = await prisma.employeeKeyResult.findUnique({
-    where: { id: krId },
-    select: { target_value: true },
-  });
-  const parentTargetValue = kr?.target_value ? Number(kr.target_value) : 0;
-  const allocatedTargetValue = months.reduce(
-    (sum, m) => sum + (m as any).target_value ? Number((m as any).target_value) : 0,
-    0,
-  );
-
-  // Re-fetch monthly plans with target_value for accurate sum
-  const monthsWithTarget = await prisma.employeeMonthPlan.findMany({
-    where: { employee_kr_id: krId },
-    select: { target_value: true },
-  });
-  const totalAllocatedTarget = monthsWithTarget.reduce(
-    (sum, m) => sum + (m.target_value ? Number(m.target_value) : 0),
-    0,
-  );
-  const remainingTargetValue = Math.max(0, parentTargetValue - totalAllocatedTarget);
-
   return {
     allocated_pct: allocatedPct,
     remaining_pct: remainingPct,
-    parent_target_value: parentTargetValue,
-    allocated_target_value: totalAllocatedTarget,
-    remaining_target_value: remainingTargetValue,
     months: monthRows,
   };
 }
@@ -364,7 +284,6 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
     target_value,
     contribute_to_score,
     contribute_to_value,
-    aligned_manager_plan_id,
   } = input;
 
   if (!Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 3) {
@@ -436,7 +355,6 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
         metric_definition_id: metric_definition_id ?? kr.metric_definition_id,
         contribute_to_score: contribute_to_score ?? true,
         contribute_to_value: contribute_to_value ?? true,
-        aligned_manager_plan_id: aligned_manager_plan_id ?? null,
       },
     });
 
@@ -454,7 +372,7 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
   });
 
   // Trigger upward roll-up so the KR reflects the newly added planned weight.
-  await recalculateRollUp("employee_key_result", krId).catch(() => {});
+  await recalculateRollUp("employee_key_result", krId).catch(() => { });
 
   return created;
 }
@@ -462,8 +380,8 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
 export async function updateMonthlyPlan(
   id: number,
   ownerId: string,
-  patch: { 
-    title?: string; 
+  patch: {
+    title?: string;
     description?: string | null;
     metric_definition_id?: number | null;
     start_value?: number;
@@ -508,7 +426,7 @@ export async function updateMonthlyPlan(
     patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
-    await recalculateRollUp("employee_key_result", plan.employee_kr_id).catch(() => {});
+    await recalculateRollUp("employee_key_result", plan.employee_kr_id).catch(() => { });
   }
   return updated;
 }
@@ -541,7 +459,7 @@ export async function deleteMonthlyPlan(id: number, ownerId: string) {
   });
 
   await recalculateRollUp("employee_key_result", plan.employee_kr_id).catch(
-    () => {},
+    () => { },
   );
   return { ok: true };
 }
@@ -577,46 +495,7 @@ export async function getMonthlyAvailableWeight(
     monthlyId,
     "MONTHLY_PLAN",
   );
-
-  // Fetch target value info for dynamic autofill
-  const monthly = await prisma.employeeMonthPlan.findUnique({
-    where: { id: monthlyId },
-    select: { target_value: true },
-  });
-  const parentTargetValue = monthly?.target_value ? Number(monthly.target_value) : 0;
-
-  const weeklies = await prisma.weeklyPlan.findMany({
-    where: { employee_month_plan_id: monthlyId },
-    select: { target_value: true },
-  });
-  const totalAllocatedTarget = weeklies.reduce(
-    (sum, w) => sum + (w.target_value ? Number(w.target_value) : 0),
-    0,
-  );
-  const remainingTargetValue = Math.max(0, parentTargetValue - totalAllocatedTarget);
-
-  const weightBreakdown = await prisma.weeklyPlan.findMany({
-    where: { employee_month_plan_id: monthlyId },
-    select: { week_number: true, weight_pct: true, id: true },
-  });
-
-  const weeks = [1, 2, 3, 4, 5].map((wn) => {
-    const match = weightBreakdown.find((wb) => wb.week_number === wn);
-    return {
-      week_number: wn,
-      allocated_pct: match ? Number(match.weight_pct) : 0,
-      plan_id: match ? String(match.id) : null,
-    };
-  });
-
-  return {
-    allocated_pct: allocatedPct,
-    remaining_pct: remainingPct,
-    parent_target_value: parentTargetValue,
-    allocated_target_value: totalAllocatedTarget,
-    remaining_target_value: remainingTargetValue,
-    weeks,
-  };
+  return { allocated_pct: allocatedPct, remaining_pct: remainingPct };
 }
 
 export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
@@ -633,7 +512,6 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
     target_value,
     contribute_to_score,
     contribute_to_value,
-    aligned_manager_plan_id,
   } = input;
 
   if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > 5) {
@@ -707,7 +585,6 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
         metric_definition_id: metric_definition_id ?? monthly.metric_definition_id,
         contribute_to_score: contribute_to_score ?? true,
         contribute_to_value: contribute_to_value ?? true,
-        aligned_manager_plan_id: aligned_manager_plan_id ?? null,
       },
     });
 
@@ -724,21 +601,20 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
     return plan;
   });
 
-  await recalculateRollUp("monthly_plan", monthlyPlanId).catch(() => {});
+  await recalculateRollUp("monthly_plan", monthlyPlanId).catch(() => { });
   return created;
 }
 
 export async function updateWeeklyPlan(
   id: number,
   ownerId: string,
-  patch: { 
+  patch: {
     title?: string;
     metric_definition_id?: number | null;
     start_value?: number;
     target_value?: number;
     contribute_to_score?: boolean;
     contribute_to_value?: boolean;
-    aligned_manager_plan_id?: number | null;
   },
 ) {
   const plan = await prisma.weeklyPlan.findUnique({ where: { id } });
@@ -754,7 +630,6 @@ export async function updateWeeklyPlan(
       ...(patch.target_value !== undefined ? { target_value: dec(patch.target_value) } : {}),
       ...(patch.contribute_to_score !== undefined ? { contribute_to_score: patch.contribute_to_score } : {}),
       ...(patch.contribute_to_value !== undefined ? { contribute_to_value: patch.contribute_to_value } : {}),
-      ...(patch.aligned_manager_plan_id !== undefined ? { aligned_manager_plan_id: patch.aligned_manager_plan_id } : {}),
     },
   });
   if (
@@ -763,7 +638,7 @@ export async function updateWeeklyPlan(
     patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
-    await recalculateRollUp("monthly_plan", plan.employee_month_plan_id).catch(() => {});
+    await recalculateRollUp("monthly_plan", plan.employee_month_plan_id).catch(() => { });
   }
   return updated;
 }
@@ -798,7 +673,7 @@ export async function deleteWeeklyPlan(id: number, ownerId: string) {
   await recalculateRollUp(
     "monthly_plan",
     plan.employee_month_plan_id,
-  ).catch(() => {});
+  ).catch(() => { });
   return { ok: true };
 }
 
@@ -881,13 +756,13 @@ export async function updateDailyPlan(
     contribute_to_value?: boolean;
     notes?: string | null;
     completion_day?:
-      | "MONDAY"
-      | "TUESDAY"
-      | "WEDNESDAY"
-      | "THURSDAY"
-      | "FRIDAY"
-      | "SATURDAY"
-      | "SUNDAY";
+    | "MONDAY"
+    | "TUESDAY"
+    | "WEDNESDAY"
+    | "THURSDAY"
+    | "FRIDAY"
+    | "SATURDAY"
+    | "SUNDAY";
   },
 ) {
   const existing = await prisma.dailyPlan.findUnique({ where: { id } });
@@ -928,13 +803,13 @@ export async function updateDailyPlan(
   });
 
   if (
-    patch.current_value !== undefined || 
-    patch.target_value !== undefined || 
-    patch.contribute_to_score !== undefined || 
+    patch.current_value !== undefined ||
+    patch.target_value !== undefined ||
+    patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
     await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-      () => {},
+      () => { },
     );
   }
   return updated;
@@ -965,7 +840,7 @@ export async function updateDailyPlanStatus(
   // Always trigger rollup on status change so parents stay in sync
   if (existing.weekly_plan_id) {
     await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-      () => {},
+      () => { },
     );
   }
   return updated;
@@ -978,7 +853,7 @@ export async function deleteDailyPlan(id: number, ownerId: string) {
     throw new Error("Not authorized — daily plan does not belong to you.");
   await prisma.dailyPlan.delete({ where: { id } });
   await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-    () => {},
+    () => { },
   );
   return { ok: true };
 }
@@ -1054,7 +929,6 @@ export async function submitMonthlyPeriod(opts: {
       company_id: companyId,
       cycle_id: cycleId,
       month_number: monthNumber,
-      plan_status: { in: ["DRAFT", "REJECTED"] },
     },
   });
   if (plans.length === 0) {
@@ -1220,7 +1094,6 @@ export async function submitWeeklyPeriod(opts: {
       company_id: companyId,
       employee_month_plan_id: monthlyPlanId,
       week_number: weekNumber,
-      plan_status: { in: ["DRAFT", "REJECTED"] },
     },
     include: { monthPlan: { select: { cycle_id: true } } },
   });
@@ -1279,10 +1152,10 @@ export async function approveWeeklyPeriod(opts: {
 }) {
   const data: any = opts.autoPublish
     ? {
-        plan_status: "PUBLISHED",
-        approved_at: new Date(),
-        published_at: new Date(),
-      }
+      plan_status: "PUBLISHED",
+      approved_at: new Date(),
+      published_at: new Date(),
+    }
     : { plan_status: "APPROVED", approved_at: new Date() };
   const result = await prisma.weeklyPlan.updateMany({
     where: {

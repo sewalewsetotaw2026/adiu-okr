@@ -26,6 +26,7 @@ import { checkWeightLimit } from "./okrWeightValidationService";
 import { validateMetricAlignment } from "./okrMetricAlignmentValidator";
 import { markEmployeeKrAsComplete } from "./okrCompletionService";
 import { computeMeasurementSnapshot } from "src/services/okrMeasurementService";
+import { submitForApproval } from "./okrApprovalService";
 
 async function tryRollupChain(
   nodeType: "daily_plan" | "weekly_plan" | "employee_key_result" | "employee_objective",
@@ -87,12 +88,6 @@ export async function listEmployeeObjectives(
           },
         },
       },
-      keyResults: {
-        include: {
-          metricDefinition: true,
-          progressUpdates: { orderBy: { created_at: "desc" }, take: 1 },
-        },
-      },
       _count: { select: { keyResults: true } },
     },
   });
@@ -124,12 +119,6 @@ export async function listEmployeeObjectivesForCycle(
           objective: {
             select: { id: true, title: true, cycle_id: true },
           },
-        },
-      },
-      keyResults: {
-        include: {
-          metricDefinition: true,
-          progressUpdates: { orderBy: { created_at: "desc" }, take: 1 },
         },
       },
       _count: { select: { keyResults: true } },
@@ -371,39 +360,12 @@ export async function getEmployeeObjectiveDetail(
           },
         },
       },
-      user: {
-        select: {
-          employee: {
-            select: {
-              full_name: true,
-            },
-          },
-        },
-      },
       keyResults: {
         include: {
           metricDefinition: true,
           progressUpdates: {
             take: 1,
             orderBy: { created_at: "desc" },
-          },
-          contributors: {
-            select: {
-              id: true,
-              user_id: true,
-              status_code: true,
-              role_type: true,
-              user: {
-                select: {
-                  employee: {
-                    select: {
-                      id: true,
-                      full_name: true,
-                    },
-                  },
-                },
-              },
-            },
           },
           _count: {
             select: {
@@ -459,18 +421,18 @@ export async function adoptAssignedKR(
         ? { id: input.contributorId }
         : {}),
       ...((!input.contributorId || input.contributorId <= 0) &&
-      input.companyKrId
+        input.companyKrId
         ? {
-            company_kr_id: input.companyKrId,
-            user_id: input.assignmentUserId,
-          }
+          company_kr_id: input.companyKrId,
+          user_id: input.assignmentUserId,
+        }
         : {}),
       ...((!input.contributorId || input.contributorId <= 0) &&
-      input.employeeKrId
+        input.employeeKrId
         ? {
-            employee_kr_id: input.employeeKrId,
-            user_id: input.assignmentUserId,
-          }
+          employee_kr_id: input.employeeKrId,
+          user_id: input.assignmentUserId,
+        }
         : {}),
     },
     include: {
@@ -1388,7 +1350,7 @@ export async function submitProgressUpdate(input: SubmitProgressInput) {
           data: {
             current_value:
               measurement.currentValue !== null &&
-              measurement.currentValue !== undefined
+                measurement.currentValue !== undefined
                 ? String(measurement.currentValue)
                 : weeklyPlan.current_value,
             progress_pct: measurement.finalScore ?? weeklyPlan.progress_pct,
@@ -1488,21 +1450,16 @@ export async function submitEmployeeObjective(
     toStatus: "pending_approval",
   });
 
-  const updated = await prisma.employeeObjective.update({
-    where: { id },
-    data: { status_code: "pending_approval" },
-  });
-
-  await logActivity({
+  const result = await submitForApproval({
     companyId,
+    cycleId: objective.cycle_id,
+    submitterId: objective.user_id,
+    entityId: id,
     entityType: "EMPLOYEE_OBJECTIVE",
-    entityId: updated.id,
-    actorId,
-    action: "submit_for_review",
-    description: `Employee objective "${updated.title}" submitted for approval`,
+    type: "QUARTERLY_PLANNING",
   });
 
-  return updated;
+  return result;
 }
 
 export async function submitEmployeeKeyResult(
@@ -1529,21 +1486,32 @@ export async function submitEmployeeKeyResult(
     toStatus: "pending_approval",
   });
 
-  const updated = await prisma.employeeKeyResult.update({
-    where: { id },
-    data: { status_code: "pending_approval" },
+  const objective = await prisma.employeeObjective.findUnique({
+    where: { id: kr.employee_objective_id },
+    select: { cycle_id: true, user_id: true, status_code: true },
   });
 
-  await logActivity({
+  if (!objective) throw new Error("Parent objective not found.");
+
+  if (
+    objective.status_code !== "approved" &&
+    objective.status_code !== "published"
+  ) {
+    throw new Error(
+      "Key Result can only be submitted if the parent Objective is approved.",
+    );
+  }
+
+  const result = await submitForApproval({
     companyId,
+    cycleId: objective.cycle_id,
+    submitterId: objective.user_id,
+    entityId: id,
     entityType: "EMPLOYEE_KR",
-    entityId: updated.id,
-    actorId,
-    action: "submit_for_review",
-    description: `Employee key result "${updated.title}" submitted for approval`,
+    type: "QUARTERLY_PLANNING",
   });
 
-  return updated;
+  return result;
 }
 
 export async function publishEmployeeObjective(
@@ -1767,33 +1735,13 @@ export async function bulkSubmitEmployee(
   let submittedObjectives = 0;
   let submittedKeyResults = 0;
 
-  // 1. Fetch only submittable objectives
-  const submittableObjectives = await prisma.employeeObjective.findMany({
-    where: {
-      id: { in: objectiveIds || [] },
-      company_id: companyId,
-      status_code: { in: ["draft", "rejected"] },
-    },
-    select: { id: true },
-  });
-
-  for (const obj of submittableObjectives) {
-    await submitEmployeeObjective(obj.id, companyId, actorId);
+  for (const id of objectiveIds || []) {
+    await submitEmployeeObjective(id, companyId, actorId);
     submittedObjectives++;
   }
 
-  // 2. Fetch only submittable KRs
-  const submittableKRs = await prisma.employeeKeyResult.findMany({
-    where: {
-      id: { in: krIds || [] },
-      company_id: companyId,
-      status_code: { in: ["draft", "rejected"] },
-    },
-    select: { id: true },
-  });
-
-  for (const kr of submittableKRs) {
-    await submitEmployeeKeyResult(kr.id, companyId, actorId);
+  for (const id of krIds || []) {
+    await submitEmployeeKeyResult(id, companyId, actorId);
     submittedKeyResults++;
   }
 
