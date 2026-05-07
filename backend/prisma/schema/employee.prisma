@@ -16,31 +16,30 @@ model Company {
   appRoles              AppRole[]
   appUsers              AppUser[]
   departments           Department[]
+  documentSignerConfigs DocumentSignerConfig[]
   employees             Employee[]
   employeeAddresses     EmployeeAddress[]      @relation("CompanyAddresses")
   employeePhones        EmployeePhone[]        @relation("CompanyPhones")
+  employeeSettings      EmployeeSettings?
   employments           Employment[]
-  jobTitles             JobTitle[]
   jobLevels             JobLevel[]
+  jobTitles             JobTitle[]
   leaveSettings         LeaveSettings?
   leaveTypes            LeaveType[]
   publicHolidays        PublicHoliday[]
-  documentSignerConfigs DocumentSignerConfig[]
-  employeeSettings      EmployeeSettings?
 
   @@map("company")
 }
 
 model Department {
-  id              Int                   @id @default(autoincrement())
+  id              Int          @id @default(autoincrement())
   company_id      Int
-  name            String                @db.VarChar(100)
-  department_code String?               @db.VarChar(20)
-  company         Company               @relation(fields: [company_id], references: [id], onDelete: Cascade)
-  employments     Employment[]
+  name            String       @db.VarChar(100)
+  department_code String?      @db.VarChar(20)
   head_user_id    Int?
-  head            AppUser?              @relation("DepartmentHead", fields: [head_user_id], references: [id])
-  companyKrs      CompanyKrDepartment[]
+  company         Company      @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  head            AppUser?     @relation("DepartmentHead", fields: [head_user_id], references: [id])
+  employments     Employment[]
 
   @@unique([company_id, name])
   @@unique([company_id, department_code])
@@ -90,6 +89,11 @@ model Employee {
   updated_at                DateTime?                           @default(now()) @updatedAt
   profile_picture_url       String?                             @db.VarChar(500)
   signature_url             String?                             @db.VarChar(500)
+  appUsers                  AppUser?
+  celebrations              Celebration[]
+  celebrationDismissals     CelebrationDismissal[]
+  celebrationMessages       CelebrationMessage[]
+  documentSignerConfigs     DocumentSignerConfig[]
   emergencyContacts         EmergencyContact[]
   company                   Company                             @relation(fields: [company_id], references: [id])
   addresses                 EmployeeAddress[]
@@ -114,11 +118,6 @@ model Employee {
   leaveCashOuts             LeaveCashOut[]
   leaveRecalls              LeaveRecall[]                       @relation("RecalledBy")
   notifications             Notification[]                      @relation("NotificationRecipient")
-  appUsers                  AppUser[]
-  documentSignerConfigs     DocumentSignerConfig[]
-  celebrations              Celebration[]
-  celebrationMessages       CelebrationMessage[]
-  celebrationDismissals     CelebrationDismissal[]
 
   @@unique([id, company_id], map: "ux_employee_id_company")
   @@unique([company_id, tin_number], map: "ux_employee_tin_company")
@@ -149,15 +148,15 @@ model EmployeeDocument {
 }
 
 model EmployeeAddress {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   company_id  Int?
-  employee_id String    @db.VarChar(20)
-  region      String?   @db.VarChar(100)
-  city        String?   @db.VarChar(100)
-  sub_city    String?   @db.VarChar(100)
-  woreda      String?   @db.VarChar(20)
-  company     Company?  @relation("CompanyAddresses", fields: [company_id], references: [id], onDelete: Restrict)
-  employee    Employee? @relation(fields: [employee_id], references: [id], onDelete: Restrict)
+  employee_id String   @db.VarChar(20)
+  region      String?  @db.VarChar(100)
+  city        String?  @db.VarChar(100)
+  sub_city    String?  @db.VarChar(100)
+  woreda      String?  @db.VarChar(20)
+  company     Company? @relation("CompanyAddresses", fields: [company_id], references: [id], onDelete: Restrict)
+  employee    Employee @relation(fields: [employee_id], references: [id])
 
   @@map("employee_address")
 }
@@ -323,13 +322,13 @@ model EmployeeCareerEvent {
   document_urls          String[]    @default([])
   created_at             DateTime?   @default(now())
   updated_at             DateTime?   @default(now()) @updatedAt
-  approver               Employee?   @relation("EventApprover", fields: [approved_by], references: [id], onDelete: SetNull)
+  approver               Employee?   @relation("EventApprover", fields: [approved_by], references: [id])
   employee               Employee?   @relation(fields: [employee_id], references: [id], onDelete: Cascade)
   newEmployment          Employment? @relation("NewEmployment", fields: [new_employment_id], references: [id])
   newJobTitle            JobTitle?   @relation("NewJobTitle", fields: [new_job_title_id], references: [id])
   previousEmployment     Employment? @relation("PreviousEmployment", fields: [previous_employment_id], references: [id])
   previousJobTitle       JobTitle?   @relation("PreviousJobTitle", fields: [previous_job_title_id], references: [id])
-  recorder               Employee?   @relation("EventRecorder", fields: [recorded_by], references: [id], onDelete: SetNull)
+  recorder               Employee?   @relation("EventRecorder", fields: [recorded_by], references: [id])
 
   @@map("employee_career_event")
 }
@@ -396,7 +395,6 @@ model EmployeeCostSharing {
   issuing_institution  String?                    @db.VarChar(200)
   issue_date           DateTime?                  @db.Date
   declared_total_cost  Decimal?                   @db.Decimal(12, 2)
-  remaining_cost       Decimal?                   @db.Decimal(12, 2)
   currency             String                     @default("ETB") @db.VarChar(3)
   commitment_type      CostSharingCommitmentType?
   regulation_reference String?                    @db.VarChar(150)
@@ -406,6 +404,7 @@ model EmployeeCostSharing {
   remarks              String?
   created_at           DateTime                   @default(now())
   updated_at           DateTime                   @updatedAt
+  remaining_cost       Decimal?                   @db.Decimal(12, 2)
   education            EmployeeEducation?         @relation(fields: [education_id], references: [id])
   employee             Employee                   @relation(fields: [employee_id], references: [id])
 
@@ -461,10 +460,10 @@ model AppUser {
   company            Company             @relation(fields: [company_id], references: [id], onDelete: Cascade)
   employee           Employee?           @relation(fields: [employee_id], references: [id])
   role               AppRole             @relation(fields: [role_id], references: [id])
-  passwordResets     PasswordReset[]
-  employeeObjectives EmployeeObjective[]
   headedDepartments  Department[]        @relation("DepartmentHead")
+  employeeObjectives EmployeeObjective[]
   krContributors     KrContributor[]
+  passwordResets     PasswordReset[]
 
   @@unique([company_id, employee_id])
   @@index([company_id], map: "idx_app_user_company")
@@ -594,60 +593,11 @@ model DocumentSignerConfig {
   signer_employee_id String   @db.VarChar(20)
   signer_title       String?  @db.VarChar(150)
   updated_at         DateTime @updatedAt
-  employee           Employee @relation(fields: [signer_employee_id], references: [id], onDelete: Cascade)
   company            Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  employee           Employee @relation(fields: [signer_employee_id], references: [id], onDelete: Cascade)
 
   @@unique([company_id, document_type])
   @@map("document_signer_config")
-}
-
-enum InstitutionCategory {
-  Government
-  Private
-}
-
-enum ProgramType {
-  Regular
-  Extension
-  Weekend
-  Distance
-}
-
-enum CostSharingCommitmentType {
-  Full_Study
-  Partial_Study
-  Service_Obligation
-}
-
-enum CostSharingStatus {
-  DECLARED
-  VERIFIED
-  REJECTED
-  CLEARED
-}
-
-enum OnboardingStatus {
-  IN_PROGRESS
-  PENDING_APPROVAL
-  COMPLETED
-}
-
-enum CostSharingPaymentStatus {
-  UNPAID
-  PARTIALLY_PAID
-  FULLY_PAID
-}
-
-// Celebration System Models
-enum CelebrationType {
-  BIRTHDAY
-  PROMOTION
-  ANNIVERSARY
-}
-
-enum CelebrationVisibility {
-  PUBLIC
-  PRIVATE
 }
 
 model Celebration {
@@ -662,8 +612,8 @@ model Celebration {
   created_at       DateTime               @default(now())
   updated_at       DateTime               @updatedAt
   employee         Employee               @relation(fields: [employee_id, company_id], references: [id, company_id], onDelete: Cascade)
-  messages         CelebrationMessage[]
   dismissals       CelebrationDismissal[]
+  messages         CelebrationMessage[]
 
   @@unique([employee_id, company_id, type, celebration_date])
   @@index([company_id, celebration_date])
@@ -717,4 +667,50 @@ model EmployeeSettings {
   @@map("employee_settings")
 }
 
-// =============================================================================
+enum InstitutionCategory {
+  Government
+  Private
+}
+
+enum ProgramType {
+  Regular
+  Extension
+  Weekend
+  Distance
+}
+
+enum CostSharingCommitmentType {
+  Full_Study
+  Partial_Study
+  Service_Obligation
+}
+
+enum CostSharingStatus {
+  DECLARED
+  VERIFIED
+  REJECTED
+  CLEARED
+}
+
+enum OnboardingStatus {
+  IN_PROGRESS
+  PENDING_APPROVAL
+  COMPLETED
+}
+
+enum CostSharingPaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  FULLY_PAID
+}
+
+enum CelebrationType {
+  BIRTHDAY
+  PROMOTION
+  ANNIVERSARY
+}
+
+enum CelebrationVisibility {
+  PUBLIC
+  PRIVATE
+}
