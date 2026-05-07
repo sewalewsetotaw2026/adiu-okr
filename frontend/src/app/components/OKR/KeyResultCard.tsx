@@ -56,11 +56,11 @@ export default function KeyResultCard({
           <div className="min-w-0 flex-1 space-y-3">
             {/* Status & ID Badge Row */}
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1">
+              {/* <div className="flex items-center bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
                   KR #{kr.id}
                 </span>
-              </div>
+              </div> */}
               <StatusBadge status={kr.status as Status} />
 
             </div>
