@@ -2989,7 +2989,7 @@ export default function Configuration() {
                   </div>
                   <div>
                     <h1 className="text-2xl font-semibold text-white capitalize">
-                      Okr Configuration
+                      OKR Configuration
                     </h1>
                     <p className="text-white/80 text-sm mt-1">
                       Set up planning rules, status flow, and metric options for
