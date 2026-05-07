@@ -5,7 +5,7 @@
   "main": "authController.js",
   "scripts": {
     "dev": "nodemon --watch src --ext ts,tsx --exec ts-node -r tsconfig-paths/register src/server.ts",
-    "build": "tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json && cp -r src/assets dist/",
+    "build": "tsc -p tsconfig.build.json && npx tsc-alias -p tsconfig.build.json &&  src/assets dist/",
     "render-build": "npm ci --include=dev && npm run build",
     "postinstall": "prisma generate",
     "start": "node dist/server.js",

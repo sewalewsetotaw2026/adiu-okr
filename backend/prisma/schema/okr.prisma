@@ -997,6 +997,7 @@ enum OkrEntityType {
   ARCHIVE
   EXPORT
   SUBMISSION
+  REALIGNMENT_FLAG
 }
 
 enum OkrArchiveStatus {
@@ -1018,4 +1019,81 @@ enum OkrExportStatus {
   COMPLETED
   FAILED
   EXPIRED
+}
+
+model OkrChangeRequest {
+  id                Int               @id @default(autoincrement())
+  company_id        Int
+  cycle_id          Int
+  entity_type       OkrEntityType     
+  entity_id         Int               
+  requester_id      String            @db.VarChar(20)
+  reviewer_id       String?           @db.VarChar(20)
+  
+  requester         AppUser?          @relation("OkrRequester", fields: [requester_id], references: [employee_id])
+  reviewer          AppUser?          @relation("OkrReviewer", fields: [reviewer_id], references: [employee_id])
+  status            ChangeRequestStatus @default(PENDING)
+  
+  old_values_json   Json              
+  new_values_json   Json              
+  change_summary    String?           @db.VarChar(2000) 
+  
+  review_comment    String?           @db.VarChar(2000)
+  reviewed_at       DateTime?
+  
+  parent_change_request_id  Int?      
+  cascade_depth             Int       @default(0)
+  
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  
+  parentChangeRequest OkrChangeRequest?  @relation("ChangeRequestCascade", fields: [parent_change_request_id], references: [id])
+  childChangeRequests OkrChangeRequest[] @relation("ChangeRequestCascade")
+  realignmentFlags    OkrRealignmentFlag[]
+
+  @@index([company_id])
+  @@index([entity_type, entity_id])
+  @@index([requester_id])
+  @@index([reviewer_id])
+  @@index([status])
+  @@index([parent_change_request_id])
+  @@map("okr_change_request")
+}
+
+model OkrRealignmentFlag {
+  id                     Int          @id @default(autoincrement())
+  company_id             Int
+  change_request_id      Int          
+  affected_entity_type   OkrEntityType
+  affected_entity_id     Int
+  affected_owner_id      String       @db.VarChar(20)
+  status                 RealignmentStatus @default(PENDING)
+  acknowledged_at        DateTime?
+  realigned_at           DateTime?
+  dismissed_at           DateTime?
+  dismiss_reason         String?      @db.VarChar(500)
+  created_at             DateTime     @default(now())
+  
+  changeRequest          OkrChangeRequest @relation(fields: [change_request_id], references: [id], onDelete: Cascade)
+
+  @@index([company_id])
+  @@index([change_request_id])
+  @@index([affected_owner_id])
+  @@index([affected_entity_type, affected_entity_id])
+  @@index([status])
+  @@map("okr_realignment_flag")
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum RealignmentStatus {
+  PENDING
+  ACKNOWLEDGED
+  REALIGNED
+  DISMISSED
 }
