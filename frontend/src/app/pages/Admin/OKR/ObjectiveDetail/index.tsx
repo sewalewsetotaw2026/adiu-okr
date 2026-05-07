@@ -515,7 +515,7 @@ export default function ObjectiveDetail() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {objective.status_code !== "published" && (
+                    {/* {objective.status_code !== "published" && (
                       <Button
                         onClick={openAddModal}
                         icon={MdAdd}
@@ -523,7 +523,7 @@ export default function ObjectiveDetail() {
                       >
                         Define Key Result
                       </Button>
-                    )}
+                    )} */}
                   </div>
                 ) : (
                   krs.map((kr) => (
