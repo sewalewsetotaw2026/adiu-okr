@@ -149,12 +149,12 @@ export default function AdminSidebar() {
     },
     {
       to: routeConstants.okrCycles,
-      label: "Company cycle",
+      label: "Company Cycle",
       icon: MdCalendarToday,
     },
     {
       to: routeConstants.okrObjectives,
-      label: "Company objectives",
+      label: "Company Objectives",
       icon: MdTrackChanges,
     },
     {
@@ -184,10 +184,10 @@ export default function AdminSidebar() {
     },
     {
       to: routeConstants.okrConfiguration,
-      label: "Configraiton",
+      label: "Configuration",
       icon: MdSettings,
     },
-    { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
+    // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
     {
       to: routeConstants.okrArchiveManagement,
       label: "Archive",
@@ -195,7 +195,7 @@ export default function AdminSidebar() {
     },
       {
         to: routeConstants.okrPlanningCompliance,
-        label: "Planning compliance",
+        label: "Planning Compliance",
         icon: MdPublishedWithChanges,
       },
   ];

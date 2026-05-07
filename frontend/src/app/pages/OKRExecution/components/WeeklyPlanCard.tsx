@@ -1,4 +1,4 @@
-import { MdEdit, MdDelete, MdLock } from "react-icons/md";
+import { MdEdit, MdDelete, MdLock, MdEditDocument } from "react-icons/md";
 import type { WeeklyPlan } from "../../../../types/okr.types";
 import Button from "../../../components/Core/ui/Button";
 import PlanStatusBadge from "./PlanStatusBadge";
@@ -9,6 +9,7 @@ export interface WeeklyPlanCardProps {
   plan: WeeklyPlan;
   unit?: string;
   onEdit?: (plan: WeeklyPlan) => void;
+  onPostPublishEdit?: (plan: WeeklyPlan) => void;
   onDelete?: (plan: WeeklyPlan) => void;
 }
 
@@ -16,9 +17,11 @@ export default function WeeklyPlanCard({
   plan,
   unit,
   onEdit,
+  onPostPublishEdit,
   onDelete,
 }: WeeklyPlanCardProps) {
   const editable = EDITABLE_STATUSES.has(plan.plan_status);
+  const isPublished = plan.plan_status === "PUBLISHED";
   const rejected = plan.plan_status === "REJECTED";
   const progress = Math.max(0, Math.min(100, Number(plan.progress_pct ?? plan.final_score ?? 0)));
   const indirectProgress = Math.max(0, Math.min(100, Number(plan.indirect_score ?? 0)));
@@ -103,9 +106,9 @@ export default function WeeklyPlanCard({
         </div>
       </div>
 
-      {editable && (onEdit || onDelete) && (
+      {(editable || isPublished) && (onEdit || onPostPublishEdit || onDelete) && (
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-          {onEdit && (
+          {editable && onEdit && (
             <Button
               variant="subtle"
               size="sm"
@@ -115,7 +118,18 @@ export default function WeeklyPlanCard({
               Edit
             </Button>
           )}
-          {onDelete && (
+          {isPublished && onPostPublishEdit && (
+            <Button
+              variant="white"
+              size="sm"
+              icon={MdEditDocument}
+              onClick={() => onPostPublishEdit(plan)}
+              className="!h-7 !px-3 !text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary/40 shadow-sm transition-all duration-300"
+            >
+              Edit Published
+            </Button>
+          )}
+          {editable && onDelete && (
             <Button
               variant="ghost"
               size="sm"

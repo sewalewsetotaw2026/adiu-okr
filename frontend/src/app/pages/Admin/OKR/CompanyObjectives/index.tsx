@@ -331,7 +331,7 @@ export default function CompanyObjectives() {
                 </div>
                 <div>
                   <h1 className="text-2xl font-black tracking-tighter capitalize">
-                    Company Strategy
+                    Company Objectives
                   </h1>
                   <div className="flex items-center gap-2 mt-1">
                     <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 ring-1 ring-white/20 text-[10px] font-black uppercase tracking-widest text-white/70 font-space">
@@ -429,19 +429,19 @@ export default function CompanyObjectives() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   {
-                    label: "Strategic Goals",
+                    label: "Objectives",
                     value: summary.n,
                     icon: MdTrackChanges,
                     color: "text-primary",
                   },
                   {
-                    label: "Active Key Results",
+                    label: "Key Results",
                     value: summary.totalKRs,
                     icon: MdOutlineHub,
                     color: "text-emerald-500",
                   },
                   {
-                    label: "Strategy Progress",
+                    label: "Overall Progress",
                     value: `${summary.avgProgress}%`,
                     icon: MdTrendingUp,
                     color: "text-blue-500",
@@ -493,7 +493,7 @@ export default function CompanyObjectives() {
                   </div>
                   <input
                     type="text"
-                    placeholder="Search strategic objectives..."
+                    placeholder="Search company objectives..."
                     className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-xl leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm transition-all"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

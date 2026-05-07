@@ -272,7 +272,7 @@ export default function DepartmentComparisonPage() {
                       <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Indirect</th>
                       <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Done</th>
                       <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Value</th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Comp. KR</th>
+                      {/* <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space text-center">Comp. KR</th> */}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -301,11 +301,11 @@ export default function DepartmentComparisonPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-center">
+                        {/* <td className="px-6 py-4 text-center">
                           <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] font-black font-space">
                             {r.completedKrs}
                           </span>
-                        </td>
+                        </td> */}
                       </tr>
                     ))}
                   </tbody>
@@ -315,7 +315,7 @@ export default function DepartmentComparisonPage() {
           </section>
 
           {/* HR Insight Graph */}
-          <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+          {/* <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
             <div className="flex items-center justify-between mb-8">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center text-violet-500">
@@ -378,7 +378,7 @@ export default function DepartmentComparisonPage() {
                 })}
               </div>
             )}
-          </section>
+          </section> */}
         </div>
       </div>
     </AdminLayout>

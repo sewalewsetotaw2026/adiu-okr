@@ -176,7 +176,7 @@ export default function EmployeeOverviewTab({
       {/* Middle Row: Goal Health + Recent Feedback */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Goal Health + Adoption */}
-        <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 flex flex-col justify-between">
+        {/* <div className="lg:col-span-4 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-3">
               <div className="p-2 bg-primary-50 rounded-xl">
@@ -250,10 +250,10 @@ export default function EmployeeOverviewTab({
               </div>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Recent Feedback */}
-        <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col overflow-hidden">
+        {/* <div className="lg:col-span-8 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col overflow-hidden">
           <div className="p-6 border-b border-slate-100 flex justify-between items-center">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
               <div className="p-2 bg-indigo-50 rounded-xl">
@@ -295,7 +295,6 @@ export default function EmployeeOverviewTab({
                       <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 rounded-xl p-3 border border-slate-100">
                         {comment.comment}
                       </p>
-                      {/* Entity context — show which KR / Objective the feedback is about */}
                       <div className="mt-2 flex flex-col gap-1">
                         {comment.entityTitle ? (
                           <div className="flex items-start gap-1.5">
@@ -340,11 +339,11 @@ export default function EmployeeOverviewTab({
               </div>
             )}
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* Planning Activity — Bottom Section with real data */}
-      <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 p-8">
+      {/* <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50 p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-3">
@@ -387,7 +386,7 @@ export default function EmployeeOverviewTab({
             colorClass="text-emerald-600 bg-emerald-50"
           />
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

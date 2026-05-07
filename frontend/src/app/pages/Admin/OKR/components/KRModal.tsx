@@ -65,16 +65,16 @@ export default function KRModal({
         setForm({
           title: editingKR.title || "",
           description: editingKR.description || "",
-          weight: String(editingKR.weight_percent || editingKR.weightPercent || ""),
-          targetValue: String(editingKR.target_value || editingKR.targetValue || ""),
-          unitOfMeasure: editingKR.unit_of_measure || editingKR.unitOfMeasure || "",
-          metricDefinitionId: String(editingKR.metric_definition_id || editingKR.metricDefinitionId || ""),
+          weight: String(editingKR.weight_percent ?? editingKR.weightPercent ?? editingKR.weight ?? ""),
+          targetValue: String(editingKR.target_value ?? editingKR.targetValue ?? ""),
+          unitOfMeasure: editingKR.unit_of_measure ?? editingKR.unitOfMeasure ?? "",
+          metricDefinitionId: String(editingKR.metric_definition_id ?? editingKR.metricDefinitionId ?? ""),
           assignedIds: assignmentType === "employee" 
             ? collectEmployeeIdsFromKr(editingKR)
-            : (editingKR.departments || editingKR.assignedDepartments || []).map((d: any) => d.id || d),
-          contributesToScore: editingKR.contributes_to_score !== false,
-          contributesToValue: editingKR.contributes_to_value !== false,
-          chosenParentKrId: editingKR.chosen_parent_kr_id || editingKR.chosenParentKrId || null,
+            : (editingKR.departments || editingKR.assignedDepartments || editingKR.assignedDepartmentIds || []).map((d: any) => d.id || d),
+          contributesToScore: (editingKR.contributes_to_score ?? editingKR.contributesToScore ?? editingKR.contributes_to_objective_score) !== false,
+          contributesToValue: (editingKR.contributes_to_value ?? editingKR.contributesToValue ?? editingKR.contributes_to_objective_value) !== false,
+          chosenParentKrId: editingKR.chosen_parent_kr_id ?? editingKR.chosenParentKrId ?? null,
         });
       } else {
         setForm({
@@ -320,7 +320,7 @@ export default function KRModal({
         <div className="lg:col-span-7 p-6 overflow-y-auto space-y-6">
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              <MdTrackChanges className="text-lg" />
+              {/* <MdTrackChanges className="text-lg" /> */}
               <span>Core Details</span>
             </div>
             
@@ -354,7 +354,7 @@ export default function KRModal({
           {/* Metrics */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              <MdOutlineHub className="text-lg" />
+              {/* <MdOutlineHub className="text-lg" /> */}
               <span>Measurement & Metric</span>
             </div>
             
@@ -434,7 +434,7 @@ export default function KRModal({
           {/* Impact */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
             <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-              <MdSend className="text-lg" />
+              {/* <MdSend className="text-lg" /> */}
               <span>Impact & Strategy</span>
             </div>
             <div className="space-y-3">
@@ -450,7 +450,7 @@ export default function KRModal({
                     Contribute to Objective Score
                   </span>
                   <p className="text-xs text-gray-500">
-                    Whether this KR progress should affect the overall objective score.
+                    Whether this Key Result progress should affect the overall objective score.
                   </p>
                 </div>
               </label>
@@ -466,7 +466,7 @@ export default function KRModal({
                     Contribute to Objective Value
                   </span>
                   <p className="text-xs text-gray-500">
-                    Whether this KR value should contribute to the numeric objective target.
+                    Whether this Key Result value should contribute to the numeric objective target.
                   </p>
                 </div>
               </label>
@@ -536,11 +536,11 @@ export default function KRModal({
                         <span className={`font-semibold truncate ${checked ? "text-primary" : "text-gray-900"}`}>
                           {assignmentType === "employee" ? item.employee?.full_name || "Unknown Employee" : item.name}
                         </span>
-                        <span className="text-[11px] text-gray-500 truncate uppercase tracking-tight font-bold">
+                        {/* <span className="text-[11px] text-gray-500 truncate uppercase tracking-tight font-bold">
                           {assignmentType === "employee" 
                             ? `${item.jobTitle?.title || "No Title"} • ${item.department?.name || "No Dept"}`
                             : item.department_code || "No Code"}
-                        </span>
+                        </span> */}
                       </div>
                     </label>
                   );

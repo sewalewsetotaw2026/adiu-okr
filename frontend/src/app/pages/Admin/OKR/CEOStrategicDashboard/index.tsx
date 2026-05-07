@@ -433,7 +433,7 @@ export default function CEOStrategicDashboardPage() {
                 progress: avgCompanyScore,
               },
               {
-                label: "Dept Objectives",
+                label: "Department Objectives",
                 value: totalDepartmentObjectives,
                 icon: MdBusinessCenter,
                 color: "text-amber-500",

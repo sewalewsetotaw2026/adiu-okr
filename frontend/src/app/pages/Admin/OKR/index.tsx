@@ -324,7 +324,7 @@ export default function OKRDashboard() {
                     </div>
                   </div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Dept Objectives
+                    Department Objectives
                   </p>
                   {loading ? (
                     <div className="h-8 w-12 bg-slate-200 rounded animate-pulse mt-1" />
@@ -334,7 +334,7 @@ export default function OKRDashboard() {
                         {departmentObjTotal ?? "—"}
                       </p>
                       <p className="text-xs text-slate-500 font-medium mb-1 uppercase">
-                        Dept OKRs
+                        Department OKRs
                       </p>
                     </div>
                   )}

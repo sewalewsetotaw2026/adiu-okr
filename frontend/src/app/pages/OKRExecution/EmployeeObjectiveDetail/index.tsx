@@ -234,6 +234,10 @@ export default function EmployeeObjectiveDetailPage() {
               ? Number(kr.metric_definition_id)
               : undefined,
           assignedDepartmentIds: collectDepartmentIdsFromKr(kr),
+          assignedDepartments: collectDepartmentIdsFromKr(kr),
+          weight_percent: Number(kr.weight_percent) || 0,
+          contributes_to_score: kr.contributes_to_objective_score !== false,
+          contributes_to_value: kr.contributes_to_objective_value !== false,
           contributesToScore: kr.contributes_to_objective_score !== false,
           contributesToValue: kr.contributes_to_objective_value !== false,
           comments: allComments.filter((c: any) => c.entity_type === "EMPLOYEE_KR" && Number(c.entity_id) === Number(kr.id)),
@@ -526,7 +530,7 @@ export default function EmployeeObjectiveDetailPage() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {objective.status_code !== "published" && (
+                    {/* {objective.status_code !== "published" && (
                       <Button
                         variant="primary"
                         onClick={openAddModal}
@@ -535,7 +539,7 @@ export default function EmployeeObjectiveDetailPage() {
                       >
                         Define Key Result
                       </Button>
-                    )}
+                    )} */}
                   </div>
                 ) : (
                   krs.map((kr) => (

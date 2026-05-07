@@ -30,6 +30,8 @@ import AddWeeklyPlanModal from "./AddWeeklyPlanModal";
 import EditWeeklyPlanModal from "./EditWeeklyPlanModal";
 import PlanStatusBanner from "./PlanStatusBanner";
 import WeeklyPlanCard from "./WeeklyPlanCard";
+import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
+import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 
 const NON_DRAFT_LIFECYCLE = new Set([
   "SUBMITTED",
@@ -63,6 +65,8 @@ export interface WeeklyPlanTabProps {
   cycleId?: string | number | null;
   /** The user's role level. */
   userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+  /** Callback to trigger a post-publish edit request. */
+  onPostPublishEdit?: (plan: WeeklyPlan) => void;
 }
 
 interface PeriodSubmissionState {
@@ -91,6 +95,7 @@ export default function WeeklyPlanTab({
   allowAdd = true,
   cycleId,
   userRoleLevel,
+  onPostPublishEdit,
 }: WeeklyPlanTabProps) {
   const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>([]);
   const [plans, setPlans] = useState<WeeklyPlan[]>([]);
@@ -133,6 +138,7 @@ export default function WeeklyPlanTab({
     monthlyPlanId: string;
   } | null>(null);
   const [publishingPeriod, setPublishingPeriod] = useState(false);
+  const [postPublishEditing, setPostPublishEditing] = useState<WeeklyPlan | null>(null);
 
   // ── Loaders ────────────────────────────────────────────────────────────
 
@@ -479,6 +485,7 @@ export default function WeeklyPlanTab({
 
   return (
     <div className="space-y-6">
+      <RealignmentBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold text-slate-800">
@@ -570,8 +577,9 @@ export default function WeeklyPlanTab({
               setExpanded((prev) => ({ ...prev, [w]: !prev[w] }));
             }}
             onAdd={() => setAddForWeek(w)}
-            onEdit={(plan) => setEditing(plan)}
-            onDelete={(plan) => setDeleting(plan)}
+            onEdit={(p) => setEditing(p)}
+            onDelete={(p) => setDeleting(p)}
+            onPostPublishEdit={onPostPublishEdit}
             onSubmit={() => startSubmitPeriod(w)}
             onPublish={() => {
               const meta = periodMeta[w];
@@ -600,6 +608,19 @@ export default function WeeklyPlanTab({
         plan={editing}
         onClose={() => setEditing(null)}
         onSaved={handleEdited}
+      />
+
+      <EditOkrChangeRequestModal
+        isOpen={!!postPublishEditing}
+        entity={postPublishEditing}
+        entityType="WEEKLY_PLAN"
+        companyId={Number(localStorage.getItem("companyId") || 1)}
+        cycleId={cycleId || 0}
+        onClose={() => setPostPublishEditing(null)}
+        onSuccess={() => {
+          setPostPublishEditing(null);
+          void reload();
+        }}
       />
 
       <ConfirmationModal
@@ -666,6 +687,7 @@ function WeekSection({
   onAdd,
   onEdit,
   onDelete,
+  onPostPublishEdit,
   onSubmit,
   onPublish,
   allowAdd = true,
@@ -681,6 +703,7 @@ function WeekSection({
   onAdd: () => void;
   onEdit: (plan: WeeklyPlan) => void;
   onDelete: (plan: WeeklyPlan) => void;
+  onPostPublishEdit: (plan: WeeklyPlan) => void;
   onSubmit: () => void;
   onPublish: () => void;
   allowAdd?: boolean;
@@ -873,9 +896,9 @@ function WeekSection({
                 No plan yet for Week {weekNumber}. Click "+ Add Weekly Plan"
                 to start.
               </p>
-              <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
+              {/* <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
                 Add Weekly Plan
-              </Button>
+              </Button> */}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -885,6 +908,7 @@ function WeekSection({
                   plan={plan}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onPostPublishEdit={onPostPublishEdit}
                 />
               ))}
             </div>

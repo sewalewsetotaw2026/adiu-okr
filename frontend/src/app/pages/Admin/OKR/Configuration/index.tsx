@@ -44,7 +44,8 @@ const ConfigurationSkeleton = () => (
   </div>
 );
 
-type Tab = "general" | "statuses" | "metrics" | "profiles" | "feature_flags";
+type Tab = "general" | "statuses" | "categories" | "metrics" | "profiles" | "feature_flags";
+
 
 type PlanningApproach = "TOP_DOWN" | "BOTTOM_UP";
 type PlanningCadence = "MONTHLY" | "WEEKLY" | "DAILY";
@@ -470,11 +471,11 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
 
   const approachOptions = Array.isArray(planningRaw.options)
     ? planningRaw.options
-        .map((item) => String(item || "").toUpperCase())
-        .filter(
-          (item): item is PlanningApproach =>
-            item === "TOP_DOWN" || item === "BOTTOM_UP",
-        )
+      .map((item) => String(item || "").toUpperCase())
+      .filter(
+        (item): item is PlanningApproach =>
+          item === "TOP_DOWN" || item === "BOTTOM_UP",
+      )
     : defaults.planning_approach.options;
 
   const selectedCandidate = String(
@@ -530,12 +531,12 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
         metricRaw.allowed_metric_definition_ids,
       )
         ? Array.from(
-            new Set(
-              metricRaw.allowed_metric_definition_ids
-                .map((id) => Number(id))
-                .filter((id) => Number.isInteger(id) && id > 0),
-            ),
-          )
+          new Set(
+            metricRaw.allowed_metric_definition_ids
+              .map((id) => Number(id))
+              .filter((id) => Number.isInteger(id) && id > 0),
+          ),
+        )
         : defaults.metric_configuration.allowed_metric_definition_ids,
       allow_financial_metrics: asBoolean(
         metricRaw.allow_financial_metrics,
@@ -892,10 +893,11 @@ function isCollectionEmpty(value: unknown): boolean {
 
 const TABS: { id: Tab; label: string; isPreview?: boolean }[] = [
   { id: "general", label: "General" },
+  { id: "categories", label: "Metric Categories" },
   { id: "metrics", label: "Metrics" },
   { id: "statuses", label: "Statuses", isPreview: true },
-  { id: "profiles", label: "Profiles", isPreview: true },
-  { id: "feature_flags", label: "Feature Flags", isPreview: true },
+  // { id: "profiles", label: "Profiles", isPreview: true },
+  // { id: "feature_flags", label: "Feature Flags", isPreview: true },
 ];
 
 export default function Configuration() {
@@ -1274,7 +1276,8 @@ export default function Configuration() {
     }
   }, [metricCategories, metricCategoryDraft.name]);
 
-  const createMetricCategory = async (value: string) => {
+  // const createMetricCategory = async (value: string) => {
+  const createMetricCategory = async (value: string, description: string = "") => {
     const name = value.trim();
     if (!name) throw new Error("Category name is required.");
 
@@ -1286,7 +1289,7 @@ export default function Configuration() {
         name,
         code: toCode(name),
         behavior_type: "CUSTOM",
-        description: "",
+        description: description || "",
       },
     });
 
@@ -1377,7 +1380,7 @@ export default function Configuration() {
       return;
     }
 
-    const created = await createMetricCategory(name);
+    const created = await createMetricCategory(name, description);
     if (metricModalOpen && created) {
       setMetricForm((prev) => ({ ...prev, category_code: created.code }));
     }
@@ -2645,6 +2648,95 @@ export default function Configuration() {
       </div>
     </section>
   );
+  const renderCategoriesTab = () => (
+    <section className="rounded-3xl bg-white p-6 md:p-8 shadow-sm space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 capitalize">
+            Metric Categoriess
+          </h2>
+          <p className="text-sm text-gray-600">
+            Group metrics into categories to help teams easily find the right measurement tools.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            onClick={() => {
+              setMetricCategoryDraft(EMPTY_METRIC_CATEGORY_DRAFT);
+              setEditingCategoryId(null);
+              setCategoryModalOpen(true);
+            }}
+            icon={MdAdd}
+          >
+            Add Category
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl bg-slate-50">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-500">
+              <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Description</th>
+              <th className="px-4 py-3 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metricCategories.length === 0 ? (
+              <tr>
+                <td className="px-4 py-8 text-center text-gray-500" colSpan={4}>
+                  No Metric Categories Defined Yet
+                </td>
+              </tr>
+            ) : (
+              metricCategories.map((row) => (
+                <tr key={row.id} className="border-t border-slate-200/80">
+                  <td className="px-4 py-3 text-gray-800 font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 text-gray-700 max-w-sm truncate">
+                    {row.description || "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingCategoryId(row.id);
+                          setMetricCategoryDraft({
+                            id: row.id,
+                            name: row.name,
+                            code: row.code,
+                            behavior_type: row.behavior_type,
+                            description: row.description || "",
+                          });
+                          setCategoryModalOpen(true);
+                        }}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-slate-200"
+                        aria-label={`Edit ${row.name}`}
+                        icon={MdEdit}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCategoryToDelete({ id: row.id, name: row.name })}
+                        className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
+                        aria-label={`Delete ${row.name}`}
+                        icon={MdDelete}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+
+
 
   const renderProfilesTab = () => (
     <section className="space-y-6">
@@ -2867,6 +2959,7 @@ export default function Configuration() {
 
   const renderActiveTab = () => {
     if (tab === "general") return renderGeneralTab();
+    if (tab === "categories") return renderCategoriesTab();
     if (tab === "statuses") return renderStatusesTab();
     if (tab === "metrics") return renderMetricsTab();
     if (tab === "profiles") return renderProfilesTab();
@@ -3095,68 +3188,25 @@ export default function Configuration() {
             <span className="text-sm font-semibold text-gray-700">
               Category
             </span>
-            <FormAutocomplete
-              label=""
-              type="metricCategories"
-              value={
-                metricCategories.find(
-                  (c) => c.code === metricForm.category_code,
-                )?.name ||
-                metricForm.category_code ||
-                ""
-              }
-              onChange={(value) => {
-                const matched = metricCategories.find((c) => c.name === value);
+            <select
+              value={metricForm.category_code}
+              onChange={(event) =>
                 setMetricForm((prev) => ({
                   ...prev,
-                  category_code: matched ? matched.code : value,
-                }));
-              }}
-              placeholder="Type to find or create a category"
-              creatable
-              fetchSuggestionsFn={async (query) =>
-                metricCategories.filter((category) =>
-                  category.name.toLowerCase().includes(query.toLowerCase()),
-                )
+                  category_code: event.target.value,
+                }))
               }
-              createSuggestionFn={createMetricCategory}
-              customCreateLabel="Create Category"
-              allowSuggestionManagement
-              onEditSuggestion={(suggestion) => {
-                if (!isRecord(suggestion)) return;
-                const id = Number(suggestion.id || 0);
-                if (!id) return;
-
-                const name = String(suggestion.name || "").trim();
-                const code = toCode(String(suggestion.code || name));
-                const behavior = String(
-                  suggestion.behavior_type ||
-                    suggestion.behaviorType ||
-                    "CUSTOM",
-                ).toUpperCase() as OkrMetricCategory;
-
-                setEditingCategoryId(id);
-                setMetricCategoryDraft({
-                  id,
-                  name,
-                  code,
-                  behavior_type: METRIC_BEHAVIOR_TYPES.includes(behavior)
-                    ? behavior
-                    : "CUSTOM",
-                  description: String(suggestion.description || ""),
-                });
-                setCategoryModalOpen(true);
-              }}
-              onDeleteSuggestion={(suggestion) => {
-                if (!isRecord(suggestion)) return;
-                const id = Number(suggestion.id || 0);
-                if (!id) return;
-                setCategoryToDelete({
-                  id,
-                  name: String(suggestion.name || ""),
-                });
-              }}
-            />
+              className="w-full rounded-xl bg-slate-100 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="" disabled>
+                Select a category
+              </option>
+              {metricCategories.map((category) => (
+                <option key={category.code} value={category.code}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="space-y-2 block">
             <span className="text-sm font-semibold text-gray-700">
@@ -3235,12 +3285,12 @@ export default function Configuration() {
               />
             </label>
           </div>
-          
+
           {metricForm.value_based_progress && (
             <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
               <p className="text-[11px] leading-relaxed text-amber-700 font-medium">
                 <span className="font-bold block mb-0.5">Value-Based Calculation Enabled:</span>
-                This metric will calculate progress purely as <code className="bg-amber-100/50 px-1 rounded">Current / Target</code>. 
+                This metric will calculate progress purely as <code className="bg-amber-100/50 px-1 rounded">Current / Target</code>.
                 It will bypass the standard weighted score aggregation for all associated plans and hierarchies.
               </p>
             </div>
@@ -3545,7 +3595,7 @@ export default function Configuration() {
             />
           </label>
 
-          <label className="space-y-2 block">
+          {/* <label className="space-y-2 block">
             <span className="text-sm font-semibold text-gray-700">
               Behavior Type
             </span>
@@ -3565,7 +3615,7 @@ export default function Configuration() {
                 </option>
               ))}
             </select>
-          </label>
+          </label> */}
           <label className="space-y-2 block">
             <span className="text-sm font-semibold text-gray-700">
               Description

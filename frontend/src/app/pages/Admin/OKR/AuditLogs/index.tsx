@@ -94,6 +94,7 @@ export default function OkrAuditLogsPage() {
       "DEPARTMENT_KR",
       "EMPLOYEE_OBJECTIVE",
       "EMPLOYEE_KR",
+      "OKR_CHANGE_REQUEST",
       "ARCHIVE",
       "EXPORT",
     ],

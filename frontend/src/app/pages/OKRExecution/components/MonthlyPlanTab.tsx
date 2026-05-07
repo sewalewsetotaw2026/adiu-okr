@@ -29,6 +29,8 @@ import AddMonthlyPlanModal, {
 import EditMonthlyPlanModal from "./EditMonthlyPlanModal";
 import MonthlyPlanCard from "./MonthlyPlanCard";
 import PlanStatusBanner from "./PlanStatusBanner";
+import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
+import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 
 const MONTHS: (1 | 2 | 3)[] = [1, 2, 3];
 
@@ -63,6 +65,8 @@ export interface MonthlyPlanTabProps {
   allowAdd?: boolean;
   /** The user's role level. */
   userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+  /** Callback to trigger a post-publish edit request. */
+  onPostPublishEdit?: (plan: MonthlyPlan) => void;
 }
 
 interface PeriodSubmissionState {
@@ -89,6 +93,7 @@ export default function MonthlyPlanTab({
   focusItemId,
   allowAdd = true,
   userRoleLevel,
+  onPostPublishEdit,
 }: MonthlyPlanTabProps) {
   const [plans, setPlans] = useState<MonthlyPlan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -110,6 +115,7 @@ export default function MonthlyPlanTab({
   const [submittingPeriod, setSubmittingPeriod] = useState(false);
   const [publishConfirm, setPublishConfirm] = useState<{ monthNumber: 1 | 2 | 3 } | null>(null);
   const [publishingPeriod, setPublishingPeriod] = useState(false);
+  const [postPublishEditing, setPostPublishEditing] = useState<MonthlyPlan | null>(null);
 
   const krIds = useMemo(() => krs.map((k) => k.id), [krs]);
 
@@ -384,6 +390,7 @@ export default function MonthlyPlanTab({
 
   return (
     <div className="space-y-6">
+      <RealignmentBanner />
       {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -480,8 +487,9 @@ export default function MonthlyPlanTab({
               setExpanded((prev) => ({ ...prev, [m]: !prev[m] }));
             }}
             onAdd={() => setAddForMonth(m as 1 | 2 | 3)}
-            onEdit={(plan) => setEditing(plan)}
-            onDelete={(plan) => setDeleting(plan)}
+            onEdit={(p) => setEditing(p)}
+            onDelete={(p) => setDeleting(p)}
+            onPostPublishEdit={onPostPublishEdit}
             onSubmit={() => startSubmitPeriod(m)}
             onPublish={() => setPublishConfirm({ monthNumber: m as 1 | 2 | 3 })}
             allowAdd={allowAdd}
@@ -504,6 +512,19 @@ export default function MonthlyPlanTab({
         plan={editing}
         onClose={() => setEditing(null)}
         onSaved={handleEdited}
+      />
+
+      <EditOkrChangeRequestModal
+        isOpen={!!postPublishEditing}
+        entity={postPublishEditing}
+        entityType="EMPLOYEE_MONTH_PLAN"
+        companyId={Number(localStorage.getItem("companyId") || 1)} // Fallback for now
+        cycleId={cycleId || 0}
+        onClose={() => setPostPublishEditing(null)}
+        onSuccess={() => {
+          setPostPublishEditing(null);
+          loadPlans();
+        }}
       />
 
       <ConfirmationModal
@@ -570,6 +591,7 @@ function MonthSection({
   onAdd,
   onEdit,
   onDelete,
+  onPostPublishEdit,
   onSubmit,
   onPublish,
   allowAdd = true,
@@ -585,6 +607,7 @@ function MonthSection({
   onAdd: () => void;
   onEdit: (plan: MonthlyPlan) => void;
   onDelete: (plan: MonthlyPlan) => void;
+  onPostPublishEdit: (plan: MonthlyPlan) => void;
   onSubmit: () => void;
   onPublish: () => void;
   allowAdd?: boolean;
@@ -793,6 +816,7 @@ function MonthSection({
                   unit={plan.parent_key_result?.unit}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onPostPublishEdit={onPostPublishEdit}
                 />
               ))}
             </div>

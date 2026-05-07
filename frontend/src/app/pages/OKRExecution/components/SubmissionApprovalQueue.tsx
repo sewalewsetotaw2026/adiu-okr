@@ -17,6 +17,8 @@ import ToastService from "../../../../utils/ToastService";
 import Button from "../../../components/Core/ui/Button";
 import OkrStatusBadge from "./OkrStatusBadge";
 import RefreshButton from "../../../components/common/RefreshButton";
+import ChangeRequestReviewTab from "../../Admin/OKR/components/ChangeRequestReviewTab";
+import { MdEditDocument } from "react-icons/md";
 
 type Submission = {
   id: number;
@@ -235,7 +237,7 @@ function SubmissionReviewCard({
               </OkrStatusBadge>
             </div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-space mt-1">
-              {submission.item_count} items · Submitted {formatDate(submission.created_at)}
+              {/* {submission.item_count} items · Submitted {formatDate(submission.created_at)} */}
               {hasDraftItems && (
                 <span className="ml-2 text-amber-500">· Has pending feedback</span>
               )}
@@ -475,6 +477,7 @@ export default function SubmissionApprovalQueue({
   const [action, setAction] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState<"standard" | "edits">("standard");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -571,7 +574,30 @@ export default function SubmissionApprovalQueue({
 
   return (
     <>
-      <div className="bg-white/60 backdrop-blur-xl border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
+      <div className="flex items-center gap-4 mb-6">
+        <Button
+          variant={activeTab === "standard" ? "primary" : "white"}
+          onClick={() => setActiveTab("standard")}
+          icon={MdFactCheck}
+          className={`rounded-2xl transition-all duration-300 ${activeTab === "standard" ? "shadow-lg shadow-primary/20" : ""}`}
+        >
+          Plan Submissions
+        </Button>
+        <Button
+          variant={activeTab === "edits" ? "primary" : "white"}
+          onClick={() => setActiveTab("edits")}
+          icon={MdEditDocument}
+          className={`rounded-2xl transition-all duration-300 ${activeTab === "edits" ? "shadow-lg shadow-primary/20" : ""}`}
+        >
+          Edit Requests
+        </Button>
+      </div>
+
+      {activeTab === "edits" ? (
+        <ChangeRequestReviewTab />
+      ) : (
+        <>
+          <div className="bg-white/60 backdrop-blur-xl border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-xl">
@@ -708,6 +734,8 @@ export default function SubmissionApprovalQueue({
         onConfirm={confirm}
         loading={submitting}
       />
+      </>
+      )}
     </>
   );
 }

@@ -392,6 +392,12 @@ const apiRoutes = {
     employeeKRProgress: (krId: number | string) =>
       `${BASE_URL}/okr/employee/key-results/${krId}/progress`,
 
+    // Change Requests & Realignment
+    changeRequests: `${BASE_URL}/okr/change-requests`,
+    realignmentFlags: `${BASE_URL}/okr/change-requests/realignment-flags`,
+    dismissRealignmentFlag: (id: number | string) =>
+      `${BASE_URL}/okr/change-requests/realignment-flags/${id}/dismiss`,
+
     // Manager
     managerTeamSummary: `${BASE_URL}/okr/manager/team-summary`,
     managerSubordinatePositions: `${BASE_URL}/okr/manager/subordinate-positions`,

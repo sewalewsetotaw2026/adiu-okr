@@ -1,4 +1,4 @@
-import { MdEdit, MdDelete, MdLock } from "react-icons/md";
+import { MdEdit, MdDelete, MdLock, MdEditDocument } from "react-icons/md";
 import type { MonthlyPlan } from "../../../../types/okr.types";
 import Button from "../../../components/Core/ui/Button";
 import PlanStatusBadge from "./PlanStatusBadge";
@@ -9,6 +9,7 @@ export interface MonthlyPlanCardProps {
   plan: MonthlyPlan;
   unit?: string;
   onEdit?: (plan: MonthlyPlan) => void;
+  onPostPublishEdit?: (plan: MonthlyPlan) => void;
   onDelete?: (plan: MonthlyPlan) => void;
 }
 
@@ -16,9 +17,11 @@ export default function MonthlyPlanCard({
   plan,
   unit,
   onEdit,
+  onPostPublishEdit,
   onDelete,
 }: MonthlyPlanCardProps) {
   const editable = EDITABLE_STATUSES.has(plan.plan_status);
+  const isPublished = plan.plan_status === "PUBLISHED";
   const rejected = plan.plan_status === "REJECTED";
   const progress = Math.max(0, Math.min(100, Number(plan.progress_pct ?? plan.final_score ?? 0)));
   const indirectProgress = Math.max(0, Math.min(100, Number(plan.indirect_score ?? 0)));
@@ -109,31 +112,40 @@ export default function MonthlyPlanCard({
       </div>
 
       {/* Actions */}
-      {editable && (onEdit || onDelete) && (
-        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-          {onEdit && (
-            <Button
-              variant="subtle"
-              size="sm"
-              icon={MdEdit}
-              onClick={() => onEdit(plan)}
-            >
-              Edit
-            </Button>
-          )}
-          {onDelete && (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={MdDelete}
-              className="text-rose-600 hover:text-rose-700"
-              onClick={() => onDelete(plan)}
-            >
-              Delete
-            </Button>
-          )}
-        </div>
-      )}
+      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+        {editable && onEdit && (
+          <Button
+            variant="subtle"
+            size="sm"
+            icon={MdEdit}
+            onClick={() => onEdit(plan)}
+          >
+            Edit
+          </Button>
+        )}
+        {isPublished && onPostPublishEdit && (
+          <Button
+            variant="white"
+            size="sm"
+            icon={MdEditDocument}
+            onClick={() => onPostPublishEdit(plan)}
+            className="!h-7 !px-3 !text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary/40 shadow-sm transition-all duration-300"
+          >
+            Edit Published
+          </Button>
+        )}
+        {editable && onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={MdDelete}
+            className="text-rose-600 hover:text-rose-700"
+            onClick={() => onDelete(plan)}
+          >
+            Delete
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

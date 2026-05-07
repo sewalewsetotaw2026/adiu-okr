@@ -107,7 +107,7 @@ export default function EmployeeContributionTable({
               Objectives
             </th>
             <th className="px-4 py-3 text-left font-black text-xs text-slate-600 uppercase tracking-wider">
-              KRs
+              Key Results
             </th>
             <th className="px-4 py-3 text-left font-black text-xs text-slate-600 uppercase tracking-wider">
               Planning Status

@@ -225,7 +225,7 @@ export default function CompanyOKRGalleryPage() {
                             <div className="flex items-center gap-3 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider font-space">
                               <span>Target: {k.target ?? "—"} {k.unit ?? ""}</span>
                               <span className="text-slate-200">|</span>
-                              <span>{k.departmentObjectives.length} Linked Depts</span>
+                              <span>{k.departmentObjectives.length} Linked Departments</span>
                             </div>
                           </div>
                           {k.isFinancial && (

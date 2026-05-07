@@ -8,6 +8,8 @@ import MonthlyPlanTab from "../components/MonthlyPlanTab";
 import WeeklyPlanTab from "../components/WeeklyPlanTab";
 import DailyPlanTab from "../components/DailyPlanTab";
 import EmployeeOverviewTab from "../components/EmployeeOverviewTab";
+import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
+import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 import ObjectiveCard from "../../../components/common/ObjectiveCard";
 import LoadingSkeleton from "../../../components/common/LoadingSkeleton";
 import { routeConstants } from "../../../../utils/constants";
@@ -15,6 +17,10 @@ import { fetchMonthlyAvailableWeight } from "../../../services/okr-execution.api
 import type { AvailableWeight } from "../../../../types/okr.types";
 import {
   MdAdd,
+  MdEdit,
+  MdDelete,
+  MdLock,
+  MdEditDocument,
   MdFactCheck,
   MdFlag,
   MdPublish,
@@ -182,6 +188,10 @@ export default function MyExecutionDashboardPage() {
   const [setupCustomTitle, setSetupCustomTitle] = useState("");
   const [setupCustomDescription, setSetupCustomDescription] = useState("");
   const [saveSetupBusy, setSaveSetupBusy] = useState(false);
+  const [postPublishEditingKr, setPostPublishEditingKr] = useState<any | null>(null);
+  const [postPublishEditingType, setPostPublishEditingType] = useState<
+    "EMPLOYEE_KR" | "EMPLOYEE_MONTH_PLAN" | "WEEKLY_PLAN"
+  >("EMPLOYEE_KR");
 
   // Handle query params for filtering and direct actions
   useEffect(() => {
@@ -844,6 +854,7 @@ export default function MyExecutionDashboardPage() {
   return (
     <EmployeeLayout>
       <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white -mx-4 md:-mx-8 px-4 md:px-8">
+        <RealignmentBanner />
         <ExecutionShell
           breadcrumbs={[{ label: "Execution" }, { label: "My Execution" }]}
           title="My Execution Dashboard"
@@ -1097,6 +1108,7 @@ export default function MyExecutionDashboardPage() {
                             const remaining = aw?.remaining_pct ?? 0;
                             return (
                               <div key={kr.id} className="flex flex-col gap-2">
+
                                 <KeyResultListItem
                                   title={kr.title}
                                   progress={krPct}
@@ -1104,6 +1116,22 @@ export default function MyExecutionDashboardPage() {
                                   status={kr.status_code || "draft"}
                                   targetString={`${kr.unit_of_measure === "ETB" ? "ETB " : ""}${krCur} / ${krTgt}${kr.unit_of_measure === "%" ? "%" : ""}`}
                                   metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
+                                  actions={
+                                    kr.status_code === "published" && (
+                                      <Button
+                                        variant="white"
+                                        size="sm"
+                                        icon={MdEditDocument}
+                                        onClick={() => {
+                                          setPostPublishEditingType("EMPLOYEE_KR");
+                                          setPostPublishEditingKr(kr);
+                                        }}
+                                        className="!h-7 !px-3 !text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary/40 shadow-sm transition-all duration-300"
+                                      >
+                                        Edit Published
+                                      </Button>
+                                    )
+                                  }
                                 />
                                 <div className="ml-1 text-[11px] text-slate-500 flex items-center gap-3">
                                   <span className="font-black tracking-widest uppercase text-[10px] text-slate-400">
@@ -1157,33 +1185,6 @@ export default function MyExecutionDashboardPage() {
                     Your execution dashboard is empty. Adopt an assigned Key
                     Result to start planning your progress.
                   </p>
-                  {/*{assignedKrs.length > 0 ? (
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="px-4 py-2 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                        <span className="text-xs font-bold text-amber-700 tracking-widest font-space">
-                          {assignedKrs.length} Assigned KRs Pending
-                        </span>
-                      </div>
-                      <Button
-                        variant="primary"
-                        size="lg"
-                        icon={MdAdd}
-                        className="shadow-xl shadow-primary/25 px-8"
-                        onClick={handleNewObjectiveClick}
-                        disabled={objectiveLimitReached}
-                      >
-                        {remainingObjectivesToAdopt != null
-                          ? `Adopt Assigned KR (${remainingObjectivesToAdopt} Remaining)`
-                          : "Adopt Assigned KR"}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="text-slate-400 text-xs font-bold tracking-[0.2em] font-space flex items-center gap-2">
-                      <MdWarningAmber className="text-lg" />
-                      No Pending Assignments
-                    </div>*/}
-                  {/*)}*/}
                 </div>
               )}
             </>
@@ -1207,6 +1208,10 @@ export default function MyExecutionDashboardPage() {
                 void loadAllocations();
                 setWeeklyRefreshNonce((n) => n + 1);
               }}
+              onPostPublishEdit={(p) => {
+                setPostPublishEditingType("EMPLOYEE_MONTH_PLAN");
+                setPostPublishEditingKr(p);
+              }}
             />
           )}
 
@@ -1220,10 +1225,12 @@ export default function MyExecutionDashboardPage() {
               cycleId={currentCycleId}
               userRoleLevel={userRoleLevel}
               onAllocationsChanged={() => {
-                // Cross-tab: refresh KR allocations and bump the monthly tab
-                // refresh nonce so its weekly-allocation lines update.
                 void loadAllocations();
                 setMonthlyRefreshNonce((n) => n + 1);
+              }}
+              onPostPublishEdit={(p) => {
+                setPostPublishEditingType("WEEKLY_PLAN");
+                setPostPublishEditingKr(p);
               }}
             />
           )}
@@ -1255,6 +1262,19 @@ export default function MyExecutionDashboardPage() {
           onChangeCustomDescription={setSetupCustomDescription}
           onConfirm={() => void handleAdopt()}
           saving={saveSetupBusy}
+        />
+
+        <EditOkrChangeRequestModal
+          isOpen={!!postPublishEditingKr}
+          entity={postPublishEditingKr}
+          entityType={postPublishEditingType}
+          companyId={user?.company_id || Number(localStorage.getItem("companyId") || 1)}
+          cycleId={currentCycleId || 0}
+          onClose={() => setPostPublishEditingKr(null)}
+          onSuccess={() => {
+            setPostPublishEditingKr(null);
+            void loadObjectives();
+          }}
         />
       </div>
     </EmployeeLayout>
