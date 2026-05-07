@@ -803,9 +803,9 @@ function MonthSection({
                 No plan yet for Month {monthNumber}. Click "+ Add Monthly Plan"
                 to start.
               </p>
-              <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
+              {/* <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
                 Add Monthly Plan
-              </Button>
+              </Button> */}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
