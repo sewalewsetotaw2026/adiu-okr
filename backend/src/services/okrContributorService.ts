@@ -187,8 +187,8 @@ export async function removeContributor(
       );
     }
   } else if (contributor.employeeKr) {
-    if (!["approved", "published"].includes(contributor.employeeKr.status_code)) {
-      throw new Error("Contributors can only be removed while the employee KR is in approved or published status.");
+    if (!["draft", "approved", "published"].includes(contributor.employeeKr.status_code)) {
+      throw new Error("Contributors can only be removed while the employee KR is in draft, approved, or published status.");
     }
   }
 
@@ -251,8 +251,8 @@ export async function updateContributorFlag(
       );
     }
   } else if (contributor.employeeKr) {
-    if (!["approved", "published"].includes(contributor.employeeKr.status_code)) {
-      throw new Error("Contributor flags can only be updated while the employee KR is in approved or published status.");
+    if (!["draft", "approved", "published"].includes(contributor.employeeKr.status_code)) {
+      throw new Error("Contributor flags can only be updated while the employee KR is in draft, approved, or published status.");
     }
   }
 
