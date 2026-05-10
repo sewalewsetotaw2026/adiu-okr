@@ -32,6 +32,8 @@ export const assignContributor = async (
       user_id,
       role_type,
       is_required_for_completion,
+      required_target,
+      weight_percent,
     } = req.body;
     const companyKrId = parsePositiveInt(company_kr_id);
     const departmentKrId = parsePositiveInt(department_kr_id);
@@ -41,15 +43,17 @@ export const assignContributor = async (
     const normalizedRoleType =
       typeof role_type === "string" ? role_type.trim() : "";
 
-    if (
-      (companyKrId === null && normalizedEmployeeKrId === null) ||
-      !normalizedUserId ||
-      !normalizedRoleType
-    ) {
+    if (!normalizedUserId || !normalizedRoleType) {
       return res.status(400).json({
         status: "fail",
-        message:
-          "company_kr_id or department_kr_id/employee_kr_id, user_id, and role_type are required.",
+        message: "user_id and role_type are required.",
+      });
+    }
+
+    if (companyKrId === null && normalizedEmployeeKrId === null) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Either company_kr_id or department_kr_id/employee_kr_id is required.",
       });
     }
 
@@ -82,6 +86,8 @@ export const assignContributor = async (
       userId: normalizedUserId,
       roleType: normalizedRoleType as ContributorRoleType,
       isRequiredForCompletion: is_required_for_completion,
+      requiredTarget: required_target !== undefined ? Number(required_target) : undefined,
+      weightPercent: weight_percent !== undefined ? Number(weight_percent) : undefined,
       assignedBy: req.user!.user_id,
     });
 

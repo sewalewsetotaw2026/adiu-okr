@@ -11,7 +11,7 @@ import { redisService } from "src/services/redisService";
 export const countUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -37,7 +37,7 @@ export const countUsers = async (
 export const fetchAllUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -138,7 +138,7 @@ export const fetchAllUsers = async (
 export const fetchUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -229,7 +229,7 @@ export const fetchUser = async (
           is_department_head: (user as any).headedDepartments?.length > 0,
           headed_department_id: (user as any).headedDepartments?.[0]?.id,
           is_manager: isManager,
-        }
+        },
       },
     });
   } catch (error) {
@@ -240,7 +240,7 @@ export const fetchUser = async (
 export const createUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -266,7 +266,7 @@ export const createUser = async (
     const rawEmployee = pick<any>(
       req.body?.employee,
       req.body?.employeeData,
-      req.body?.employee_data
+      req.body?.employee_data,
     );
 
     const rawEmployment = pick<any>(
@@ -275,30 +275,30 @@ export const createUser = async (
       rawEmployee?.employmentDetails,
       req.body?.employment,
       req.body?.employment_details,
-      req.body?.employmentDetails
+      req.body?.employmentDetails,
     );
 
     const rawAllowances = pick<any>(
       req.body?.allowances,
       rawEmployee?.allowances,
-      rawEmployment?.allowances
+      rawEmployment?.allowances,
     );
 
     // Build allowances in the format expected by the service (ignore effective_date from frontend payload)
     const normalizedAllowances:
       | Array<{
-        allowance_type_id: number | string;
-        amount: number;
-        currency?: string;
-      }>
+          allowance_type_id: number | string;
+          amount: number;
+          currency?: string;
+        }>
       | undefined = Array.isArray(rawAllowances)
-        ? rawAllowances
+      ? rawAllowances
           .filter(Boolean)
           .map((a: any) => {
             const allowance_type_id = pick<number | string>(
               a.allowance_type_id,
               a.allowanceTypeId,
-              a.allowance_type?.id
+              a.allowance_type?.id,
             );
             const amount = Number(a.amount);
             const currency = pick<string>(a.currency);
@@ -306,31 +306,31 @@ export const createUser = async (
           })
           .filter(
             (a) =>
-              a.allowance_type_id !== undefined && Number.isFinite(a.amount)
+              a.allowance_type_id !== undefined && Number.isFinite(a.amount),
           )
           .map((a) => ({
             allowance_type_id: a.allowance_type_id as number | string,
             amount: Number(a.amount),
             ...(a.currency ? { currency: a.currency } : {}),
           }))
-        : undefined;
+      : undefined;
 
     // Build employee payload in the format expected by the service
     let normalizedEmployee:
       | {
-        employeeId?: string;
-        fullName: string;
-        employment?: {
-          departmentId?: number | string;
-          jobTitleId?: number | string;
-          jobLevel?: string;
-          managerId?: string;
-          employmentType?: string;
-          startDate?: string;
-          grossSalary?: number;
-          basicSalary?: number;
-        };
-      }
+          employeeId?: string;
+          fullName: string;
+          employment?: {
+            departmentId?: number | string;
+            jobTitleId?: number | string;
+            jobLevel?: string;
+            managerId?: string;
+            employmentType?: string;
+            startDate?: string;
+            grossSalary?: number;
+            basicSalary?: number;
+          };
+        }
       | undefined;
 
     if (rawEmployee) {
@@ -338,7 +338,7 @@ export const createUser = async (
         rawEmployee.fullName,
         rawEmployee.full_name,
         req.body?.fullName,
-        req.body?.full_name
+        req.body?.full_name,
       );
       if (!fullName) {
         return res.status(400).json({
@@ -351,57 +351,57 @@ export const createUser = async (
         employeeId: pick<string>(
           rawEmployee.employeeId,
           rawEmployee.employee_id,
-          employee_id
+          employee_id,
         ),
         fullName,
         employment: rawEmployment
           ? {
-            departmentId: pick<number | string>(
-              rawEmployment.departmentId,
-              rawEmployment.department_id
-            ),
-            jobTitleId: pick<number | string>(
-              rawEmployment.jobTitleId,
-              rawEmployment.job_title_id
-            ),
-            jobLevel: pick<string>(
-              rawEmployment.jobLevel,
-              rawEmployment.job_level,
-              rawEmployment.level
-            ),
-            managerId: pick<string>(
-              rawEmployment.managerId,
-              rawEmployment.manager_id
-            ),
-            employmentType: pick<string>(
-              rawEmployment.employmentType,
-              rawEmployment.employment_type
-            ),
-            startDate: pick<string>(
-              rawEmployment.startDate,
-              rawEmployment.start_date
-            ),
-            grossSalary:
-              rawEmployment.grossSalary === undefined &&
+              departmentId: pick<number | string>(
+                rawEmployment.departmentId,
+                rawEmployment.department_id,
+              ),
+              jobTitleId: pick<number | string>(
+                rawEmployment.jobTitleId,
+                rawEmployment.job_title_id,
+              ),
+              jobLevel: pick<string>(
+                rawEmployment.jobLevel,
+                rawEmployment.job_level,
+                rawEmployment.level,
+              ),
+              managerId: pick<string>(
+                rawEmployment.managerId,
+                rawEmployment.manager_id,
+              ),
+              employmentType: pick<string>(
+                rawEmployment.employmentType,
+                rawEmployment.employment_type,
+              ),
+              startDate: pick<string>(
+                rawEmployment.startDate,
+                rawEmployment.start_date,
+              ),
+              grossSalary:
+                rawEmployment.grossSalary === undefined &&
                 rawEmployment.gross_salary === undefined
-                ? undefined
-                : Number(
-                  pick<any>(
-                    rawEmployment.grossSalary,
-                    rawEmployment.gross_salary
-                  )
-                ),
-            basicSalary:
-              rawEmployment.basicSalary === undefined &&
+                  ? undefined
+                  : Number(
+                      pick<any>(
+                        rawEmployment.grossSalary,
+                        rawEmployment.gross_salary,
+                      ),
+                    ),
+              basicSalary:
+                rawEmployment.basicSalary === undefined &&
                 rawEmployment.basic_salary === undefined
-                ? undefined
-                : Number(
-                  pick<any>(
-                    rawEmployment.basicSalary,
-                    rawEmployment.basic_salary
-                  )
-                ),
-          }
+                  ? undefined
+                  : Number(
+                      pick<any>(
+                        rawEmployment.basicSalary,
+                        rawEmployment.basic_salary,
+                      ),
+                    ),
+            }
           : undefined,
       };
     }
@@ -479,13 +479,27 @@ export const createUser = async (
     }
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     res.status(201).json(response);
   } catch (error: any) {
@@ -510,7 +524,7 @@ export const createUser = async (
 export const listPendingUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -536,7 +550,7 @@ export const listPendingUsers = async (
 export const listSubmittedUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -548,9 +562,8 @@ export const listSubmittedUsers = async (
       });
     }
 
-    const pendingApprovalUsers = await UserService.getPendingApprovalUsers(
-      companyId
-    );
+    const pendingApprovalUsers =
+      await UserService.getPendingApprovalUsers(companyId);
 
     return res.status(200).json({
       status: "success",
@@ -564,7 +577,7 @@ export const listSubmittedUsers = async (
 export const getMe = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -594,8 +607,8 @@ export const getMe = async (
             company_code: true,
             primary_color: true,
             secondary_color: true,
-            logo_url: true
-          }
+            logo_url: true,
+          },
         },
         role: { select: { id: true, name: true } },
         employee: {
@@ -639,8 +652,9 @@ export const getMe = async (
       });
     }
 
-    const primaryDeptId = user.employee?.employments?.[0]?.department_id || null;
-    
+    const primaryDeptId =
+      user.employee?.employments?.[0]?.department_id || null;
+
     // Check if user is a manager (has direct reports)
     const directReportCount = await prisma.employment.count({
       where: {
@@ -660,27 +674,29 @@ export const getMe = async (
           is_department_head: user.headedDepartments?.length > 0,
           headed_department_id: user.headedDepartments?.[0]?.id,
           is_manager: isManager,
-          employee: user.employee ? {
-            ...user.employee,
-            signature_url: user.employee.signature_url || "",
-            documents: user.employee.documents || {
-              cv: [],
-              certificates: [],
-              photo: [],
-              experienceLetters: [],
-              taxForms: [],
-              pensionForms: [],
-              guarantee_letter: [],
-              medical_certificate: [],
-              national_id: [],
-              police_certificate: [],
-              attendance_logs: [],
-            }
-          } : null,
+          employee: user.employee
+            ? {
+                ...user.employee,
+                signature_url: user.employee.signature_url || "",
+                documents: user.employee.documents || {
+                  cv: [],
+                  certificates: [],
+                  photo: [],
+                  experienceLetters: [],
+                  taxForms: [],
+                  pensionForms: [],
+                  guarantee_letter: [],
+                  medical_certificate: [],
+                  national_id: [],
+                  police_certificate: [],
+                  attendance_logs: [],
+                },
+              }
+            : null,
           company_code: (user as any).company?.company_code,
           company: (user as any).company,
-          permissions: await getUserPermissionMatrix(user.role_id)
-        }
+          permissions: await getUserPermissionMatrix(user.role_id),
+        },
       },
     });
   } catch (error) {
@@ -691,7 +707,7 @@ export const getMe = async (
 export const updateMe = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -848,13 +864,27 @@ export const updateMe = async (
     });
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -872,7 +902,7 @@ export const updateMe = async (
 export const submitOnboarding = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -974,13 +1004,27 @@ export const submitOnboarding = async (
     });
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -998,7 +1042,7 @@ export const submitOnboarding = async (
 export const approvePendingUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -1014,13 +1058,27 @@ export const approvePendingUser = async (
     const updatedUser = await UserService.approveUser(companyId, id);
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -1035,7 +1093,7 @@ export const approvePendingUser = async (
 export const updatePendingUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -1059,17 +1117,31 @@ export const updatePendingUser = async (
     const updatedEmployee = await UserService.updatePendingUser(
       companyId,
       Number(id),
-      req.body
+      req.body,
     );
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -1084,7 +1156,7 @@ export const updatePendingUser = async (
 export const updateUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -1230,13 +1302,27 @@ export const updateUser = async (
     });
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     res.status(200).json({
       status: "success",
@@ -1253,7 +1339,7 @@ export const updateUser = async (
 export const deleteUser = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -1300,13 +1386,27 @@ export const deleteUser = async (
     });
 
     // Invalidate Cache
-    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
-    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:managers:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:teams:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_member:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:team_members_list:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:employees_search:*`)
+      .catch(console.error);
+    redisService
+      .delByPattern(`company:${companyId}:analytics:*`)
+      .catch(console.error);
 
     res.status(200).json({
       status: "success",
@@ -1320,7 +1420,7 @@ export const deleteUser = async (
 export const changePassword = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const { id } = req.params;
@@ -1393,7 +1493,7 @@ export const changePassword = async (
 export const searchUsersForMapping = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -1415,9 +1515,9 @@ export const searchUsersForMapping = async (
         { email: { contains: query, mode: "insensitive" } },
         {
           employee: {
-            full_name: { contains: query, mode: "insensitive" }
-          }
-        }
+            full_name: { contains: query, mode: "insensitive" },
+          },
+        },
       ];
     }
 
@@ -1431,20 +1531,20 @@ export const searchUsersForMapping = async (
           select: {
             id: true,
             name: true,
-          }
+          },
         },
         employee: {
           select: {
             id: true,
             full_name: true,
-          }
-        }
+          },
+        },
       },
       orderBy: {
         employee: {
-          full_name: 'asc'
-        }
-      }
+          full_name: "asc",
+        },
+      },
     });
 
     res.status(200).json({

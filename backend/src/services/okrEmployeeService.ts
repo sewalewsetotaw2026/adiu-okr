@@ -14,6 +14,7 @@ import {
 } from "./okrValidationService";
 import { resolveConfigValue } from "./okrConfigResolverService";
 import { validateWeightsBeforePublish } from "./okrWeightValidationService";
+import { assignContributor } from "./okrContributorService";
 
 import {
   validateMonthSequence,
@@ -52,7 +53,7 @@ export async function listEmployeeObjectives(
 ) {
   const userFilter = Array.isArray(userId) ? { in: userId } : userId;
 
-  return prisma.employeeObjective.findMany({
+  const objectives = await prisma.employeeObjective.findMany({
     where: {
       company_id: companyId,
       user_id: userFilter,
@@ -93,16 +94,51 @@ export async function listEmployeeObjectives(
           progressUpdates: { orderBy: { created_at: "desc" }, take: 1 },
         },
       },
+      comments: {
+        orderBy: { created_at: "desc" },
+      },
       _count: { select: { keyResults: true } },
     },
   });
+
+  const allAuthorIds = new Set<string>();
+  objectives.forEach((o) => {
+    if (o.reviewer_id) allAuthorIds.add(o.reviewer_id);
+    o.comments.forEach((c) => allAuthorIds.add(c.author_id));
+    o.keyResults.forEach((kr) => {
+      if (kr.reviewer_id) allAuthorIds.add(kr.reviewer_id);
+    });
+  });
+
+  const authors = await prisma.employee.findMany({
+    where: { id: { in: Array.from(allAuthorIds) } },
+    select: { id: true, full_name: true },
+  });
+  const authorMap = new Map(authors.map((r) => [r.id, r.full_name]));
+
+  return objectives.map((o) => ({
+    ...o,
+    reviewer_name: o.reviewer_id ? authorMap.get(o.reviewer_id) : null,
+    reviewerName: o.reviewer_id ? authorMap.get(o.reviewer_id) : null,
+    feedbackNote: o.rejection_note,
+    comments: o.comments.map((c) => ({
+      ...c,
+      authorName: authorMap.get(c.author_id) || "Reviewer",
+      author_name: authorMap.get(c.author_id) || "Reviewer",
+    })),
+    keyResults: o.keyResults.map((kr) => ({
+      ...kr,
+      reviewerName: kr.reviewer_id ? authorMap.get(kr.reviewer_id) : null,
+      feedbackNote: kr.rejection_note,
+    })),
+  }));
 }
 
 export async function listEmployeeObjectivesForCycle(
   companyId: number,
   cycleId: number,
 ) {
-  return prisma.employeeObjective.findMany({
+  const objectives = await prisma.employeeObjective.findMany({
     where: {
       company_id: companyId,
       cycle_id: cycleId,
@@ -132,9 +168,43 @@ export async function listEmployeeObjectivesForCycle(
           progressUpdates: { orderBy: { created_at: "desc" }, take: 1 },
         },
       },
+      comments: {
+        orderBy: { created_at: "desc" },
+      },
       _count: { select: { keyResults: true } },
     },
   });
+
+  const allAuthorIds = new Set<string>();
+  objectives.forEach((o) => {
+    if (o.reviewer_id) allAuthorIds.add(o.reviewer_id);
+    o.comments.forEach((c) => allAuthorIds.add(c.author_id));
+    o.keyResults.forEach((kr) => {
+      if (kr.reviewer_id) allAuthorIds.add(kr.reviewer_id);
+    });
+  });
+
+  const authors = await prisma.employee.findMany({
+    where: { id: { in: Array.from(allAuthorIds) } },
+    select: { id: true, full_name: true },
+  });
+  const authorMap = new Map(authors.map((r) => [r.id, r.full_name]));
+
+  return objectives.map((o) => ({
+    ...o,
+    reviewerName: o.reviewer_id ? authorMap.get(o.reviewer_id) : null,
+    feedbackNote: o.rejection_note,
+    comments: o.comments.map((c) => ({
+      ...c,
+      authorName: authorMap.get(c.author_id) || "Reviewer",
+      author_name: authorMap.get(c.author_id) || "Reviewer",
+    })),
+    keyResults: o.keyResults.map((kr) => ({
+      ...kr,
+      reviewerName: kr.reviewer_id ? authorMap.get(kr.reviewer_id) : null,
+      feedbackNote: kr.rejection_note,
+    })),
+  }));
 }
 
 export async function listAssignedKRsForEmployee(
@@ -222,6 +292,7 @@ export async function listAssignedKRsForEmployee(
           title: true,
           description: true,
           status_code: true,
+          unit_of_measure: true,
           objective: {
             select: {
               id: true,
@@ -237,6 +308,7 @@ export async function listAssignedKRsForEmployee(
           title: true,
           description: true,
           status_code: true,
+          unit_of_measure: true,
           employeeObjective: {
             select: {
               id: true,
@@ -268,7 +340,14 @@ export async function listAssignedKRsForEmployee(
           ? { companyKr: { objective: { cycle_id: effectiveCycleId } } }
           : {}),
       },
-      include: {
+      select: {
+        id: true,
+        company_id: true,
+        company_kr_id: true,
+        department_id: true,
+        required_target: true,
+        weight_percent: true,
+        created_at: true,
         companyKr: {
           select: {
             id: true,
@@ -313,6 +392,8 @@ export async function listAssignedKRsForEmployee(
             status_code: "assigned",
             assigned_at: dk.created_at,
             updated_at: dk.created_at,
+            required_target: dk.required_target,
+            weight_percent: dk.weight_percent,
             companyKr: dk.companyKr,
             employeeKr: null,
             employeeObjectives: existingObjective || null,
@@ -339,6 +420,8 @@ export async function listAssignedKRsForEmployee(
     user_id: a.user_id,
     role_type: a.role_type,
     assigned_at: a.assigned_at,
+    required_target: a.required_target != null ? Number(a.required_target) : null,
+    weight_percent: a.weight_percent != null ? Number(a.weight_percent) : null,
     company_kr: a.companyKr,
     employee_kr: a.employeeKr,
     employee_objective: a.employeeObjectives || null,
@@ -374,6 +457,20 @@ export async function getEmployeeObjectiveDetail(
       keyResults: {
         include: {
           metricDefinition: true,
+          contributors: {
+            include: {
+              user: {
+                include: {
+                  employee: {
+                    select: {
+                      id: true,
+                      full_name: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           progressUpdates: {
             take: 1,
             orderBy: { created_at: "desc" },
@@ -385,12 +482,31 @@ export async function getEmployeeObjectiveDetail(
               progressUpdates: true,
             },
           },
+          comments: {
+            orderBy: { created_at: "desc" },
+          },
         },
         orderBy: { created_at: "asc" },
+      },
+      comments: {
+        orderBy: { created_at: "desc" },
       },
     },
   });
   if (!objective) throw new Error("Employee objective not found.");
+
+  const allAuthorIds = new Set<string>();
+  if (objective.reviewer_id) allAuthorIds.add(objective.reviewer_id);
+  objective.comments.forEach((c) => allAuthorIds.add(c.author_id));
+  objective.keyResults.forEach((kr) => {
+    if (kr.reviewer_id) allAuthorIds.add(kr.reviewer_id);
+  });
+
+  const authors = await prisma.employee.findMany({
+    where: { id: { in: Array.from(allAuthorIds) } },
+    select: { id: true, full_name: true },
+  });
+  const authorMap = new Map(authors.map((r) => [r.id, r.full_name]));
 
   const activityLog = await prisma.okrActivityLog.findMany({
     where: { entity_type: "EMPLOYEE_OBJECTIVE", entity_id: id },
@@ -398,7 +514,29 @@ export async function getEmployeeObjectiveDetail(
     take: 50,
   });
 
-  return { ...objective, activityLog };
+  return {
+    ...objective,
+    reviewerName: objective.reviewer_id
+      ? authorMap.get(objective.reviewer_id)
+      : null,
+    feedbackNote: objective.rejection_note,
+    comments: (objective.comments || []).map((c) => ({
+      ...c,
+      authorName: authorMap.get(c.author_id) || "Reviewer",
+      author_name: authorMap.get(c.author_id) || "Reviewer",
+    })),
+    keyResults: objective.keyResults.map((kr) => ({
+      ...kr,
+      reviewerName: kr.reviewer_id ? authorMap.get(kr.reviewer_id) : null,
+      feedbackNote: kr.rejection_note,
+      comments: (kr.comments || []).map((c) => ({
+        ...c,
+        authorName: authorMap.get(c.author_id) || "Reviewer",
+        author_name: authorMap.get(c.author_id) || "Reviewer",
+      })),
+    })),
+    activityLog,
+  };
 }
 
 interface AdoptAssignedKRInput {
@@ -658,6 +796,11 @@ interface CreateEmployeeKRInput {
   isMandatory?: boolean;
   executionMode: OkrExecutionMode;
   createdBy: string;
+  assignUsers?: {
+    userId: string;
+    requiredTarget?: number;
+    weightPercent?: number;
+  }[];
 }
 
 export async function createEmployeeKR(input: CreateEmployeeKRInput) {
@@ -784,6 +927,26 @@ export async function createEmployeeKR(input: CreateEmployeeKRInput) {
     description: `Employee KR "${kr.title}" created`,
     metadata: { employee_objective_id: input.employeeObjectiveId },
   });
+
+  // Handle contributor assignments if provided
+  if (input.assignUsers && input.assignUsers.length > 0) {
+    for (const assignment of input.assignUsers) {
+      try {
+        await assignContributor({
+          companyId: input.companyId,
+          employeeKrId: kr.id,
+          userId: assignment.userId,
+          roleType: "EMPLOYEE", // Default for employee-level KR
+          requiredTarget: assignment.requiredTarget,
+          weightPercent: assignment.weightPercent,
+          assignedBy: input.createdBy,
+        });
+      } catch (err: any) {
+        console.error(`Failed to assign contributor ${assignment.userId} to KR ${kr.id}:`, err.message);
+        // We continue with others even if one fails
+      }
+    }
+  }
 
   return kr;
 }

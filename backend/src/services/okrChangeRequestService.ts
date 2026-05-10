@@ -21,7 +21,7 @@ export async function createChangeRequest(params: CreateChangeRequestParams) {
   const existingPending = await prisma.okrChangeRequest.findFirst({
     where: {
       entity_type: params.entityType,
-      entity_id: params.entityId,
+      entity_id: Number(params.entityId),
       status: ChangeRequestStatus.PENDING,
     },
   });
@@ -35,17 +35,17 @@ export async function createChangeRequest(params: CreateChangeRequestParams) {
   switch (params.entityType) {
     case OkrEntityType.EMPLOYEE_KR:
       oldValues = await prisma.employeeKeyResult.findUnique({
-        where: { id: params.entityId },
+        where: { id: Number(params.entityId) },
       });
       break;
     case OkrEntityType.EMPLOYEE_MONTH_PLAN:
       oldValues = await prisma.employeeMonthPlan.findUnique({
-        where: { id: params.entityId },
+        where: { id: Number(params.entityId) },
       });
       break;
     case OkrEntityType.WEEKLY_PLAN:
       oldValues = await prisma.weeklyPlan.findUnique({
-        where: { id: params.entityId },
+        where: { id: Number(params.entityId) },
       });
       break;
     default:
@@ -79,10 +79,10 @@ export async function createChangeRequest(params: CreateChangeRequestParams) {
   // 4. Create CR
   const cr = await prisma.okrChangeRequest.create({
     data: {
-      company_id: params.companyId,
-      cycle_id: params.cycleId,
+      company_id: Number(params.companyId),
+      cycle_id: Number(params.cycleId),
       entity_type: params.entityType,
-      entity_id: params.entityId,
+      entity_id: Number(params.entityId),
       requester_id: params.requesterId,
       reviewer_id: reviewerId,
       old_values_json: oldValues,

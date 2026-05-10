@@ -290,6 +290,7 @@ export const createEmployeeKR = async (
       contributes_to_value,
       is_mandatory,
       execution_mode,
+      assign_users,
     } = req.body;
 
     if (!title)
@@ -310,6 +311,7 @@ export const createEmployeeKR = async (
       contributesToValue: contributes_to_value,
       isMandatory: is_mandatory,
       executionMode: execution_mode,
+      assignUsers: assign_users,
       createdBy: req.user!.user_id,
     });
     res.status(201).json({ status: "success", data: kr });

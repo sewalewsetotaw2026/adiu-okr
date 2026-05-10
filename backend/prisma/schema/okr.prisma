@@ -326,6 +326,8 @@ model CompanyKrDepartment {
   company_id    Int
   company_kr_id Int
   department_id Int
+  required_target Decimal? @db.Decimal(18, 4)
+  weight_percent  Decimal? @db.Decimal(7, 2)
   created_at    DateTime @default(now())
 
   companyKr  CompanyKeyResult @relation(fields: [company_kr_id], references: [id], onDelete: Cascade)
@@ -345,6 +347,8 @@ model KrContributor {
   user_id                    String                 @db.VarChar(20)
   role_type                  OkrContributorRoleType
   is_required_for_completion Boolean                @default(true)
+  required_target            Decimal?               @db.Decimal(18, 4)
+  weight_percent             Decimal?               @db.Decimal(7, 2)
   status_code                String                 @db.VarChar(50)
   assigned_by                String                 @db.VarChar(20)
   assigned_at                DateTime               @default(now())
@@ -352,7 +356,7 @@ model KrContributor {
   employeeObjectives         EmployeeObjective?
   companyKr                  CompanyKeyResult?      @relation(fields: [company_kr_id], references: [id], onDelete: Cascade)
   employeeKr                 EmployeeKeyResult?     @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
-  user                       AppUser?               @relation(fields: [user_id], references: [employee_id])
+  user                       AppUser?               @relation(fields: [user_id], references: [employee_id], onDelete: Cascade)
 
   @@unique([company_kr_id, employee_kr_id, user_id])
   @@index([company_id])
@@ -383,6 +387,8 @@ model EmployeeObjective {
   approved_by                  String?             @db.VarChar(20)
   published_by                 String?             @db.VarChar(20)
   published_at                 DateTime?
+  reviewer_id                  String?             @db.VarChar(20)
+  rejection_note               String?             @db.VarChar(2000)
   is_archived                  Boolean             @default(false)
   archived_at                  DateTime?
   created_at                   DateTime            @default(now())
@@ -392,7 +398,7 @@ model EmployeeObjective {
   parentCompanyKr              CompanyKeyResult?   @relation(fields: [chosen_parent_kr_id], references: [id], onDelete: Cascade)
   cycle                        OkrCycle            @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
   contributor                  KrContributor       @relation(fields: [kr_contributor_id], references: [id], onDelete: Cascade)
-  user                         AppUser             @relation(fields: [user_id], references: [employee_id])
+  user                         AppUser             @relation(fields: [user_id], references: [employee_id], onDelete: Cascade)
   comments                     OkrComment[]
 
   submission_id Int?
@@ -430,6 +436,8 @@ model EmployeeKeyResult {
   approved_by                    String?             @db.VarChar(20)
   published_by                   String?             @db.VarChar(20)
   published_at                   DateTime?
+  reviewer_id                    String?             @db.VarChar(20)
+  rejection_note                 String?             @db.VarChar(2000)
   created_at                     DateTime            @default(now())
   updated_at                     DateTime            @updatedAt
   employeeObjective              EmployeeObjective   @relation(fields: [employee_objective_id], references: [id], onDelete: Cascade)
@@ -485,6 +493,7 @@ model EmployeeMonthPlan {
 
   employeeKr  EmployeeKeyResult @relation(fields: [employee_kr_id], references: [id], onDelete: Cascade)
   weeklyPlans WeeklyPlan[]
+  comments    OkrComment[]
 
   submission_id Int?
   submission    OkrSubmission? @relation(fields: [submission_id], references: [id])
@@ -533,6 +542,7 @@ model WeeklyPlan {
   updated_at             DateTime            @updatedAt
 
   dailyPlans       DailyPlan[]
+  comments         OkrComment[]
   monthPlan        EmployeeMonthPlan    @relation(fields: [employee_month_plan_id], references: [id], onDelete: Cascade)
   metricDefinition OkrMetricDefinition? @relation(fields: [metric_definition_id], references: [id])
 
@@ -761,11 +771,17 @@ model OkrComment {
 
   employeeObjectiveId Int?
   employeeKeyResultId Int?
-  CompanyKeyResult    CompanyKeyResult? @relation(fields: [companyKeyResultId], references: [id])
-  CompanyObjective    CompanyObjective? @relation(fields: [companyObjectiveId], references: [id])
+  employeeMonthPlanId Int?
+  weeklyPlanId        Int?
 
-  EmployeeKeyResult EmployeeKeyResult? @relation(fields: [employeeKeyResultId], references: [id])
-  EmployeeObjective EmployeeObjective? @relation(fields: [employeeObjectiveId], references: [id])
+  CompanyKeyResult    CompanyKeyResult? @relation(fields: [companyKeyResultId], references: [id], onDelete: Cascade)
+  CompanyObjective    CompanyObjective? @relation(fields: [companyObjectiveId], references: [id], onDelete: Cascade)
+
+  EmployeeKeyResult EmployeeKeyResult? @relation(fields: [employeeKeyResultId], references: [id], onDelete: Cascade)
+  EmployeeObjective EmployeeObjective? @relation(fields: [employeeObjectiveId], references: [id], onDelete: Cascade)
+  EmployeeMonthPlan EmployeeMonthPlan? @relation(fields: [employeeMonthPlanId], references: [id], onDelete: Cascade)
+  WeeklyPlan        WeeklyPlan?        @relation(fields: [weeklyPlanId], references: [id], onDelete: Cascade)
+
   parentComment     OkrComment?        @relation("OkrCommentThread", fields: [parent_comment_id], references: [id], onDelete: Cascade)
   replies           OkrComment[]       @relation("OkrCommentThread")
 
@@ -1030,8 +1046,8 @@ model OkrChangeRequest {
   requester_id      String            @db.VarChar(20)
   reviewer_id       String?           @db.VarChar(20)
   
-  requester         AppUser?          @relation("OkrRequester", fields: [requester_id], references: [employee_id])
-  reviewer          AppUser?          @relation("OkrReviewer", fields: [reviewer_id], references: [employee_id])
+  requester         AppUser?          @relation("OkrRequester", fields: [requester_id], references: [employee_id], onDelete: Cascade)
+  reviewer          AppUser?          @relation("OkrReviewer", fields: [reviewer_id], references: [employee_id], onDelete: Cascade)
   status            ChangeRequestStatus @default(PENDING)
   
   old_values_json   Json              

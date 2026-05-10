@@ -188,6 +188,8 @@ export const createKeyResult = async (
       is_mandatory,
       assign_user_ids,
       assign_department_ids,
+      assign_users,
+      assign_departments,
     } = req.body;
 
     if (!title)
@@ -209,6 +211,8 @@ export const createKeyResult = async (
       isMandatory: is_mandatory,
       assignUserIds: assign_user_ids,
       assignDepartmentIds: assign_department_ids,
+      assignUsers: assign_users,
+      assignDepartments: assign_departments,
       createdBy: req.user!.user_id,
     });
 
@@ -246,6 +250,8 @@ export const updateKeyResult = async (
       is_mandatory,
       assign_user_ids,
       assign_department_ids,
+      assign_users,
+      assign_departments,
     } = req.body;
 
     const kr = await companyService.updateKeyResult(id, req.user!.company_id, {
@@ -260,6 +266,8 @@ export const updateKeyResult = async (
       isMandatory: is_mandatory,
       assignUserIds: assign_user_ids,
       assignDepartmentIds: assign_department_ids,
+      assignUsers: assign_users,
+      assignDepartments: assign_departments,
     });
 
     res.status(200).json({ status: "success", data: kr });

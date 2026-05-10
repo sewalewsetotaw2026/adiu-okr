@@ -314,6 +314,10 @@ export const updateMonthlyPlan = async (
         req.body?.target_value !== undefined
           ? Number(req.body.target_value)
           : undefined,
+      current_value:
+        req.body?.current_value !== undefined
+          ? Number(req.body.current_value)
+          : undefined,
       contribute_to_score:
         req.body?.contribute_to_score !== undefined
           ? Boolean(req.body.contribute_to_score)
@@ -353,10 +357,14 @@ export const listManagerMonthlyPlans = async (
     const u = requireUser(req);
     const monthNumber = parseId(req.query.monthNumber, "monthNumber");
     const cycleId = parseId(req.query.cycleId, "cycleId");
+    const krIdStr = req.query.krId as string;
+    const krId = krIdStr ? parseInt(krIdStr, 10) : undefined;
+
     const data = await svc.getManagerMonthlyPlans(
       u.employee_id,
       monthNumber,
       cycleId,
+      krId,
     );
     res.json({ status: "success", data });
   } catch (e) {
@@ -507,6 +515,10 @@ export const updateWeeklyPlan = async (
       target_value:
         req.body?.target_value !== undefined
           ? Number(req.body.target_value)
+          : undefined,
+      current_value:
+        req.body?.current_value !== undefined
+          ? Number(req.body.current_value)
           : undefined,
       contribute_to_score:
         req.body?.contribute_to_score !== undefined
@@ -742,13 +754,18 @@ export const submitMonthlyPeriod = async (
 ) => {
   try {
     const u = requireUser(req);
-    const { month_number, cycle_id, reviewer_id } = req.body || {};
+    const { month_number, cycle_id, reviewer_id, plan_ids } = req.body || {};
     const result = await svc.submitMonthlyPeriod({
       ownerId: u.employee_id,
       companyId: u.company_id,
       cycleId: Number(cycle_id),
       monthNumber: Number(month_number),
       reviewerId: reviewer_id ?? null,
+      planIds: Array.isArray(plan_ids)
+        ? plan_ids
+            .map((id: unknown) => Number(id))
+            .filter((id: number) => Number.isInteger(id) && id > 0)
+        : undefined,
     });
     res.json({ status: "success", data: result });
   } catch (e) {
@@ -810,13 +827,19 @@ export const submitWeeklyPeriod = async (
 ) => {
   try {
     const u = requireUser(req);
-    const { week_number, monthly_plan_id, reviewer_id } = req.body || {};
+    const { week_number, monthly_plan_id, reviewer_id, plan_ids } =
+      req.body || {};
     const result = await svc.submitWeeklyPeriod({
       ownerId: u.employee_id,
       companyId: u.company_id,
       monthlyPlanId: Number(monthly_plan_id),
       weekNumber: Number(week_number),
       reviewerId: reviewer_id ?? null,
+      planIds: Array.isArray(plan_ids)
+        ? plan_ids
+            .map((id: unknown) => Number(id))
+            .filter((id: number) => Number.isInteger(id) && id > 0)
+        : undefined,
     });
     res.json({ status: "success", data: result });
   } catch (e) {

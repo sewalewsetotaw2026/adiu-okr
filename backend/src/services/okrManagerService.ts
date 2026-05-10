@@ -167,6 +167,12 @@ export async function getTeamExecutionSummary(
   managerId: string,
   companyId: number,
   cycleId: number,
+  filters?: {
+    monthNumber?: number;
+    weekNumber?: number;
+    completionDay?: string;
+    role?: string;
+  },
 ) {
   const planCountSelect = {
     monthlyPlans: true,
@@ -174,9 +180,47 @@ export async function getTeamExecutionSummary(
     progressUpdates: true,
   } as any;
 
-  const managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
-    directOnly: false,
-  });
+  let managedEmployees: Array<{ id: string; full_name: string }> = [];
+  const roleLower = String(filters?.role || "").toLowerCase();
+  const isOrgRole = [
+    "admin",
+    "super admin",
+    "superadmin",
+    "hr",
+    "ceo",
+  ].includes(roleLower);
+
+  if (isOrgRole) {
+    const employments = await prisma.employment.findMany({
+      where: {
+        company_id: companyId,
+        is_active: true,
+      },
+      include: {
+        employee: {
+          select: { id: true, full_name: true },
+        },
+      },
+    });
+
+    const map = new Map<string, { id: string; full_name: string }>();
+    for (const emp of employments) {
+      if (!map.has(emp.employee_id)) {
+        map.set(
+          emp.employee_id,
+          emp.employee as { id: string; full_name: string },
+        );
+      }
+    }
+
+    managedEmployees = Array.from(map.values()).filter(
+      (employee) => String(employee.id) !== String(managerId),
+    );
+  } else {
+    managedEmployees = await getManagedEmployeeIds(managerId, companyId, {
+      directOnly: false,
+    });
+  }
   const managedIds = managedEmployees.map((e) => e.id);
 
   if (managedIds.length === 0) {
@@ -232,7 +276,12 @@ export async function getTeamExecutionSummary(
                   confidence_level: true,
                   updated_at: true,
                   dailyPlans: {
-                    select: { confidence_level: true, updated_at: true },
+                    select: {
+                      confidence_level: true,
+                      updated_at: true,
+                      completion_day: true,
+                      progress_pct: true,
+                    },
                   },
                 },
               },
@@ -331,38 +380,109 @@ export async function getTeamExecutionSummary(
           ) / empObjectives.length
         : 0;
 
-    // Build monthly_progress map: { [month_number]: avg progress_pct across all KRs' monthly plans }
-    const monthlyMap: Record<number, { sum: number; count: number }> = {};
+    // Build monthly_progress and indirect_monthly_progress maps
+    const monthlyMap: Record<
+      number,
+      { sum: number; count: number; indirectSum: number; indirectCount: number }
+    > = {};
     for (const kr of allKRs) {
       for (const mp of kr.monthlyPlans) {
         const m = Number(mp.month_number);
-        if (!monthlyMap[m]) monthlyMap[m] = { sum: 0, count: 0 };
+        if (!monthlyMap[m])
+          monthlyMap[m] = {
+            sum: 0,
+            count: 0,
+            indirectSum: 0,
+            indirectCount: 0,
+          };
         monthlyMap[m].sum += Number(mp.progress_pct ?? 0);
         monthlyMap[m].count += 1;
+        if (mp.indirect_score !== null && mp.indirect_score !== undefined) {
+          monthlyMap[m].indirectSum += Number(mp.indirect_score);
+          monthlyMap[m].indirectCount += 1;
+        }
       }
     }
     const monthly_progress: Record<number, number> = {};
-    for (const [m, { sum, count }] of Object.entries(monthlyMap)) {
-      monthly_progress[Number(m)] =
-        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+    const indirect_monthly_progress: Record<number, number> = {};
+    for (const [
+      m,
+      { sum, count, indirectSum, indirectCount },
+    ] of Object.entries(monthlyMap)) {
+      const mn = Number(m);
+      monthly_progress[mn] = count > 0 ? Number((sum / count).toFixed(2)) : 0;
+      indirect_monthly_progress[mn] =
+        indirectCount > 0
+          ? Number((indirectSum / indirectCount).toFixed(2))
+          : 0;
     }
 
-    // Build weekly_progress map: { [week_number]: avg progress_pct across all weekly plans }
-    const weeklyMap: Record<number, { sum: number; count: number }> = {};
+    // Build weekly_progress and indirect_weekly_progress maps
+    const weeklyMap: Record<
+      number,
+      { sum: number; count: number; indirectSum: number; indirectCount: number }
+    > = {};
     for (const kr of allKRs) {
       for (const mp of kr.monthlyPlans) {
         for (const wp of mp.weeklyPlans) {
           const w = Number(wp.week_number);
-          if (!weeklyMap[w]) weeklyMap[w] = { sum: 0, count: 0 };
+          if (!weeklyMap[w])
+            weeklyMap[w] = {
+              sum: 0,
+              count: 0,
+              indirectSum: 0,
+              indirectCount: 0,
+            };
           weeklyMap[w].sum += Number(wp.progress_pct ?? 0);
           weeklyMap[w].count += 1;
+          if (wp.indirect_score !== null && wp.indirect_score !== undefined) {
+            weeklyMap[w].indirectSum += Number(wp.indirect_score);
+            weeklyMap[w].indirectCount += 1;
+          }
         }
       }
     }
     const weekly_progress: Record<number, number> = {};
-    for (const [w, { sum, count }] of Object.entries(weeklyMap)) {
-      weekly_progress[Number(w)] =
-        count > 0 ? Number((sum / count).toFixed(2)) : 0;
+    const indirect_weekly_progress: Record<number, number> = {};
+    for (const [
+      w,
+      { sum, count, indirectSum, indirectCount },
+    ] of Object.entries(weeklyMap)) {
+      const wn = Number(w);
+      weekly_progress[wn] = count > 0 ? Number((sum / count).toFixed(2)) : 0;
+      indirect_weekly_progress[wn] =
+        indirectCount > 0
+          ? Number((indirectSum / indirectCount).toFixed(2))
+          : 0;
+    }
+
+    // Build daily_progress map: { [week_number]: { [day]: avg progress_pct across all daily plans } }
+    const dailyMap: Record<
+      number,
+      Record<string, { sum: number; count: number }>
+    > = {};
+    for (const kr of allKRs) {
+      for (const mp of kr.monthlyPlans) {
+        for (const wp of mp.weeklyPlans) {
+          const w = Number(wp.week_number);
+          if (!dailyMap[w]) dailyMap[w] = {};
+          for (const dp of wp.dailyPlans) {
+            const d = dp.completion_day;
+            if (!dailyMap[w][d]) dailyMap[w][d] = { sum: 0, count: 0 };
+            dailyMap[w][d].sum += Number(dp.progress_pct ?? 0);
+            dailyMap[w][d].count += 1;
+          }
+        }
+      }
+    }
+    const daily_progress: Record<number, Record<string, number>> = {};
+    for (const [w, days] of Object.entries(dailyMap)) {
+      const wn = Number(w);
+      daily_progress[wn] = {};
+      for (const [d, { sum, count }] of Object.entries(days)) {
+        daily_progress[wn][d] =
+          count > 0 ? Number((sum / count).toFixed(2)) : 0;
+      }
     }
 
     const empInfo = employmentByEmployeeId.get(employee.id) ?? {
@@ -397,8 +517,10 @@ export async function getTeamExecutionSummary(
       indirect_progress,
       monthly_progress,
       weekly_progress,
-      indirect_monthly_progress: {},
-      indirect_weekly_progress: {},
+      daily_progress,
+      indirect_monthly_progress,
+      indirect_weekly_progress,
+      indirect_daily_progress: {}, // Daily plans don't have indirect_score in schema yet
       progress_updates_count: totalProgressUpdates,
       confidence: confidenceCounts,
       is_blocked:
@@ -1124,12 +1246,14 @@ type MemberPlanningInsight = {
   monthly_plan_count: number;
   weekly_plan_count: number;
   daily_plan_count: number;
+  daily_plan_with_progress_count: number;
   progress_update_count: number;
   has_set_monthly_plan: boolean;
   has_set_weekly_plan: boolean;
   has_set_daily_plan: boolean;
   has_updated_progress: boolean;
   last_progress_at: Date | null;
+  latest_reviewer_note?: string | null;
 };
 
 function normalizeRole(role?: string | null): string {
@@ -1144,6 +1268,9 @@ export async function getPlanningInsights(params: {
   scope: PlanningInsightScope;
   departmentId?: number;
   forceOrganizationView?: boolean;
+  monthNumber?: number;
+  weekNumber?: number;
+  completionDay?: string;
 }) {
   const planCountSelect = {
     monthlyPlans: true,
@@ -1316,13 +1443,38 @@ export async function getPlanningInsights(params: {
             select: planCountSelect,
           },
           monthlyPlans: {
+            where: params.monthNumber
+              ? { month_number: Number(params.monthNumber) }
+              : {},
             select: {
+              id: true,
+              month_number: true,
+              reviewer_id: true,
+              rejection_note: true,
+              submitted_at: true,
+              approved_at: true,
+              published_at: true,
+              updated_at: true,
               weeklyPlans: {
+                where: params.weekNumber
+                  ? { week_number: Number(params.weekNumber) }
+                  : {},
                 select: {
+                  id: true,
+                  week_number: true,
+                  reviewer_id: true,
+                  rejection_note: true,
+                  submitted_at: true,
+                  approved_at: true,
+                  published_at: true,
                   updated_at: true,
                   _count: { select: { dailyPlans: true } },
                   dailyPlans: {
-                    select: { updated_at: true },
+                    select: {
+                      updated_at: true,
+                      completion_day: true,
+                      progress_pct: true,
+                    },
                   },
                 },
               },
@@ -1348,6 +1500,7 @@ export async function getPlanningInsights(params: {
       monthly_plan_count: 0,
       weekly_plan_count: 0,
       daily_plan_count: 0,
+      daily_plan_with_progress_count: 0,
       progress_update_count: 0,
       has_set_monthly_plan: false,
       has_set_weekly_plan: false,
@@ -1373,15 +1526,24 @@ export async function getPlanningInsights(params: {
         (mp: any) => mp.weeklyPlans,
       );
 
-      row.monthly_plan_count += kr._count.monthlyPlans;
+      row.monthly_plan_count += kr.monthlyPlans.length;
       row.weekly_plan_count += allWeeklyPlans.length;
       row.progress_update_count += kr._count.progressUpdates;
-      row.daily_plan_count += allWeeklyPlans.reduce(
-        (sum: number, wp: any) => sum + (wp._count?.dailyPlans || 0),
-        0,
-      );
 
-      if (kr._count.monthlyPlans > 0) row.has_set_monthly_plan = true;
+      const filteredDailyPlans = allWeeklyPlans.flatMap((wp: any) => {
+        return params.completionDay
+          ? wp.dailyPlans.filter(
+              (dp: any) => dp.completion_day === params.completionDay,
+            )
+          : wp.dailyPlans;
+      });
+
+      row.daily_plan_count += filteredDailyPlans.length;
+      row.daily_plan_with_progress_count += filteredDailyPlans.filter(
+        (dp: any) => Number(dp.progress_pct ?? 0) > 0,
+      ).length;
+
+      if (kr.monthlyPlans.length > 0) row.has_set_monthly_plan = true;
       if (allWeeklyPlans.length > 0) row.has_set_weekly_plan = true;
       if (allWeeklyPlans.some((wp: any) => (wp._count?.dailyPlans || 0) > 0)) {
         row.has_set_daily_plan = true;
@@ -1398,10 +1560,21 @@ export async function getPlanningInsights(params: {
       }
 
       for (const wp of allWeeklyPlans) {
+        // capture any reviewer notes from weekly plans
+        if (!row.latest_reviewer_note && wp.rejection_note) {
+          row.latest_reviewer_note = wp.rejection_note || null;
+        }
         for (const dp of wp.dailyPlans) {
           if (!row.last_progress_at || dp.updated_at > row.last_progress_at) {
             row.last_progress_at = dp.updated_at;
           }
+        }
+      }
+
+      // capture reviewer notes from monthly plans if not already set
+      for (const mp of kr.monthlyPlans) {
+        if (!row.latest_reviewer_note && mp.rejection_note) {
+          row.latest_reviewer_note = mp.rejection_note || null;
         }
       }
     }
@@ -1463,6 +1636,7 @@ export async function getPlanningCompliance(params: {
   cycleId: number;
   monthNumber?: number;
   weekNumber?: number;
+  completionDay?: string;
   role?: string;
 }) {
   const insights = await getPlanningInsights({
@@ -1471,7 +1645,10 @@ export async function getPlanningCompliance(params: {
     cycleId: params.cycleId,
     role: params.role,
     scope: "organization",
-    forceOrganizationView: true, // Allow all users to see organization-wide compliance data
+    forceOrganizationView: true,
+    monthNumber: params.monthNumber,
+    weekNumber: params.weekNumber,
+    completionDay: params.completionDay,
   });
 
   const memberRows = insights.members;
@@ -1485,6 +1662,7 @@ export async function getPlanningCompliance(params: {
     department_name: m.department_name,
     is_planned:
       m.objective_status.approved > 0 || m.objective_status.published > 0,
+    reviewer_note: (m as any).latest_reviewer_note || null,
   }));
 
   const monthly = memberRows.map((m) => ({
@@ -1492,6 +1670,7 @@ export async function getPlanningCompliance(params: {
     employee_name: m.employee_name,
     department_name: m.department_name,
     has_month_plan: m.monthly_plan_count > 0,
+    reviewer_note: (m as any).latest_reviewer_note || null,
   }));
 
   const weekly = memberRows.map((m) => ({
@@ -1499,6 +1678,14 @@ export async function getPlanningCompliance(params: {
     employee_name: m.employee_name,
     department_name: m.department_name,
     weekly_plans: m.weekly_plan_count > 0 ? [1] : [], // Frontend checks weekly_plans?.length > 0
+    reviewer_note: (m as any).latest_reviewer_note || null,
+  }));
+
+  const daily = memberRows.map((m) => ({
+    employee_id: m.employee_id,
+    employee_name: m.employee_name,
+    department_name: m.department_name,
+    has_daily_plan: m.daily_plan_count > 0,
   }));
 
   const reporting = memberRows.map((m) => ({
@@ -1507,10 +1694,11 @@ export async function getPlanningCompliance(params: {
     department_name: m.department_name,
     update_count: m.progress_update_count + m.daily_plan_count,
     last_update: m.last_progress_at,
+    status: m.has_updated_progress ? "On Track" : "Off Track",
     breakdown: {
       weekly: m.weekly_plan_count,
       daily_plan_total: m.daily_plan_count,
-      daily_plan_with_progress: m.daily_plan_count,
+      daily_plan_with_progress: m.daily_plan_with_progress_count,
       monthly: m.monthly_plan_count,
       direct: m.progress_update_count,
       indirect: 0,
@@ -1521,7 +1709,7 @@ export async function getPlanningCompliance(params: {
     objectives,
     monthly,
     weekly,
-    daily: [], // Daily not used in the planning tab's source selection
+    daily,
     reporting,
     totals: insights.totals,
     highlights: insights.highlights,

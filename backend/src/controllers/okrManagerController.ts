@@ -20,6 +20,16 @@ export const getTeamExecutionSummary = async (
       req.user!.user_id,
       req.user!.company_id,
       cycleId,
+      {
+        monthNumber: req.query.month_number
+          ? Number(req.query.month_number)
+          : undefined,
+        weekNumber: req.query.week_number
+          ? Number(req.query.week_number)
+          : undefined,
+        completionDay: req.query.completion_day as string,
+        role: req.user!.role,
+      },
     );
     res.status(200).json({ status: "success", data: summary });
   } catch (error) {
@@ -292,6 +302,7 @@ export const getPlanningComplianceReport = async (
       cycleId,
       monthNumber,
       weekNumber,
+      completionDay: req.query.completion_day as string,
     });
 
     res.status(200).json({ status: "success", data: report });
@@ -328,7 +339,8 @@ export const getPlanningInsights = async (
     ) {
       return res.status(403).json({
         status: "fail",
-        message: "Only organization-level roles can access organization insights.",
+        message:
+          "Only organization-level roles can access organization insights.",
       });
     }
 
@@ -385,6 +397,7 @@ export const getPlanningCompliance = async (
       cycleId: Number(cycle_id),
       monthNumber: month_number ? Number(month_number) : undefined,
       weekNumber: week_number ? Number(week_number) : undefined,
+      completionDay: req.query.completion_day as string,
       role: req.user!.role,
     });
 
@@ -397,4 +410,3 @@ export const getPlanningCompliance = async (
     next(error);
   }
 };
-

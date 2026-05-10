@@ -59,7 +59,8 @@ export async function submitForApproval(params: {
   entityId?: number;
   type: OkrSubmissionType;
 }) {
-  const { companyId, cycleId, submitterId, departmentId, entityId, type } = params;
+  const { companyId, cycleId, submitterId, departmentId, entityId, type } =
+    params;
 
   // 1. Identify items to include in this submission
   let items: Array<{ id: number; entityType: string }> = [];
@@ -75,7 +76,10 @@ export async function submitForApproval(params: {
       if (objective && objective.status_code === "draft") {
         items = [
           { id: objective.id, entityType: "EMPLOYEE_OBJECTIVE" },
-          ...objective.keyResults.map((kr) => ({ id: kr.id, entityType: "EMPLOYEE_KR" })),
+          ...objective.keyResults.map((kr) => ({
+            id: kr.id,
+            entityType: "EMPLOYEE_KR",
+          })),
         ];
       }
     } else if (departmentId) {
@@ -86,7 +90,9 @@ export async function submitForApproval(params: {
           cycle_id: cycleId,
           user: {
             employee: {
-              employments: { some: { department_id: departmentId, is_active: true } },
+              employments: {
+                some: { department_id: departmentId, is_active: true },
+              },
             },
           },
         },
@@ -128,7 +134,10 @@ export async function submitForApproval(params: {
           },
         },
       });
-      items = plans.map((p) => ({ id: p.id, entityType: "EMPLOYEE_MONTH_PLAN" }));
+      items = plans.map((p) => ({
+        id: p.id,
+        entityType: "EMPLOYEE_MONTH_PLAN",
+      }));
     } else {
       const plans = await prisma.employeeMonthPlan.findMany({
         where: {
@@ -137,7 +146,10 @@ export async function submitForApproval(params: {
           owner_id: submitterId,
         },
       });
-      items = plans.map((p) => ({ id: p.id, entityType: "EMPLOYEE_MONTH_PLAN" }));
+      items = plans.map((p) => ({
+        id: p.id,
+        entityType: "EMPLOYEE_MONTH_PLAN",
+      }));
     }
   } else if (type === "WEEKLY_PLAN") {
     const planFilter: any = { plan_status: "DRAFT" };
@@ -175,7 +187,9 @@ export async function submitForApproval(params: {
   }
 
   if (items.length === 0) {
-    throw new Error("Cannot submit: No draft items found to submit for approval.");
+    throw new Error(
+      "Cannot submit: No draft items found to submit for approval.",
+    );
   }
 
   // 1b. Weight validation for quarterly planning submissions
@@ -195,7 +209,10 @@ export async function submitForApproval(params: {
 
   const directManager = await resolveDirectManager(submitterId, companyId);
   if (directManager) {
-    reviewerUserId = await resolveReviewerUserId(directManager.managerId, companyId);
+    reviewerUserId = await resolveReviewerUserId(
+      directManager.managerId,
+      companyId,
+    );
     reviewerName = directManager.managerName;
   }
 
@@ -324,9 +341,8 @@ export async function submitForApproval(params: {
 
   // 5. Send SSE notification only to direct reviewer (single-level flow)
   try {
-    const { notifySubmissionCreated } = await import(
-      "src/services/okrNotificationService"
-    );
+    const { notifySubmissionCreated } =
+      await import("src/services/okrNotificationService");
 
     // Resolve submitter name
     const submitter = await prisma.employee.findFirst({
@@ -391,11 +407,18 @@ export async function addReviewComment(params: {
   let submissionId: number | null = null;
   let submitterUserId: string | null = null;
 
+  // Resolve author name to store on plan for easy retrieval
+  const author = await prisma.employee.findUnique({
+    where: { id: authorId },
+    select: { full_name: true },
+  });
+  const reviewerName = author?.full_name || "Reviewer";
+
   switch (entityType) {
     case "EMPLOYEE_OBJECTIVE": {
       const obj = await prisma.employeeObjective.update({
         where: { id: entityId },
-        data: updateData,
+        data: { ...updateData, rejection_note: comment, reviewer_id: authorId },
         select: { submission_id: true, user_id: true },
       });
       submissionId = obj.submission_id;
@@ -405,7 +428,7 @@ export async function addReviewComment(params: {
     case "EMPLOYEE_KR": {
       const kr = await prisma.employeeKeyResult.update({
         where: { id: entityId },
-        data: updateData,
+        data: { ...updateData, rejection_note: comment, reviewer_id: authorId },
         select: {
           submission_id: true,
           employeeObjective: { select: { user_id: true } },
@@ -418,7 +441,11 @@ export async function addReviewComment(params: {
     case "EMPLOYEE_MONTH_PLAN": {
       const plan = await prisma.employeeMonthPlan.update({
         where: { id: entityId },
-        data: { plan_status: "DRAFT" },
+        data: {
+          plan_status: "DRAFT",
+          rejection_note: comment,
+          reviewer_id: authorId,
+        },
         select: {
           submission_id: true,
           employeeKr: {
@@ -433,7 +460,11 @@ export async function addReviewComment(params: {
     case "WEEKLY_PLAN": {
       const plan = await prisma.weeklyPlan.update({
         where: { id: entityId },
-        data: { plan_status: "DRAFT" },
+        data: {
+          plan_status: "DRAFT",
+          rejection_note: comment,
+          reviewer_id: authorId,
+        },
         select: {
           submission_id: true,
           monthPlan: {
@@ -494,9 +525,8 @@ export async function addReviewComment(params: {
 
   // 3. Send SSE notification to submitter
   try {
-    const { notifyFeedbackGiven } = await import(
-      "src/services/okrNotificationService"
-    );
+    const { notifyFeedbackGiven } =
+      await import("src/services/okrNotificationService");
 
     const reviewer = await prisma.employee.findFirst({
       where: { id: authorId, company_id: companyId },
@@ -518,6 +548,218 @@ export async function addReviewComment(params: {
   }
 
   return okrComment;
+}
+
+// ─── Batch Add Review Comments (Defer status cascade until all feedbacks sent) ───
+
+export async function addBatchReviewComments(params: {
+  companyId: number;
+  authorId: string;
+  feedbacks: Array<{
+    entity_type: OkrEntityType;
+    entity_id: number;
+    comment: string;
+  }>;
+}) {
+  const { companyId, authorId, feedbacks } = params;
+
+  if (!feedbacks || feedbacks.length === 0) {
+    throw new Error("At least one feedback is required.");
+  }
+
+  // Get author name once
+  const author = await prisma.employee.findUnique({
+    where: { id: authorId },
+    select: { full_name: true },
+  });
+  const reviewerName = author?.full_name || "Reviewer";
+
+  // 1. Create all comments and update items in a transaction
+  const submissionIds = new Set<number>();
+  const submitterIds = new Set<string>();
+
+  for (const feedback of feedbacks) {
+    const { entity_type, entity_id, comment } = feedback;
+
+    // Create the comment
+    await prisma.okrComment.create({
+      data: {
+        company_id: companyId,
+        entity_type: entity_type,
+        entity_id: entity_id,
+        author_id: authorId,
+        content: comment,
+        ...(entity_type === "EMPLOYEE_OBJECTIVE"
+          ? { employeeObjectiveId: entity_id }
+          : {}),
+        ...(entity_type === "EMPLOYEE_KR"
+          ? { employeeKeyResultId: entity_id }
+          : {}),
+        ...(entity_type === "EMPLOYEE_MONTH_PLAN"
+          ? { employeeMonthPlanId: entity_id }
+          : {}),
+        ...(entity_type === "WEEKLY_PLAN" ? { weeklyPlanId: entity_id } : {}),
+      },
+    });
+
+    // Update the item to DRAFT without cascading yet
+    let submissionId: number | null = null;
+    let submitterUserId: string | null = null;
+
+    switch (entity_type) {
+      case "EMPLOYEE_OBJECTIVE": {
+        const obj = await prisma.employeeObjective.update({
+          where: { id: entity_id },
+          data: {
+            status_code: "draft",
+            rejection_note: comment,
+            reviewer_id: authorId,
+          },
+          select: { submission_id: true, user_id: true },
+        });
+        submissionId = obj.submission_id;
+        submitterUserId = obj.user_id;
+        break;
+      }
+      case "EMPLOYEE_KR": {
+        const kr = await prisma.employeeKeyResult.update({
+          where: { id: entity_id },
+          data: {
+            status_code: "draft",
+            rejection_note: comment,
+            reviewer_id: authorId,
+          },
+          select: {
+            submission_id: true,
+            employeeObjective: { select: { user_id: true } },
+          },
+        });
+        submissionId = kr.submission_id;
+        submitterUserId = kr.employeeObjective.user_id;
+        break;
+      }
+      case "EMPLOYEE_MONTH_PLAN": {
+        const plan = await prisma.employeeMonthPlan.update({
+          where: { id: entity_id },
+          data: {
+            plan_status: "DRAFT",
+            rejection_note: comment,
+            reviewer_id: authorId,
+          },
+          select: {
+            submission_id: true,
+            employeeKr: {
+              select: { employeeObjective: { select: { user_id: true } } },
+            },
+          },
+        });
+        submissionId = plan.submission_id;
+        submitterUserId = plan.employeeKr.employeeObjective.user_id;
+        break;
+      }
+      case "WEEKLY_PLAN": {
+        const plan = await prisma.weeklyPlan.update({
+          where: { id: entity_id },
+          data: {
+            plan_status: "DRAFT",
+            rejection_note: comment,
+            reviewer_id: authorId,
+          },
+          select: {
+            submission_id: true,
+            monthPlan: {
+              select: {
+                employeeKr: {
+                  select: { employeeObjective: { select: { user_id: true } } },
+                },
+              },
+            },
+          },
+        });
+        submissionId = plan.submission_id;
+        submitterUserId = plan.monthPlan.employeeKr.employeeObjective.user_id;
+        break;
+      }
+    }
+
+    if (submissionId) submissionIds.add(submissionId);
+    if (submitterUserId) submitterIds.add(submitterUserId);
+  }
+
+  // 2. CASCADE: Revert the ENTIRE submission to draft (once for all feedbacks)
+  if (submissionIds.size > 0) {
+    const submissionIdArray = Array.from(submissionIds);
+
+    // Update all related submissions
+    await prisma.$transaction(
+      submissionIdArray.flatMap((submissionId) => [
+        prisma.okrSubmission.update({
+          where: { id: submissionId },
+          data: { status: "draft" },
+        }),
+        prisma.employeeObjective.updateMany({
+          where: { submission_id: submissionId },
+          data: { status_code: "draft" },
+        }),
+        prisma.employeeKeyResult.updateMany({
+          where: { submission_id: submissionId },
+          data: { status_code: "draft" },
+        }),
+        prisma.employeeMonthPlan.updateMany({
+          where: { submission_id: submissionId },
+          data: { plan_status: "DRAFT" },
+        }),
+        prisma.weeklyPlan.updateMany({
+          where: { submission_id: submissionId },
+          data: { plan_status: "DRAFT" },
+        }),
+      ]),
+    );
+  }
+
+  // 3. Log activity
+  await logActivity({
+    companyId,
+    entityType: "SUBMISSION",
+    entityId: Array.from(submissionIds)[0] || 0,
+    actorId: authorId,
+    action: "batch_review_comments_added",
+    description: `Batch feedback (${feedbacks.length} items) added by reviewer. Entire plan reverted to draft.`,
+    metadata: {
+      feedback_count: feedbacks.length,
+      submission_ids: Array.from(submissionIds),
+    },
+  });
+
+  // 4. Send SSE notifications to all submitters
+  try {
+    const { notifyFeedbackGiven } =
+      await import("src/services/okrNotificationService");
+
+    for (const submitterUserId of submitterIds) {
+      await notifyFeedbackGiven({
+        companyId,
+        entityType: "SUBMISSION",
+        entityId: Array.from(submissionIds)[0] || 0,
+        reviewerName,
+        comment: `Feedback provided on ${feedbacks.length} item${feedbacks.length > 1 ? "s" : ""}. Please review and resubmit.`,
+        submitterEmployeeId: submitterUserId,
+      }).catch((e) => {
+        console.warn(
+          "[OkrApproval] Failed to send batch feedback notification:",
+          e,
+        );
+      });
+    }
+  } catch (e) {
+    console.warn("[OkrApproval] Failed to import notification service:", e);
+  }
+
+  return {
+    status: "success",
+    feedbacks_processed: feedbacks.length,
+    submissions_updated: submissionIds.size,
+  };
 }
 
 // ─── Approve Submission (Full Plan) ────────────────────────────────────────────
@@ -610,7 +852,10 @@ export async function approveSubmission(
         data: updateData,
       });
     const planStatus = shouldAutoPublish ? "PUBLISHED" : "APPROVED";
-    const planUpdateData: any = { plan_status: planStatus, approved_at: new Date() };
+    const planUpdateData: any = {
+      plan_status: planStatus,
+      approved_at: new Date(),
+    };
     if (shouldAutoPublish) planUpdateData.published_at = new Date();
     for (const plan of submission.employeeMonthPlans)
       await tx.employeeMonthPlan.update({
@@ -707,8 +952,16 @@ export async function rejectSubmission(params: {
       data: { status: "rejected", reviewer_id: reviewerId },
     });
 
-    const objKrRevert = { status_code: "draft" };
-    const planRevert = { plan_status: "DRAFT" as const };
+    const objKrRevert = {
+      status_code: "draft",
+      rejection_note: reason,
+      reviewer_id: reviewerId,
+    };
+    const planRevert = {
+      plan_status: "DRAFT" as const,
+      rejection_note: reason,
+      reviewer_id: reviewerId,
+    };
 
     for (const obj of submission.employeeObjectives)
       await tx.employeeObjective.update({
@@ -756,9 +1009,8 @@ export async function rejectSubmission(params: {
 
   // Send SSE notification
   try {
-    const { notifySubmissionRejected } = await import(
-      "src/services/okrNotificationService"
-    );
+    const { notifySubmissionRejected } =
+      await import("src/services/okrNotificationService");
     const reviewer = await prisma.employee.findFirst({
       where: { id: reviewerId, company_id: companyId },
       select: { full_name: true },
@@ -791,7 +1043,9 @@ export async function getSubmissionDetail(
         include: {
           keyResults: {
             include: {
-              metricDefinition: { select: { name: true, unit_of_measure: true } },
+              metricDefinition: {
+                select: { name: true, unit_of_measure: true },
+              },
               comments: {
                 orderBy: { created_at: "desc" },
                 take: 5,
@@ -972,7 +1226,9 @@ export async function listAdminSubmissions(params: {
   const nameMap = new Map(employees.map((e) => [e.id, e.full_name]));
 
   // Fetch department names
-  const deptIds = [...new Set(submissions.map((s) => s.department_id).filter(Boolean))];
+  const deptIds = [
+    ...new Set(submissions.map((s) => s.department_id).filter(Boolean)),
+  ];
   const depts = await prisma.department.findMany({
     where: { id: { in: deptIds as number[] } },
     select: { id: true, name: true },
@@ -981,9 +1237,14 @@ export async function listAdminSubmissions(params: {
 
   return submissions.map((s) => ({
     ...s,
-    type: s.type === "QUARTERLY_PLANNING" && s.department_id ? "DEPARTMENT_OBJECTIVE" : s.type,
+    type:
+      s.type === "QUARTERLY_PLANNING" && s.department_id
+        ? "DEPARTMENT_OBJECTIVE"
+        : s.type,
     submitter_name: nameMap.get(s.submitter_id) || "Unknown",
-    submitter_department: s.department_id ? deptMap.get(s.department_id) || null : null,
+    submitter_department: s.department_id
+      ? deptMap.get(s.department_id) || null
+      : null,
     item_count:
       s.employeeObjectives.length +
       s.employeeKeyResults.length +
@@ -1004,7 +1265,15 @@ export async function listManagerSubmissions(params: {
   search?: string;
   departmentId?: number;
 }) {
-  const { reviewerUserId, companyId, cycleId, status, type, search, departmentId } = params;
+  const {
+    reviewerUserId,
+    companyId,
+    cycleId,
+    status,
+    type,
+    search,
+    departmentId,
+  } = params;
 
   const where: any = {
     company_id: companyId,
@@ -1169,13 +1438,12 @@ export async function getEntityComments(params: {
   });
 }
 
-
 export async function getSubmissionComments(params: {
   companyId: number;
   submissionId: number;
 }) {
   const { companyId, submissionId } = params;
-  
+
   const submission = await prisma.okrSubmission.findFirst({
     where: { id: submissionId, company_id: companyId },
     include: {
@@ -1183,15 +1451,15 @@ export async function getSubmissionComments(params: {
       employeeKeyResults: { select: { id: true } },
       employeeMonthPlans: { select: { id: true } },
       weeklyPlans: { select: { id: true } },
-    }
+    },
   });
 
   if (!submission) return [];
 
-  const objectiveIds = submission.employeeObjectives.map(o => o.id);
-  const krIds = submission.employeeKeyResults.map(k => k.id);
-  const monthIds = submission.employeeMonthPlans.map(m => m.id);
-  const weekIds = submission.weeklyPlans.map(w => w.id);
+  const objectiveIds = submission.employeeObjectives.map((o) => o.id);
+  const krIds = submission.employeeKeyResults.map((k) => k.id);
+  const monthIds = submission.employeeMonthPlans.map((m) => m.id);
+  const weekIds = submission.weeklyPlans.map((w) => w.id);
 
   return prisma.okrComment.findMany({
     where: {
@@ -1201,7 +1469,7 @@ export async function getSubmissionComments(params: {
         { entity_type: "EMPLOYEE_KR", entity_id: { in: krIds } },
         { entity_type: "EMPLOYEE_MONTH_PLAN", entity_id: { in: monthIds } },
         { entity_type: "WEEKLY_PLAN", entity_id: { in: weekIds } },
-      ]
+      ],
     },
     orderBy: { created_at: "desc" },
   });

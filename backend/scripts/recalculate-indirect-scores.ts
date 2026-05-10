@@ -1,9 +1,9 @@
-import { PrismaClient, Decimal } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 // Helper: check if value is a valid Decimal
-function hasDecimal(value: Decimal | null | undefined): value is Decimal {
+function hasDecimal(value: any): value is Prisma.Decimal {
   return value !== null && value !== undefined;
 }
 
@@ -45,8 +45,8 @@ async function main() {
 
       // Calculate indirect_score for monthly plan
       // indirect_score = kr.indirect_score * (weight_pct / 100)
-      const weightDecimal = new Decimal(weightPct);
-      const planIndirectScore = krIndirectScore.mul(weightDecimal.div(100));
+      const weightDecimal = new Prisma.Decimal(weightPct);
+      const planIndirectScore = (krIndirectScore as Prisma.Decimal).mul(weightDecimal.div(100));
 
       await prisma.employeeMonthPlan.update({
         where: { id: plan.id },
@@ -68,8 +68,8 @@ async function main() {
         if (weightPct === null || weightPct === undefined) continue;
 
         // Calculate indirect_score for weekly plan
-        const weightDecimal = new Decimal(weightPct);
-        const planIndirectScore = krIndirectScore.mul(weightDecimal.div(100));
+        const weightDecimal = new Prisma.Decimal(weightPct);
+        const planIndirectScore = (krIndirectScore as Prisma.Decimal).mul(weightDecimal.div(100));
 
         await prisma.weeklyPlan.update({
           where: { id: plan.id },

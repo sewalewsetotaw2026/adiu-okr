@@ -15,9 +15,9 @@ export const createChangeRequest = async (req: Request, res: Response) => {
 
     const cr = await crService.createChangeRequest({
       companyId,
-      cycleId,
+      cycleId: Number(cycleId),
       entityType,
-      entityId,
+      entityId: Number(entityId),
       requesterId,
       newValues,
       changeSummary,

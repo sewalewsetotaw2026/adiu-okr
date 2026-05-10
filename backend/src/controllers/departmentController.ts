@@ -207,9 +207,17 @@ export const getDepartmentById = async (
       });
     }
 
+    const parsedId = Number(id);
+    if (isNaN(parsedId)) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid department ID",
+      });
+    }
+
     const department = await prisma.department.findFirst({
       where: {
-        id: Number(id),
+        id: parsedId,
         company_id: companyId,
       },
       select: {
@@ -272,8 +280,16 @@ export const updateDepartment = async (
       });
     }
 
+    const parsedId = Number(id);
+    if (isNaN(parsedId)) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid department ID",
+      });
+    }
+
     const existing = await prisma.department.findFirst({
-      where: { id: Number(id), company_id: companyId },
+      where: { id: parsedId, company_id: companyId },
     });
 
     if (!existing) {
@@ -328,8 +344,16 @@ export const deleteDepartment = async (
       });
     }
 
+    const parsedId = Number(id);
+    if (isNaN(parsedId)) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid department ID",
+      });
+    }
+
     const existing = await prisma.department.findFirst({
-      where: { id: Number(id), company_id: companyId },
+      where: { id: parsedId, company_id: companyId },
     });
 
     if (!existing) {
@@ -562,9 +586,17 @@ export const assignDepartmentHead = async (
       });
     }
 
+    const parsedId = Number(departmentId);
+    if (isNaN(parsedId)) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Invalid department ID",
+      });
+    }
+
     // 1. Verify Department exists in company
     const department = await prisma.department.findFirst({
-      where: { id: Number(departmentId), company_id: companyId },
+      where: { id: parsedId, company_id: companyId },
     });
 
     if (!department) {
@@ -597,7 +629,7 @@ export const assignDepartmentHead = async (
     }
 
     const isMember = user.employee.employments.some(
-      (emp) => emp.department_id === Number(departmentId),
+      (emp) => emp.department_id === parsedId,
     );
 
     if (!isMember) {
@@ -609,7 +641,7 @@ export const assignDepartmentHead = async (
 
     // 3. Verify User is not already heading another department
     const existingHeading = await prisma.department.findFirst({
-      where: { head_user_id: Number(head_user_id), id: { not: Number(departmentId) } },
+      where: { head_user_id: Number(head_user_id), id: { not: parsedId } },
     });
 
     if (existingHeading) {
@@ -635,7 +667,7 @@ export const assignDepartmentHead = async (
 
       // b. Update Department Head
       const dept = await tx.department.update({
-        where: { id: Number(departmentId) },
+        where: { id: parsedId },
         data: { head_user_id: Number(head_user_id) },
         include: {
           head: {
@@ -654,7 +686,7 @@ export const assignDepartmentHead = async (
       if (dept.head?.employee?.id) {
         await tx.employment.updateMany({
           where: {
-            department_id: Number(departmentId),
+            department_id: parsedId,
             company_id: companyId,
             is_active: true,
             employee_id: { not: dept.head.employee.id },
@@ -672,7 +704,7 @@ export const assignDepartmentHead = async (
 
         const deptKrAssignments = await tx.companyKrDepartment.findMany({
           where: {
-            department_id: Number(departmentId),
+            department_id: parsedId,
             company_id: companyId,
           },
           select: {

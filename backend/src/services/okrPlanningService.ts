@@ -10,7 +10,7 @@
  * to prevent over-decomposition.
  */
 
-import { Prisma } from "@prisma/client";
+import { OkrPlanStatus, Prisma } from "@prisma/client";
 import { prisma } from "src/app";
 import { recalculateRollUp } from "src/services/okrRollupService";
 
@@ -125,7 +125,7 @@ async function ensureKrPublishedAndOwned(krId: number, ownerId: string) {
     !PLANNABLE_STATUSES.includes(kr.employeeObjective.status_code)
   ) {
     throw new Error(
-      `Parent quarterly OKR must be published before planning (KR: "${kr.status_code}", Objective: "${kr.employeeObjective.status_code}"). Please publish your OKR first.`,
+      "You cannot create this plan because the parent Objective or Key Result has not yet been approved.",
     );
   }
   return kr;
@@ -155,42 +155,125 @@ export async function getManagerMonthlyPlans(
   employeeId: string,
   monthNumber: number,
   cycleId: number,
+  krId?: number,
 ) {
   const managerId = await getManagerId(employeeId);
-  if (!managerId) return [];
+  if (!managerId) {
+    console.log(
+      `[getManagerMonthlyPlans] No manager found for employee ${employeeId}`,
+    );
+    return [];
+  }
 
-  return prisma.employeeMonthPlan.findMany({
-    where: {
-      owner_id: managerId,
-      month_number: monthNumber,
-      cycle_id: cycleId,
-      plan_status: "PUBLISHED",
-    },
+  const where: any = {
+    owner_id: managerId,
+    month_number: monthNumber,
+    cycle_id: cycleId,
+    plan_status: "PUBLISHED",
+  };
+
+  if (krId) {
+    const kr = await prisma.employeeKeyResult.findUnique({
+      where: { id: krId },
+      include: {
+        employeeObjective: {
+          include: { contributor: true },
+        },
+      },
+    });
+
+    const obj = kr?.employeeObjective;
+    if (!obj) {
+      console.log(
+        `[getManagerMonthlyPlans] KR ${krId} or its objective not found`,
+      );
+      return [];
+    }
+
+    if (obj.chosen_parent_employee_kr_id) {
+      where.employee_kr_id = obj.chosen_parent_employee_kr_id;
+    } else if (obj.chosen_parent_kr_id) {
+      where.employeeKr = {
+        employeeObjective: {
+          chosen_parent_kr_id: obj.chosen_parent_kr_id,
+        },
+      };
+    } else if (obj.contributor?.employee_kr_id) {
+      where.employee_kr_id = obj.contributor.employee_kr_id;
+    } else if (obj.contributor?.company_kr_id) {
+      where.employeeKr = {
+        employeeObjective: {
+          chosen_parent_kr_id: obj.contributor.company_kr_id,
+        },
+      };
+    } else {
+      console.log(
+        `[getManagerMonthlyPlans] No explicit alignment for obj ${obj.id}.`,
+      );
+      return [];
+    }
+  }
+
+  const plans = await prisma.employeeMonthPlan.findMany({
+    where,
     orderBy: { created_at: "asc" },
   });
+
+  return plans;
 }
 
 export async function getManagerWeeklyPlans(
   employeeId: string,
-  employeeMonthlyPlanId: number,
+  monthlyPlanId: number,
   weekNumber: number,
 ) {
   const managerId = await getManagerId(employeeId);
   if (!managerId) return [];
 
-  // const weeklyPlan = await prisma.weeklyPlan.findUnique({
-  //   where: { id: employeeMonthlyPlanId, week_number: weekNumber, plan_status: "PUBLISHED" },
-  //   orderBy: {created_at: "asc"}
+  // Find the plan provided
+  const plan = await prisma.employeeMonthPlan.findUnique({
+    where: { id: monthlyPlanId },
+    select: {
+      owner_id: true,
+      aligned_manager_plan_id: true,
+      month_number: true,
+      cycle_id: true,
+    },
+  });
 
-  // });
+  if (!plan) return [];
 
-  // // if (!employeeMonthPlan?.aligned_manager_plan_id) return [];
+  let targetManagerMonthPlanIds: number[] = [];
+
+  if (plan.owner_id === employeeId) {
+    // Input is the employee's plan
+    if (plan.aligned_manager_plan_id) {
+      targetManagerMonthPlanIds = [plan.aligned_manager_plan_id];
+    } else {
+      // Discovery mode: find manager's published/approved monthly plans for the same period
+      const managerPlans = await prisma.employeeMonthPlan.findMany({
+        where: {
+          owner_id: managerId,
+          month_number: plan.month_number,
+          cycle_id: plan.cycle_id,
+          plan_status: { in: ["PUBLISHED", "APPROVED"] },
+        },
+        select: { id: true },
+      });
+      targetManagerMonthPlanIds = managerPlans.map((p) => p.id);
+    }
+  } else {
+    // Input is already a manager's monthly plan ID (or someone else's)
+    targetManagerMonthPlanIds = [monthlyPlanId];
+  }
+
+  if (targetManagerMonthPlanIds.length === 0) return [];
 
   return prisma.weeklyPlan.findMany({
     where: {
-      employee_month_plan_id: employeeMonthlyPlanId,
+      employee_month_plan_id: { in: targetManagerMonthPlanIds },
       week_number: weekNumber,
-      plan_status: "PUBLISHED",
+      plan_status: { in: ["PUBLISHED", "APPROVED"] },
     },
     orderBy: { created_at: "asc" },
   });
@@ -238,7 +321,9 @@ async function ensureWeeklyPublishedAndOwned(
     throw new Error("Not authorized — weekly plan does not belong to you.");
   }
   if (weekly.plan_status !== "PUBLISHED") {
-    throw new Error("Parent weekly plan is not yet published.");
+    throw new Error(
+      "You cannot create this plan because the parent Objective or Key Result has not yet been approved.",
+    );
   }
   return weekly;
 }
@@ -269,15 +354,39 @@ export async function listMonthlyPlansForKr(krId: number, ownerId: string) {
           unit_of_measure: true,
         },
       },
+      comments: {
+        orderBy: { created_at: "desc" },
+      },
     },
   });
   const { allocatedPct, remainingPct } = await getAvailableWeight(
     krId,
     "KEY_RESULT",
   );
+  const reviewerIds = plans
+    .map((p) => p.reviewer_id)
+    .filter(Boolean) as string[];
+  const reviewers = await prisma.employee.findMany({
+    where: { id: { in: reviewerIds } },
+    select: { id: true, full_name: true },
+  });
+  const reviewerMap = new Map(reviewers.map((r) => [r.id, r.full_name]));
+
+  // Get all comment authors
+  const authorIds = new Set<string>();
+  plans.forEach((p) => {
+    p.comments.forEach((c) => authorIds.add(c.author_id));
+  });
+  const authors = await prisma.employee.findMany({
+    where: { id: { in: Array.from(authorIds) } },
+    select: { id: true, full_name: true },
+  });
+  const authorMap = new Map(authors.map((a) => [a.id, a.full_name]));
+
   return {
     plans: plans.map((p) => ({
       ...p,
+      reviewer_name: p.reviewer_id ? reviewerMap.get(p.reviewer_id) : null,
       parent_key_result: p.employeeKr
         ? {
             id: p.employeeKr.id,
@@ -285,6 +394,10 @@ export async function listMonthlyPlansForKr(krId: number, ownerId: string) {
             unit: p.employeeKr.unit_of_measure,
           }
         : null,
+      comments: p.comments.map((c) => ({
+        ...c,
+        author_name: authorMap.get(c.author_id) || "Reviewer",
+      })),
       weight_remaining_pct: remainingPct,
     })),
     allocated_pct: allocatedPct,
@@ -379,12 +492,36 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
     aligned_manager_plan_id,
   } = input;
 
-  if (!Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 3) {
-    throw new Error("month_number must be between 1 and 3.");
+  if (!Number.isInteger(monthNumber) || monthNumber < 1 || monthNumber > 4) {
+    throw new Error("month_number must be between 1 and 4.");
   }
   if (!title?.trim()) throw new Error("title is required.");
 
-  const kr = await ensureKrPublishedAndOwned(krId, ownerId);
+  const kr = await prisma.employeeKeyResult.findUnique({
+    where: { id: krId },
+    include: { employeeObjective: true },
+  });
+
+  if (!kr) throw new Error("Key result not found.");
+  if (kr.employeeObjective.user_id !== ownerId) {
+    throw new Error("Not authorized — key result does not belong to you.");
+  }
+
+  if (aligned_manager_plan_id) {
+    const managerPlan = await prisma.employeeMonthPlan.findUnique({
+      where: { id: Number(aligned_manager_plan_id) },
+    });
+    if (!managerPlan) throw new Error("Aligned manager plan not found.");
+
+    if (
+      managerPlan.employee_kr_id !==
+      kr.employeeObjective.chosen_parent_employee_kr_id
+    ) {
+      throw new Error(
+        "Cannot align with a manager plan from a different Key Result.",
+      );
+    }
+  }
 
   const krProgress = decToNumber(kr.final_score as any);
   if (krProgress >= 100) {
@@ -466,7 +603,12 @@ export async function createMonthlyPlan(input: CreateMonthlyPlanInput) {
   });
 
   // Trigger upward roll-up so the KR reflects the newly added planned weight.
-  await recalculateRollUp("employee_key_result", krId).catch(() => {});
+  await recalculateRollUp("employee_key_result", krId).catch((err: any) => {
+    console.error(
+      `[RollupEngine] Failed employee_key_result ${krId}:`,
+      err.message,
+    );
+  });
 
   return created;
 }
@@ -480,6 +622,7 @@ export async function updateMonthlyPlan(
     metric_definition_id?: number | null;
     start_value?: number;
     target_value?: number;
+    current_value?: number;
     contribute_to_score?: boolean;
     contribute_to_value?: boolean;
   },
@@ -516,6 +659,9 @@ export async function updateMonthlyPlan(
       ...(patch.target_value !== undefined
         ? { target_value: dec(patch.target_value) }
         : {}),
+      ...(patch.current_value !== undefined
+        ? { current_value: dec(patch.current_value) }
+        : {}),
       ...(patch.contribute_to_score !== undefined
         ? { contribute_to_score: patch.contribute_to_score }
         : {}),
@@ -526,12 +672,18 @@ export async function updateMonthlyPlan(
   });
   if (
     patch.target_value !== undefined ||
+    patch.current_value !== undefined ||
     patch.start_value !== undefined ||
     patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
-    await recalculateRollUp("employee_key_result", plan.employee_kr_id).catch(
-      () => {},
+    await recalculateRollUp("monthly_plan", id).catch(
+      (err: any) => {
+        console.error(
+          `[RollupEngine] Failed monthly_plan ${id}:`,
+          err.message,
+        );
+      },
     );
   }
   return updated;
@@ -565,7 +717,12 @@ export async function deleteMonthlyPlan(id: number, ownerId: string) {
   });
 
   await recalculateRollUp("employee_key_result", plan.employee_kr_id).catch(
-    () => {},
+    (err: any) => {
+      console.error(
+        `[RollupEngine] Failed employee_key_result ${plan.employee_kr_id}:`,
+        err.message,
+      );
+    },
   );
   return { ok: true };
 }
@@ -580,13 +737,57 @@ export async function listWeeklyPlansForMonthly(
   const plans = await prisma.weeklyPlan.findMany({
     where: { employee_month_plan_id: monthlyId },
     orderBy: [{ week_number: "asc" }, { id: "asc" }],
+    include: {
+      monthPlan: {
+        include: {
+          employeeKr: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
+      },
+      metricDefinition: true,
+      comments: {
+        orderBy: { created_at: "desc" },
+      },
+    },
   });
   const { allocatedPct, remainingPct } = await getAvailableWeight(
     monthlyId,
     "MONTHLY_PLAN",
   );
+  const reviewerIds = plans
+    .map((p) => p.reviewer_id)
+    .filter(Boolean) as string[];
+  const reviewers = await prisma.employee.findMany({
+    where: { id: { in: reviewerIds } },
+    select: { id: true, full_name: true },
+  });
+  const reviewerMap = new Map(reviewers.map((r) => [r.id, r.full_name]));
+
+  // Get all comment authors
+  const authorIds = new Set<string>();
+  plans.forEach((p) => {
+    p.comments.forEach((c) => authorIds.add(c.author_id));
+  });
+  const authors = await prisma.employee.findMany({
+    where: { id: { in: Array.from(authorIds) } },
+    select: { id: true, full_name: true },
+  });
+  const authorMap = new Map(authors.map((a) => [a.id, a.full_name]));
+
   return {
-    plans: plans.map((p) => ({ ...p, weight_remaining_pct: remainingPct })),
+    plans: plans.map((p) => ({
+      ...p,
+      reviewer_name: p.reviewer_id ? reviewerMap.get(p.reviewer_id) : null,
+      comments: p.comments.map((c) => ({
+        ...c,
+        author_name: authorMap.get(c.author_id) || "Reviewer",
+      })),
+      weight_remaining_pct: remainingPct,
+    })),
     allocated_pct: allocatedPct,
     weight_remaining_pct: remainingPct,
   };
@@ -670,9 +871,63 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
   }
   if (!title?.trim()) throw new Error("title is required.");
 
-  const monthly = await ensureMonthlyPublishedAndOwned(monthlyPlanId, ownerId);
+  const monthPlan = await prisma.employeeMonthPlan.findUnique({
+    where: { id: monthlyPlanId },
+    include: {
+      employeeKr: {
+        include: {
+          employeeObjective: true,
+        },
+      },
+    },
+  });
 
-  const monthlyProgress = decToNumber(monthly.progress_pct as any);
+  if (!monthPlan) throw new Error("Monthly plan not found.");
+  if (monthPlan.owner_id !== ownerId) {
+    throw new Error("Not authorized — monthly plan does not belong to you.");
+  }
+
+  const APPROVED_STATUSES = ["PUBLISHED", "APPROVED", "ACTIVE"];
+  if (!APPROVED_STATUSES.includes(monthPlan.plan_status)) {
+    throw new Error(
+      "You cannot create this plan because the parent Objective or Key Result has not yet been approved.",
+    );
+  }
+
+  if (aligned_manager_plan_id) {
+    const managerWeeklyPlan = await prisma.weeklyPlan.findUnique({
+      where: { id: Number(aligned_manager_plan_id) },
+    });
+    if (!managerWeeklyPlan) {
+      throw new Error("Aligned manager weekly plan not found.");
+    }
+
+    if (
+      monthPlan.aligned_manager_plan_id &&
+      managerWeeklyPlan.employee_month_plan_id !==
+        monthPlan.aligned_manager_plan_id
+    ) {
+      throw new Error(
+        "Cannot align with a manager weekly plan from a different monthly plan.",
+      );
+    }
+
+    // Safety check: ensure it matches the KR hierarchy even if monthly wasn't aligned
+    const managerMonthPlan = await prisma.employeeMonthPlan.findUnique({
+      where: { id: managerWeeklyPlan.employee_month_plan_id },
+    });
+
+    if (
+      managerMonthPlan?.employee_kr_id !==
+      monthPlan.employeeKr.employeeObjective.chosen_parent_employee_kr_id
+    ) {
+      throw new Error(
+        "Cannot align with a manager weekly plan from a different Key Result.",
+      );
+    }
+  }
+
+  const monthlyProgress = decToNumber(monthPlan.progress_pct as any);
   if (monthlyProgress >= 100) {
     throw new Error(
       "Parent monthly plan is already 100% complete — nothing left to plan.",
@@ -711,8 +966,8 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
     resolvedWeight = weightPct;
   }
 
-  const monthlyStart = start_value ?? decToNumber(monthly.start_value as any);
-  const autoMonthlyTarget = decToNumber(monthly.target_value as any);
+  const monthlyStart = start_value ?? decToNumber(monthPlan.start_value as any);
+  const autoMonthlyTarget = decToNumber(monthPlan.target_value as any);
   const range = autoMonthlyTarget - monthlyStart;
   const autoWeeklyTarget = monthlyStart + (range * resolvedWeight) / 100;
   const finalTarget = target_value ?? autoWeeklyTarget;
@@ -734,7 +989,7 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
         plan_status: "DRAFT",
         created_by: ownerId,
         metric_definition_id:
-          metric_definition_id ?? monthly.metric_definition_id,
+          metric_definition_id ?? monthPlan.metric_definition_id,
         contribute_to_score: contribute_to_score ?? true,
         contribute_to_value: contribute_to_value ?? true,
         aligned_manager_plan_id: aligned_manager_plan_id ?? null,
@@ -754,7 +1009,12 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
     return plan;
   });
 
-  await recalculateRollUp("monthly_plan", monthlyPlanId).catch(() => {});
+  await recalculateRollUp("monthly_plan", monthlyPlanId).catch((err: any) => {
+    console.error(
+      `[RollupEngine] Failed monthly_plan ${monthlyPlanId}:`,
+      err.message,
+    );
+  });
   return created;
 }
 
@@ -766,6 +1026,7 @@ export async function updateWeeklyPlan(
     metric_definition_id?: number | null;
     start_value?: number;
     target_value?: number;
+    current_value?: number;
     contribute_to_score?: boolean;
     contribute_to_value?: boolean;
     aligned_manager_plan_id?: number | null;
@@ -788,6 +1049,9 @@ export async function updateWeeklyPlan(
       ...(patch.target_value !== undefined
         ? { target_value: dec(patch.target_value) }
         : {}),
+      ...(patch.current_value !== undefined
+        ? { current_value: dec(patch.current_value) }
+        : {}),
       ...(patch.contribute_to_score !== undefined
         ? { contribute_to_score: patch.contribute_to_score }
         : {}),
@@ -801,12 +1065,18 @@ export async function updateWeeklyPlan(
   });
   if (
     patch.target_value !== undefined ||
+    patch.current_value !== undefined ||
     patch.start_value !== undefined ||
     patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
-    await recalculateRollUp("monthly_plan", plan.employee_month_plan_id).catch(
-      () => {},
+    await recalculateRollUp("weekly_plan", id).catch(
+      (err: any) => {
+        console.error(
+          `[RollupEngine] Failed weekly_plan ${id}:`,
+          err.message,
+        );
+      },
     );
   }
   return updated;
@@ -838,7 +1108,12 @@ export async function deleteWeeklyPlan(id: number, ownerId: string) {
   });
 
   await recalculateRollUp("monthly_plan", plan.employee_month_plan_id).catch(
-    () => {},
+    (err: any) => {
+      console.error(
+        `[RollupEngine] Failed monthly_plan ${plan.employee_month_plan_id}:`,
+        err.message,
+      );
+    },
   );
   return { ok: true };
 }
@@ -852,6 +1127,7 @@ export async function listDailyPlansForWeekly(
   await ensureWeeklyOwned(weeklyId, ownerId);
   return prisma.dailyPlan.findMany({
     where: { weekly_plan_id: weeklyId },
+    include: { metricDefinition: true },
     orderBy: [{ completion_day: "asc" }, { id: "asc" }],
   });
 }
@@ -898,6 +1174,9 @@ export async function createDailyPlan(input: CreateDailyPlanInput) {
       contribute_to_value: contributeToValue,
       created_by: ownerId,
     },
+  });
+  await recalculateRollUp("weekly_plan", weeklyPlanId).catch((err: any) => {
+    console.error(`[RollupEngine] Failed weekly_plan ${weeklyPlanId}:`, err.message);
   });
   return created;
 }
@@ -983,8 +1262,35 @@ export async function updateDailyPlan(
     patch.contribute_to_score !== undefined ||
     patch.contribute_to_value !== undefined
   ) {
+    console.log(
+      `\n[RollupDebug] ============ updateDailyPlan TRIGGER ============`,
+    );
+    console.log(`[RollupDebug] Daily plan id=${id} was updated:`);
+    console.log(`  - patch: ${JSON.stringify(patch)}`);
+    console.log(`  - computed progress_pct: ${progress}`);
+    console.log(`  - weekly_plan_id: ${existing.weekly_plan_id}`);
+    console.log(
+      `  - existing contribute_to_score: ${existing.contribute_to_score}, contribute_to_value: ${existing.contribute_to_value}`,
+    );
+    console.log(
+      `[RollupDebug] Triggering recalculateRollUp("weekly_plan", ${existing.weekly_plan_id})...`,
+    );
+
     await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-      () => {},
+      (err: any) => {
+        console.error(
+          `[RollupDebug] FAILED recalculateRollUp for weekly_plan ${existing.weekly_plan_id}:`,
+          err.message,
+        );
+        console.error(err.stack);
+      },
+    );
+    console.log(
+      `[RollupDebug] ============ updateDailyPlan TRIGGER COMPLETE ============\n`,
+    );
+  } else {
+    console.log(
+      `[RollupDebug] updateDailyPlan(${id}) \u2014 no value/target/contribute changes, skipping rollup`,
     );
   }
   return updated;
@@ -1015,7 +1321,12 @@ export async function updateDailyPlanStatus(
   // Always trigger rollup on status change so parents stay in sync
   if (existing.weekly_plan_id) {
     await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-      () => {},
+      (err: any) => {
+        console.error(
+          `[RollupEngine] Failed weekly_plan ${existing.weekly_plan_id}:`,
+          err.message,
+        );
+      },
     );
   }
   return updated;
@@ -1028,7 +1339,12 @@ export async function deleteDailyPlan(id: number, ownerId: string) {
     throw new Error("Not authorized — daily plan does not belong to you.");
   await prisma.dailyPlan.delete({ where: { id } });
   await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
-    () => {},
+    (err: any) => {
+      console.error(
+        `[RollupEngine] Failed weekly_plan ${existing.weekly_plan_id}:`,
+        err.message,
+      );
+    },
   );
   return { ok: true };
 }
@@ -1041,8 +1357,10 @@ export async function submitMonthlyPeriod(opts: {
   cycleId: number;
   monthNumber: number;
   reviewerId?: string | null;
+  planIds?: number[];
 }) {
-  const { ownerId, companyId, cycleId, monthNumber, reviewerId } = opts;
+  const { ownerId, companyId, cycleId, monthNumber, reviewerId, planIds } =
+    opts;
 
   // If reviewerId not provided, resolve it (direct manager → admin fallback)
   let finalReviewerId = reviewerId;
@@ -1098,14 +1416,19 @@ export async function submitMonthlyPeriod(opts: {
     }
   }
 
+  const baseWhere = {
+    owner_id: ownerId,
+    company_id: companyId,
+    cycle_id: cycleId,
+    month_number: monthNumber,
+    plan_status: { in: [OkrPlanStatus.DRAFT, OkrPlanStatus.REJECTED] },
+  };
+
   const plans = await prisma.employeeMonthPlan.findMany({
-    where: {
-      owner_id: ownerId,
-      company_id: companyId,
-      cycle_id: cycleId,
-      month_number: monthNumber,
-      plan_status: { in: ["DRAFT", "REJECTED"] },
-    },
+    where:
+      planIds && planIds.length > 0
+        ? { ...baseWhere, id: { in: planIds } }
+        : baseWhere,
   });
   if (plans.length === 0) {
     throw new Error(
@@ -1211,8 +1534,10 @@ export async function submitWeeklyPeriod(opts: {
   monthlyPlanId: number;
   weekNumber: number;
   reviewerId?: string | null;
+  planIds?: number[];
 }) {
-  const { ownerId, companyId, monthlyPlanId, weekNumber, reviewerId } = opts;
+  const { ownerId, companyId, monthlyPlanId, weekNumber, reviewerId, planIds } =
+    opts;
 
   // If reviewerId not provided, resolve it (direct manager → admin fallback)
   let finalReviewerId = reviewerId;
@@ -1268,14 +1593,19 @@ export async function submitWeeklyPeriod(opts: {
     }
   }
 
+  const baseWhere = {
+    owner_id: ownerId,
+    company_id: companyId,
+    employee_month_plan_id: monthlyPlanId,
+    week_number: weekNumber,
+    plan_status: { in: [OkrPlanStatus.DRAFT, OkrPlanStatus.REJECTED] },
+  };
+
   const plans = await prisma.weeklyPlan.findMany({
-    where: {
-      owner_id: ownerId,
-      company_id: companyId,
-      employee_month_plan_id: monthlyPlanId,
-      week_number: weekNumber,
-      plan_status: { in: ["DRAFT", "REJECTED"] },
-    },
+    where:
+      planIds && planIds.length > 0
+        ? { ...baseWhere, id: { in: planIds } }
+        : baseWhere,
     include: { monthPlan: { select: { cycle_id: true } } },
   });
   if (plans.length === 0) {
@@ -1283,7 +1613,7 @@ export async function submitWeeklyPeriod(opts: {
   }
 
   // Get cycle_id from the first plan's monthPlan
-  const cycleId = plans[0].monthPlan?.cycle_id;
+  const cycleId = (plans[0] as any).monthPlan?.cycle_id;
   if (!cycleId) {
     throw new Error(`Cannot submit weekly plan: month plan has no cycle_id.`);
   }

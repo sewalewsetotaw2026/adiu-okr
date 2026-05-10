@@ -15,6 +15,8 @@ interface AssignContributorInput {
   | "DIRECTOR"
   | "DEPARTMENT_HEAD";
   isRequiredForCompletion?: boolean;
+  requiredTarget?: number;
+  weightPercent?: number;
   assignedBy: string;
 }
 
@@ -119,6 +121,8 @@ export async function assignContributor(input: AssignContributorInput) {
       user_id: employeeId,
       role_type: input.roleType,
       is_required_for_completion: input.isRequiredForCompletion ?? true,
+      required_target: input.requiredTarget,
+      weight_percent: input.weightPercent,
       status_code: "active",
       assigned_by: input.assignedBy,
     },

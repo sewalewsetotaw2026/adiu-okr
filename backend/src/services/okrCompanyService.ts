@@ -178,10 +178,14 @@ export async function getObjectiveDetail(id: number, companyId: number) {
               user_id: true,
               status_code: true,
               role_type: true,
+              required_target: true,
+              weight_percent: true,
               user: {
                 select: {
                   employee: {
                     select: {
+                      id: true,
+                      full_name: true,
                       employments: {
                         where: { is_active: true },
                         select: {
@@ -193,6 +197,15 @@ export async function getObjectiveDetail(id: number, companyId: number) {
                   },
                 },
               },
+            },
+          },
+          departments: {
+            select: {
+              id: true,
+              department_id: true,
+              required_target: true,
+              weight_percent: true,
+              department: { select: { id: true, name: true } },
             },
           },
         },
@@ -387,6 +400,8 @@ interface CreateKRInput {
   isMandatory?: boolean;
   assignUserIds?: string[];
   assignDepartmentIds?: number[];
+  assignUsers?: { employeeId: string; requiredTarget?: number; weightPercent?: number }[];
+  assignDepartments?: { departmentId: number; requiredTarget?: number; weightPercent?: number }[];
   createdBy: string;
 }
 
@@ -433,19 +448,74 @@ export async function createKeyResult(input: CreateKRInput) {
     await checkWeightLimit(input.objectiveId, "COMPANY", input.weightPercent);
   }
 
-  // Prepare normalized user IDs if provided
+  // Prepare normalized user IDs if provided (legacy flat arrays)
   const directUserIds = (
     Array.isArray(input.assignUserIds) ? input.assignUserIds : []
   ).filter((id) => typeof id === "string" && id.trim() !== "");
 
   const departmentHeadIds = Array.isArray(input.assignDepartmentIds)
     ? await resolveDepartmentHeadEmployeeIds(
-        input.companyId,
-        input.assignDepartmentIds,
-      )
+      input.companyId,
+      input.assignDepartmentIds,
+    )
     : [];
 
-  const userIds = Array.from(new Set([...directUserIds, ...departmentHeadIds]));
+  const legacyUserIds = Array.from(new Set([...directUserIds, ...departmentHeadIds]));
+
+  // Prepare structured assignments
+  const structuredDepartments = (Array.isArray(input.assignDepartments) ? input.assignDepartments : [])
+    .map(d => ({
+      ...d,
+      departmentId: Number(d.departmentId),
+      requiredTarget: d.requiredTarget !== undefined ? Number(d.requiredTarget) : undefined,
+      weightPercent: d.weightPercent !== undefined ? Number(d.weightPercent) : undefined
+    }))
+    .filter(d => !isNaN(d.departmentId) && d.departmentId > 0);
+
+  const structuredUsers = (Array.isArray(input.assignUsers) ? input.assignUsers : [])
+    .map(u => ({
+      ...u,
+      requiredTarget: u.requiredTarget !== undefined ? Number(u.requiredTarget) : undefined,
+      weightPercent: u.weightPercent !== undefined ? Number(u.weightPercent) : undefined
+    }));
+
+  // Combine legacy department array into structured if needed
+  if (Array.isArray(input.assignDepartmentIds)) {
+    for (const rawId of input.assignDepartmentIds) {
+      const deptId = Number(rawId);
+      if (Number.isFinite(deptId) && deptId > 0 && !structuredDepartments.some((d) => d.departmentId === deptId)) {
+        structuredDepartments.push({ departmentId: deptId, requiredTarget: undefined, weightPercent: undefined });
+      }
+    }
+  }
+
+  // Combine legacy user array into structured if needed
+  if (legacyUserIds.length > 0) {
+    for (const userId of legacyUserIds) {
+      if (!structuredUsers.some((u) => u.employeeId === userId)) {
+        structuredUsers.push({ employeeId: userId, requiredTarget: undefined, weightPercent: undefined });
+      }
+    }
+  }
+
+  // Resolve department heads from structured departments and add to structured users
+  if (structuredDepartments.length > 0) {
+    const deptIds = structuredDepartments.map((d) => d.departmentId);
+    const heads = await resolveDepartmentHeadEmployeeIds(input.companyId, deptIds);
+    for (const headId of heads) {
+      if (!structuredUsers.some((u) => u.employeeId === headId)) {
+        // Find the department this head belongs to, to pass target/weight (approximation)
+        // For accurate target/weight, we pass them as is. If a department is assigned a target, 
+        // the head inherits it if they are the direct owner.
+        const dept = structuredDepartments.find((d) => heads.includes(headId)); // simplified
+        structuredUsers.push({
+          employeeId: headId,
+          requiredTarget: dept?.requiredTarget,
+          weightPercent: dept?.weightPercent
+        });
+      }
+    }
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const kr = await tx.companyKeyResult.create({
@@ -467,28 +537,24 @@ export async function createKeyResult(input: CreateKRInput) {
       include: { metricDefinition: true },
     });
 
-    if (Array.isArray(input.assignDepartmentIds)) {
-      const validDepartmentIds = input.assignDepartmentIds
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id) && id > 0);
-
-      if (validDepartmentIds.length > 0) {
-        await tx.companyKrDepartment.createMany({
-          data: validDepartmentIds.map((deptId) => ({
-            company_id: input.companyId,
-            company_kr_id: kr.id,
-            department_id: deptId,
-          })),
-          skipDuplicates: true,
-        });
-      }
+    if (structuredDepartments.length > 0) {
+      await tx.companyKrDepartment.createMany({
+        data: structuredDepartments.map((dept) => ({
+          company_id: input.companyId,
+          company_kr_id: kr.id,
+          department_id: dept.departmentId,
+          required_target: dept.requiredTarget,
+          weight_percent: dept.weightPercent,
+        })),
+        skipDuplicates: true,
+      });
     }
 
     const assignmentResults = [];
-    for (const userId of userIds) {
+    for (const user of structuredUsers) {
       // Basic validation: ensures user exists
       const userExists = await tx.appUser.findFirst({
-        where: { employee_id: userId, company_id: input.companyId },
+        where: { employee_id: user.employeeId, company_id: input.companyId },
       });
       if (!userExists) continue;
 
@@ -496,10 +562,12 @@ export async function createKeyResult(input: CreateKRInput) {
         data: {
           company_id: input.companyId,
           company_kr_id: kr.id,
-          user_id: userId,
+          user_id: user.employeeId,
           role_type: "DEPARTMENT_HEAD",
           status_code: "assigned",
           assigned_by: input.createdBy,
+          required_target: user.requiredTarget,
+          weight_percent: user.weightPercent,
         },
       });
       assignmentResults.push(contributor);
@@ -514,7 +582,7 @@ export async function createKeyResult(input: CreateKRInput) {
     entityId: result.kr.id,
     actorId: input.createdBy,
     action: "kr_created",
-    description: `Company KR "${result.kr.title}" created under objective #${input.objectiveId}${userIds.length > 0 ? ` and assigned to ${userIds.length} users` : ""}`,
+    description: `Company KR "${result.kr.title}" created under objective #${input.objectiveId}${structuredUsers.length > 0 ? ` and assigned to ${structuredUsers.length} users` : ""}`,
   });
 
   return result;
@@ -526,6 +594,8 @@ export async function updateKeyResult(
   input: Partial<CreateKRInput> & {
     assignUserIds?: string[];
     assignDepartmentIds?: number[];
+    assignUsers?: { employeeId: string; requiredTarget?: number; weightPercent?: number }[];
+    assignDepartments?: { departmentId: number; requiredTarget?: number; weightPercent?: number }[];
   },
 ) {
   const kr = await prisma.companyKeyResult.findFirst({
@@ -581,64 +651,125 @@ export async function updateKeyResult(
       },
     });
 
-    if (input.assignUserIds || input.assignDepartmentIds) {
+    if (input.assignUserIds || input.assignDepartmentIds || input.assignUsers || input.assignDepartments) {
       const directUserIds = (
         Array.isArray(input.assignUserIds) ? input.assignUserIds : []
       ).filter((id) => typeof id === "string" && id.trim() !== "");
 
       const departmentHeadIds = Array.isArray(input.assignDepartmentIds)
         ? await resolveDepartmentHeadEmployeeIds(
-            companyId,
-            input.assignDepartmentIds,
-          )
+          companyId,
+          input.assignDepartmentIds,
+        )
         : [];
 
-      const userIds = Array.from(
+      const legacyUserIds = Array.from(
         new Set([...directUserIds, ...departmentHeadIds]),
       );
 
-      // Sync CompanyKrDepartment
+      const structuredDepartments = (Array.isArray(input.assignDepartments) ? input.assignDepartments : [])
+        .map(d => ({
+          ...d,
+          departmentId: Number(d.departmentId),
+          requiredTarget: d.requiredTarget !== undefined ? Number(d.requiredTarget) : undefined,
+          weightPercent: d.weightPercent !== undefined ? Number(d.weightPercent) : undefined
+        }))
+        .filter(d => !isNaN(d.departmentId) && d.departmentId > 0);
+
+      const structuredUsers = (Array.isArray(input.assignUsers) ? input.assignUsers : [])
+        .map(u => ({
+          ...u,
+          requiredTarget: u.requiredTarget !== undefined ? Number(u.requiredTarget) : undefined,
+          weightPercent: u.weightPercent !== undefined ? Number(u.weightPercent) : undefined
+        }));
+
       if (Array.isArray(input.assignDepartmentIds)) {
-        const validDeptIds = input.assignDepartmentIds
-          .map((id) => Number(id))
-          .filter((id) => Number.isFinite(id) && id > 0);
+        for (const rawId of input.assignDepartmentIds) {
+          const deptId = Number(rawId);
+          if (Number.isFinite(deptId) && deptId > 0 && !structuredDepartments.some((d) => d.departmentId === deptId)) {
+            structuredDepartments.push({ departmentId: deptId, requiredTarget: undefined, weightPercent: undefined });
+          }
+        }
+      }
 
-        // Remove old department assignments
-        await tx.companyKrDepartment.deleteMany({
-          where: {
-            company_kr_id: id,
-            department_id: { notIn: validDeptIds },
-          },
+      if (legacyUserIds.length > 0) {
+        for (const userId of legacyUserIds) {
+          if (!structuredUsers.some((u) => u.employeeId === userId)) {
+            structuredUsers.push({ employeeId: userId, requiredTarget: undefined, weightPercent: undefined });
+          }
+        }
+      }
+
+      if (structuredDepartments.length > 0) {
+        const deptIds = structuredDepartments.map((d) => d.departmentId);
+        const heads = await resolveDepartmentHeadEmployeeIds(companyId, deptIds);
+        for (const headId of heads) {
+          if (!structuredUsers.some((u) => u.employeeId === headId)) {
+            const dept = structuredDepartments.find((d) => heads.includes(headId));
+            structuredUsers.push({
+              employeeId: headId,
+              requiredTarget: dept?.requiredTarget,
+              weightPercent: dept?.weightPercent
+            });
+          }
+        }
+      }
+
+      // Sync CompanyKrDepartment
+      const validDeptIds = structuredDepartments.map(d => d.departmentId);
+
+      // Remove old department assignments
+      await tx.companyKrDepartment.deleteMany({
+        where: {
+          company_kr_id: id,
+          department_id: { notIn: validDeptIds.length > 0 ? validDeptIds : [0] },
+        },
+      });
+
+      // Add/Update new department assignments
+      for (const dept of structuredDepartments) {
+        const existing = await tx.companyKrDepartment.findFirst({
+          where: { company_kr_id: id, department_id: dept.departmentId }
         });
-
-        // Add new department assignments
-        if (validDeptIds.length > 0) {
-          await tx.companyKrDepartment.createMany({
-            data: validDeptIds.map((deptId) => ({
+        if (existing) {
+          await tx.companyKrDepartment.update({
+            where: { id: existing.id },
+            data: {
+              required_target: dept.requiredTarget,
+              weight_percent: dept.weightPercent,
+            }
+          });
+        } else {
+          await tx.companyKrDepartment.create({
+            data: {
               company_id: companyId,
               company_kr_id: id,
-              department_id: deptId,
-            })),
-            skipDuplicates: true,
+              department_id: dept.departmentId,
+              required_target: dept.requiredTarget,
+              weight_percent: dept.weightPercent,
+            }
           });
         }
       }
+
+      // Sync user assignments
+      const finalUserIds = structuredUsers.map(u => u.employeeId);
 
       // Remove old user assignments
       await tx.krContributor.deleteMany({
         where: {
           company_kr_id: id,
-          user_id: { notIn: userIds },
+          user_id: { notIn: finalUserIds.length > 0 ? finalUserIds : [""] },
           role_type: "DEPARTMENT_HEAD",
         },
       });
 
-      // Add new user assignments
-      for (const userId of userIds) {
+      // Add/Update new user assignments
+      for (const user of structuredUsers) {
         const existing = await tx.krContributor.findFirst({
           where: {
             company_kr_id: id,
-            user_id: userId,
+            user_id: user.employeeId,
             role_type: "DEPARTMENT_HEAD",
           },
         });
@@ -648,11 +779,21 @@ export async function updateKeyResult(
             data: {
               company_id: companyId,
               company_kr_id: id,
-              user_id: userId,
+              user_id: user.employeeId,
               role_type: "DEPARTMENT_HEAD",
               status_code: "assigned",
               assigned_by: currentKr.created_by,
+              required_target: user.requiredTarget,
+              weight_percent: user.weightPercent,
             },
+          });
+        } else {
+          await tx.krContributor.update({
+            where: { id: existing.id },
+            data: {
+              required_target: user.requiredTarget,
+              weight_percent: user.weightPercent,
+            }
           });
         }
       }
@@ -698,6 +839,27 @@ export async function getKeyResultDetail(id: number, companyId: number) {
           user_id: true,
           status_code: true,
           role_type: true,
+          required_target: true,
+          weight_percent: true,
+          user: {
+            select: {
+              employee: {
+                select: {
+                  id: true,
+                  full_name: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      departments: {
+        select: {
+          id: true,
+          department_id: true,
+          required_target: true,
+          weight_percent: true,
+          department: { select: { id: true, name: true } },
         },
       },
     },

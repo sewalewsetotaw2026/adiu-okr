@@ -24,6 +24,12 @@ router.get(
 );
 
 router.get(
+  "/tree",
+  verifyAccessControl(Resources.DEPARTMENT, ActionTypes.READ_OWN),
+  getDepartmentTree,
+);
+
+router.get(
   "/",
   verifyAccessControl(Resources.DEPARTMENT, ActionTypes.READ_ANY),
   getDepartments,
@@ -35,11 +41,7 @@ router.get(
   getDepartmentById,
 );
 
-router.get(
-  "/tree",
-  verifyAccessControl(Resources.DEPARTMENT, ActionTypes.READ_OWN),
-  getDepartmentTree,
-);
+
 
 router.post(
   "/",

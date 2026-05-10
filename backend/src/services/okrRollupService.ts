@@ -156,22 +156,16 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
       metricDefinition: true,
       progressUpdates: { orderBy: { created_at: "desc" }, take: 1 },
       monthlyPlans: {
+        where: { OR: [{ contribute_to_score: true }, { contribute_to_value: true }] },
+        orderBy: { month_number: "asc" },
         include: {
           weeklyPlans: {
-            include: {
-              metricDefinition: true,
-              dailyPlans: {
-                include: { metricDefinition: true },
-                orderBy: { created_at: "asc" },
-              },
-            },
-            orderBy: { week_number: "asc" },
-          },
-        },
-        orderBy: { month_number: "asc" },
+            include: { dailyPlans: true }
+          }
+        }
       },
       subtasks: {
-        include: { metricDefinition: true },
+        where: { OR: [{ contributes_to_parent_score: true }, { contributes_to_parent_value: true }] },
         orderBy: { sequence_order: "asc" },
       },
     },
@@ -180,561 +174,138 @@ async function computeEmployeeKRScore(employeeKrId: number, tx: any = prisma) {
 
   const metric = kr.metricDefinition;
   if (!metric) throw new Error("Metric definition not found for KR.");
-  const latestProgress = kr.progressUpdates[0];
+  const isValueBased = isValueBasedProgressMetric(metric);
 
-  // ── VALUE-BASED PROGRESS SHORTCUT ──
-  // When the metric uses value-based progress, bypass score aggregation
-  // and compute progress purely from current_value / target_value.
-  if (isValueBasedProgressMetric(metric)) {
-    const krTargetValue = toDecimal(kr.target_value) ?? new Decimal(0);
+  let finalScore = new Decimal(0);
+  let finalValue = new Decimal(0);
+  let indirectScore = new Decimal(0);
+  let indirectValue = new Decimal(0);
 
+  const monthlyPlans = kr.monthlyPlans ?? [];
+  const subtasks = kr.subtasks ?? [];
+
+  if (isValueBased) {
+    // ── VALUE-BASED PROGRESS SHORTCUT ──
     // Sum current_value from all child plans (monthly → weekly → daily)
     let totalCurrentValue = new Decimal(0);
-    const monthlyPlans = kr.monthlyPlans ?? [];
 
     for (const monthPlan of monthlyPlans) {
-      let monthValue = new Decimal(0);
-      const weeks = monthPlan.weeklyPlans ?? [];
+      if (!monthPlan.contribute_to_value) continue;
+      totalCurrentValue = totalCurrentValue.add(
+        toDecimal(monthPlan.current_value) ?? new Decimal(0)
+      );
+    }
 
-      if (weeks.length > 0) {
-        for (const week of weeks) {
-          const dailies = week.dailyPlans ?? [];
-          if (dailies.length > 0) {
-            let weekValue = new Decimal(0);
-            for (const daily of dailies) {
-              weekValue = weekValue.add(
-                toDecimal(daily.current_value) ?? new Decimal(0),
-              );
-            }
-            // Update weekly plan with summed daily values
-            const weekTarget = toDecimal(week.target_value) ?? new Decimal(0);
-            const weekProgress = weekTarget.gt(0)
-              ? clampPercent(weekValue.div(weekTarget).mul(100))
-              : new Decimal(0);
-            await tx.weeklyPlan.update({
-              where: { id: week.id },
-              data: { current_value: weekValue, progress_pct: weekProgress },
-            });
-            monthValue = monthValue.add(weekValue);
-          } else {
-            monthValue = monthValue.add(
-              toDecimal(week.current_value) ?? new Decimal(0),
-            );
-          }
-        }
-      } else {
-        monthValue = toDecimal(monthPlan.current_value) ?? new Decimal(0);
+    // Sum values from subtasks as well (from HEAD)
+    for (const s of subtasks ?? []) {
+      if (s.contribute_to_value) {
+        totalCurrentValue = totalCurrentValue.add(decOrZero(s.current_value));
       }
-
-      // Update monthly plan with summed weekly values
-      const monthTarget = toDecimal(monthPlan.target_value) ?? new Decimal(0);
-      const monthProgress = monthTarget.gt(0)
-        ? clampPercent(monthValue.div(monthTarget).mul(100))
-        : new Decimal(0);
-      await tx.employeeMonthPlan.update({
-        where: { id: monthPlan.id },
-        data: { current_value: monthValue, progress_pct: monthProgress },
-      });
-      totalCurrentValue = totalCurrentValue.add(monthValue);
     }
 
-    // If no monthly plans, fall back to latest progress update
-    if (monthlyPlans.length === 0 && latestProgress?.current_value) {
-      totalCurrentValue = new Decimal(latestProgress.current_value);
+    // Fallback to latest progress update if no monthly plans or subtasks exist
+    if (monthlyPlans.length === 0 && subtasks.length === 0 && kr.progressUpdates[0]?.current_value) {
+      totalCurrentValue = new Decimal(kr.progressUpdates[0].current_value);
     }
 
-    const score = krTargetValue.gt(0)
-      ? clampPercent(totalCurrentValue.div(krTargetValue).mul(100))
+    finalValue = totalCurrentValue;
+    const target = decOrZero(kr.target_value);
+    const start = decOrZero(kr.start_value);
+    finalScore = target.sub(start).gt(0)
+      ? clampPercent(finalValue.sub(start).div(target.sub(start)).mul(100))
       : new Decimal(0);
-
-    const confidenceLevel = await calculateConfidenceLevel(
-      kr.company_id,
-      score,
-    );
 
     await tx.employeeKeyResult.update({
       where: { id: employeeKrId },
       data: {
-        final_score: score,
-        final_value: totalCurrentValue,
+        final_score: finalScore,
+        final_value: finalValue,
         indirect_score: new Decimal(0),
         indirect_value: new Decimal(0),
       },
     });
 
     return {
-      score,
-      value: totalCurrentValue,
+      score: finalScore,
+      value: finalValue,
       indirectScore: new Decimal(0),
       indirectValue: new Decimal(0),
       isFinancial: metric.is_financial,
       supportsWeightedScore: metric.supports_weighted_score,
       supportsValueRollup: metric.supports_value_rollup,
     };
-  }
-  // ── END VALUE-BASED PROGRESS SHORTCUT ──
-
-  let score: Decimal | null = null;
-  let value: Decimal | null = null;
-  let indirectScore: Decimal | null = null;
-  let indirectValue: Decimal | null = null;
-
-  // 1) Weekly score/value from daily plans where available
-  const monthlyPlans = kr.monthlyPlans ?? [];
-  const weeklyAggregates = monthlyPlans.flatMap((monthPlan: any) =>
-    (monthPlan.weeklyPlans ?? []).map((week: any) => {
-      const base = computeNodeScoreValue(week, week.metricDefinition ?? metric);
-
-      const directDailyScores: Decimal[] = [];
-      const directDailyValues: Decimal[] = [];
-      const indirectDailyScores: Decimal[] = [];
-      const indirectDailyValues: Decimal[] = [];
-
-      for (const dailyPlan of week.dailyPlans ?? []) {
-        const m = computeNodeScoreValue(
-          dailyPlan,
-          dailyPlan.metricDefinition ?? week.metricDefinition ?? metric,
-        );
-
-        const contributesScore = contributesToParentScore(dailyPlan);
-        if (contributesScore && hasDecimal(m.score)) {
-          directDailyScores.push(m.score);
-        }
-        if (!contributesScore && hasDecimal(m.score)) {
-          indirectDailyScores.push(m.score);
-        }
-
-        const contributesValue = contributesToParentValue(dailyPlan);
-        if (contributesValue && hasDecimal(m.value)) {
-          directDailyValues.push(m.value);
-        }
-        if (!contributesValue && hasDecimal(m.value)) {
-          indirectDailyValues.push(m.value);
-        }
-      }
-
-      return {
-        ...week,
-        monthPlanId: monthPlan.id,
-        employee_month_plan_id: monthPlan.id,
-        aggregateScore:
-          (week.dailyPlans ?? []).length > 0
-            ? weightedAvgOrSimpleAvg(
-                (week.dailyPlans ?? []).map((m: any) => {
-                  const results = computeNodeScoreValue(
-                    m,
-                    m.metricDefinition ?? week.metricDefinition ?? metric,
-                  );
-                  return {
-                    score: contributesToParentScore(m) ? results.score : null,
-                    weight: getWeightPercent(m),
-                  };
-                }),
-              )
-            : base.score,
-        aggregateValue:
-          directDailyValues.length > 0
-            ? directDailyValues.reduce(
-                (sum: Decimal, v: Decimal) => sum.add(v),
-                new Decimal(0),
-              )
-            : base.value,
-        indirectScore: avgOrNull(indirectDailyScores),
-        indirectValue: sumOrNull(indirectDailyValues),
-      };
-    }),
-  );
-
-  // 2) Monthly score/value from weekly (if linked) or own monthly measurement
-  const monthlyAggregates = monthlyPlans.map((monthPlan: any) => {
-    const base = computeNodeScoreValue(monthPlan, metric);
-    const linkedWeeks = weeklyAggregates.filter(
-      (w: any) => w.employee_month_plan_id === monthPlan.id,
-    );
-
-    const weekScores = linkedWeeks
-      .filter(
-        (w: any) => contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-      )
-      .map((w: any) => w.aggregateScore as Decimal);
-
-    const weekValues = linkedWeeks
-      .filter(
-        (w: any) => contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-      )
-      .map((w: any) => w.aggregateValue as Decimal);
-
-    const weekIndirectScores = [
-      ...linkedWeeks
-        .filter(
-          (w: any) =>
-            !contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-        )
-        .map((w: any) => w.aggregateScore as Decimal),
-      ...linkedWeeks
-        .filter((w: any) => hasDecimal(w.indirectScore))
-        .map((w: any) => w.indirectScore as Decimal),
-    ];
-
-    const weekIndirectValues = [
-      ...linkedWeeks
-        .filter(
-          (w: any) =>
-            !contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-        )
-        .map((w: any) => w.aggregateValue as Decimal),
-      ...linkedWeeks
-        .filter((w: any) => hasDecimal(w.indirectValue))
-        .map((w: any) => w.indirectValue as Decimal),
-    ];
-
-    return {
-      ...monthPlan,
-      monthPlanId: monthPlan.id,
-      aggregateScore:
-        linkedWeeks.length > 0
-          ? weightedAvgOrSimpleAvg(
-              linkedWeeks.map((w: any) => ({
-                score: contributesToParentScore(w) ? w.aggregateScore : null,
-                weight: getWeightPercent(w),
-              })),
-            )
-          : base.score,
-      aggregateValue:
-        weekValues.length > 0
-          ? weekValues.reduce(
-              (sum: Decimal, v: Decimal) => sum.add(v),
-              new Decimal(0),
-            )
-          : base.value,
-      indirectScore: avgOrNull(weekIndirectScores),
-      indirectValue: sumOrNull(weekIndirectValues),
-    };
-  });
-
-  // 3) KR score/value from month → weekly → subtask → progress fallback
-  // Use the highest level that has usable aggregate output, not just existing rows.
-  const monthScoreCandidates = monthlyAggregates
-    .filter(
-      (m: any) => contributesToParentScore(m) && hasDecimal(m.aggregateScore),
-    )
-    .map((m: any) => m.aggregateScore as Decimal);
-  const monthValueCandidates = monthlyAggregates
-    .filter(
-      (m: any) => contributesToParentValue(m) && hasDecimal(m.aggregateValue),
-    )
-    .map((m: any) => m.aggregateValue as Decimal);
-
-  const monthIndirectScoreCandidates = [
-    ...monthlyAggregates
-      .filter(
-        (m: any) =>
-          !contributesToParentScore(m) && hasDecimal(m.aggregateScore),
-      )
-      .map((m: any) => m.aggregateScore as Decimal),
-    ...monthlyAggregates
-      .filter((m: any) => hasDecimal(m.indirectScore))
-      .map((m: any) => m.indirectScore as Decimal),
-  ];
-
-  const monthIndirectValueCandidates = [
-    ...monthlyAggregates
-      .filter(
-        (m: any) =>
-          !contributesToParentValue(m) && hasDecimal(m.aggregateValue),
-      )
-      .map((m: any) => m.aggregateValue as Decimal),
-    ...monthlyAggregates
-      .filter((m: any) => hasDecimal(m.indirectValue))
-      .map((m: any) => m.indirectValue as Decimal),
-  ];
-
-  const hasMonthAggregateData =
-    monthScoreCandidates.length > 0 ||
-    monthValueCandidates.length > 0 ||
-    monthIndirectScoreCandidates.length > 0 ||
-    monthIndirectValueCandidates.length > 0;
-
-  if (hasMonthAggregateData) {
-    score =
-      monthScoreCandidates.length > 0
-        ? weightedAvgOrSimpleAvg(
-            monthlyAggregates.map((m: any) => ({
-              score: contributesToParentScore(m) ? m.aggregateScore : null,
-              weight: getWeightPercent(m),
-            })),
-          )
-        : null;
-    value =
-      monthValueCandidates.length > 0
-        ? monthValueCandidates.reduce(
-            (sum: Decimal, v: Decimal) => sum.add(v),
-            new Decimal(0),
-          )
-        : null;
-
-    indirectScore = avgOrNull(monthIndirectScoreCandidates);
-    indirectValue = sumOrNull(monthIndirectValueCandidates);
   } else {
-    const weekScoreCandidates = weeklyAggregates
-      .filter(
-        (w: any) => contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-      )
-      .map((w: any) => w.aggregateScore as Decimal);
-    const weekValueCandidates = weeklyAggregates
-      .filter(
-        (w: any) => contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-      )
-      .map((w: any) => w.aggregateValue as Decimal);
+    // Weighted average of progress_pct
+    let weightedSum = new Decimal(0);
+    let totalWeight = new Decimal(0);
 
-    const weekIndirectScoreCandidates = [
-      ...weeklyAggregates
-        .filter(
-          (w: any) =>
-            !contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-        )
-        .map((w: any) => w.aggregateScore as Decimal),
-      ...weeklyAggregates
-        .filter((w: any) => hasDecimal(w.indirectScore))
-        .map((w: any) => w.indirectScore as Decimal),
-    ];
-
-    const weekIndirectValueCandidates = [
-      ...weeklyAggregates
-        .filter(
-          (w: any) =>
-            !contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-        )
-        .map((w: any) => w.aggregateValue as Decimal),
-      ...weeklyAggregates
-        .filter((w: any) => hasDecimal(w.indirectValue))
-        .map((w: any) => w.indirectValue as Decimal),
-    ];
-
-    const hasWeekAggregateData =
-      weekScoreCandidates.length > 0 ||
-      weekValueCandidates.length > 0 ||
-      weekIndirectScoreCandidates.length > 0 ||
-      weekIndirectValueCandidates.length > 0;
-
-    if (hasWeekAggregateData) {
-      score =
-        weekScoreCandidates.length > 0
-          ? weightedAvgOrSimpleAvg(
-              weeklyAggregates.map((w: any) => ({
-                score: contributesToParentScore(w) ? w.aggregateScore : null,
-                weight: getWeightPercent(w),
-              })),
-            )
-          : null;
-      value =
-        weekValueCandidates.length > 0
-          ? weekValueCandidates.reduce(
-              (sum: Decimal, v: Decimal) => sum.add(v),
-              new Decimal(0),
-            )
-          : null;
-
-      indirectScore = avgOrNull(weekIndirectScoreCandidates);
-      indirectValue = sumOrNull(weekIndirectValueCandidates);
-    } else if (kr.subtasks.length > 0) {
-      const subtaskResults = kr.subtasks.map((task: any) => ({
-        task,
-        result: computeNodeScoreValue(task, task.metricDefinition ?? metric),
-      }));
-
-      const subtaskScoreCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            contributesToParentScore(x.task) && hasDecimal(x.result.score),
-        )
-        .map((x: any) => x.result.score as Decimal);
-
-      const subtaskValueCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            contributesToParentValue(x.task) && hasDecimal(x.result.value),
-        )
-        .map((x: any) => x.result.value as Decimal);
-
-      const subtaskIndirectScoreCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            !contributesToParentScore(x.task) && hasDecimal(x.result.score),
-        )
-        .map((x: any) => x.result.score as Decimal);
-
-      const subtaskIndirectValueCandidates = subtaskResults
-        .filter(
-          (x: any) =>
-            !contributesToParentValue(x.task) && hasDecimal(x.result.value),
-        )
-        .map((x: any) => x.result.value as Decimal);
-
-      const hasSubtaskAggregateData =
-        subtaskScoreCandidates.length > 0 ||
-        subtaskValueCandidates.length > 0 ||
-        subtaskIndirectScoreCandidates.length > 0 ||
-        subtaskIndirectValueCandidates.length > 0;
-
-      if (hasSubtaskAggregateData) {
-        score =
-          subtaskScoreCandidates.length > 0
-            ? weightedAvgOrSimpleAvg(
-                subtaskResults.map((x: any) => ({
-                  score: contributesToParentScore(x.task)
-                    ? x.result.score
-                    : null,
-                  weight: getWeightPercent(x.task),
-                })),
-              )
-            : null;
-        value =
-          subtaskValueCandidates.length > 0
-            ? subtaskValueCandidates.reduce(
-                (sum: Decimal, v: Decimal) => sum.add(v),
-                new Decimal(0),
-              )
-            : null;
-
-        indirectScore = avgOrNull(subtaskIndirectScoreCandidates);
-        indirectValue = sumOrNull(subtaskIndirectValueCandidates);
+    for (const m of monthlyPlans as any[]) {
+      if (m.contribute_to_score) {
+        const wt = decOrZero(m.weight_pct);
+        const pp = decOrZero(m.progress_pct);
+        weightedSum = weightedSum.add(pp.mul(wt));
+        totalWeight = totalWeight.add(wt);
       }
     }
-  }
-
-  if (!score) {
-    if (metric.allows_binary_completion) {
-      const isCompleted = latestProgress?.is_completed ?? false;
-      score = isCompleted ? new Decimal(100) : new Decimal(0);
-      value = isCompleted ? toDecimal(kr.target_value) : new Decimal(0);
-    } else if (
-      metric.requires_target_value &&
-      kr.target_value &&
-      latestProgress?.current_value
-    ) {
-      const currentVal = new Decimal(latestProgress.current_value);
-      const targetVal = new Decimal(kr.target_value);
-      if (targetVal.gt(0)) {
-        score = clampPercent(currentVal.div(targetVal).mul(100));
+    for (const s of subtasks as any[]) {
+      if (s.contribute_to_score) {
+        const wt = decOrZero(s.weight_percent);
+        const pp = decOrZero(s.final_score);
+        weightedSum = weightedSum.add(pp.mul(wt));
+        totalWeight = totalWeight.add(wt);
       }
-      value = currentVal;
-    } else if (latestProgress?.current_value) {
-      score = clampPercent(new Decimal(latestProgress.current_value));
-      value = new Decimal(latestProgress.current_value);
     }
+
+    if (totalWeight.gt(0)) {
+      if (metric?.allows_binary_completion) {
+        // AND logic for milestone metrics
+        const allCompleted = [...monthlyPlans, ...subtasks]
+          .filter((p: any) => p.contribute_to_score || p.contributes_to_parent_score)
+          .every((p: any) => decOrZero(p.progress_pct || p.final_score).gte(100));
+        finalScore = allCompleted ? new Decimal(100) : new Decimal(0);
+      } else {
+        finalScore = weightedSum.div(totalWeight);
+      }
+    } else if (monthlyPlans.length + subtasks.length > 0) {
+      const allSources = [
+        ...monthlyPlans.filter((m: any) => m.contribute_to_score),
+        ...subtasks.filter((s: any) => s.contributes_to_parent_score)
+      ];
+      if (metric?.allows_binary_completion) {
+        const allCompleted = allSources.every((p: any) => decOrZero(p.progress_pct || p.final_score).gte(100));
+        finalScore = allCompleted ? new Decimal(100) : new Decimal(0);
+      } else {
+        const allScores = allSources.map((s: any) => decOrZero(s.progress_pct || s.final_score));
+        finalScore = allScores.reduce((sum, s) => sum.add(s), new Decimal(0)).div(allScores.length);
+      }
+    } else if (kr.progressUpdates[0]?.progress_pct) {
+      finalScore = new Decimal(kr.progressUpdates[0].progress_pct);
+    }
+
+    finalScore = clampPercent(finalScore);
+    const target = decOrZero(kr.target_value);
+    const start = decOrZero(kr.start_value);
+    finalValue = start.add(target.sub(start).mul(finalScore).div(100));
   }
 
-  score = score ?? new Decimal(0);
-  value = value ?? (kr.target_value ? new Decimal(0) : null);
-  indirectScore = indirectScore ?? new Decimal(0);
-  indirectValue = indirectValue ?? new Decimal(0);
+  // Update confidence level based on score
+  const confidenceLevel = await calculateConfidenceLevel(kr.company_id, finalScore);
 
-  const confidenceLevel = await calculateConfidenceLevel(kr.company_id, score);
-
-  // 5) Persist on the KR
   await tx.employeeKeyResult.update({
     where: { id: employeeKrId },
     data: {
-      final_score: score,
-      final_value: value,
+      final_score: finalScore,
+      final_value: finalValue,
       indirect_score: indirectScore,
       indirect_value: indirectValue,
     },
   });
 
-  // 6) Update monthly plans based on aggregates
-  for (const month of monthlyAggregates) {
-    if (!month.monthPlanId) continue;
 
-    const updates: Record<string, any> = {};
-    if (hasDecimal(month.aggregateValue)) {
-      updates.current_value = month.aggregateValue;
-
-      if (!hasDecimal(month.aggregateScore)) {
-        const target = toDecimal(month.target_value);
-        if (target && target.gt(0)) {
-          updates.progress_pct = clampPercent(
-            month.aggregateValue.div(target).mul(100),
-          );
-        }
-      }
-    }
-
-    if (hasDecimal(month.aggregateScore)) {
-      updates.progress_pct = month.aggregateScore;
-    }
-
-    // Calculate indirect_score for monthly plan based on KR's indirect_score weighted by plan's weight
-    // Only set indirect_score if the plan has actual progress (progress_pct > 0)
-    if (
-      hasDecimal(indirectScore) &&
-      month.weight_pct &&
-      hasDecimal(updates.progress_pct) &&
-      new Decimal(updates.progress_pct).gt(0)
-    ) {
-      const weightPctRaw = toDecimal(month.weight_pct);
-      if (weightPctRaw !== null) {
-        // indirect_score = kr.indirect_score * (weight_pct / 100)
-        // This allocates the KR's indirect score to the plan based on the plan's weight percentage
-        const planIndirectScore = indirectScore.mul(weightPctRaw.div(100));
-        updates.indirect_score = planIndirectScore;
-      }
-    } else {
-      // Clear indirect_score if no progress
-      updates.indirect_score = null;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await tx.employeeMonthPlan.update({
-        where: { id: month.monthPlanId },
-        data: updates,
-      });
-    }
-  }
-
-  // 7) Update confidence on weeks and calculate indirect_score
-  for (const week of weeklyAggregates) {
-    const wConf = await calculateConfidenceLevel(
-      kr.company_id,
-      week.aggregateScore,
-    );
-
-    const weekUpdates: Record<string, any> = {
-      progress_pct: week.aggregateScore,
-      current_value: week.aggregateValue,
-      confidence_level: wConf,
-    };
-
-    // Calculate indirect_score for weekly plan based on KR's indirect_score weighted by plan's weight
-    // Only set indirect_score if the plan has actual progress (progress_pct > 0)
-    if (
-      hasDecimal(indirectScore) &&
-      week.weight_pct &&
-      hasDecimal(week.aggregateScore) &&
-      new Decimal(week.aggregateScore).gt(0)
-    ) {
-      const weightPctRaw = toDecimal(week.weight_pct);
-      if (weightPctRaw !== null) {
-        // indirect_score = kr.indirect_score * (weight_pct / 100)
-        // This allocates the KR's indirect score to the plan based on the plan's weight percentage
-        const weekIndirectScore = indirectScore.mul(weightPctRaw.div(100));
-        weekUpdates.indirect_score = weekIndirectScore;
-      }
-    } else {
-      // Clear indirect_score if no progress
-      weekUpdates.indirect_score = null;
-    }
-
-    await tx.weeklyPlan.update({
-      where: { id: week.id },
-      data: weekUpdates,
-    });
-  }
 
   return {
-    score,
-    value,
+    score: finalScore,
+    value: finalValue,
     indirectScore,
     indirectValue,
     isFinancial: metric.is_financial,
@@ -771,9 +342,11 @@ export async function rollupEmployeeObjective(
       select: { chosen_parent_kr_id: true, chosen_parent_employee_kr_id: true },
     });
     if (obj?.chosen_parent_kr_id) {
-      await rollupFromDepartmentKr(obj.chosen_parent_kr_id, tx);
+      // Correctly trigger rollup for Company level KR
+      await recalculateRollUp("company_key_result", obj.chosen_parent_kr_id, tx);
     } else if (obj?.chosen_parent_employee_kr_id) {
-      await rollupEmployeeKR(obj.chosen_parent_employee_kr_id, tx);
+      // Correctly trigger rollup for parent Employee level KR
+      await recalculateRollUp("employee_key_result", obj.chosen_parent_employee_kr_id, tx);
     }
   }
   return result;
@@ -1061,6 +634,7 @@ export async function rollupEmployeeKR(
         include: {
           employeeObjectives: {
             select: {
+              id: true,
               final_score: true,
               final_value: true,
               indirect_score: true,
@@ -1072,52 +646,122 @@ export async function rollupEmployeeKR(
     },
   });
 
-  // Average of contributor scores
-  const allScores: Decimal[] = [];
-  let totalValue = new Decimal(0);
-  const indirectScores: Decimal[] = [];
-  let indirectValue = new Decimal(0);
+  // 1. Calculate manager's own score from their own plans/subtasks
+  const ownResults = await computeEmployeeKRScore(employeeKrId, tx);
+  const metric = empKr.metricDefinition;
+  const isValueBased = isValueBasedProgressMetric(metric);
+
+  // 2. Identify manager's monthly and weekly plans for alignment checking
+  const managerMonthlyPlans = await tx.employeeMonthPlan.findMany({
+    where: { employee_kr_id: employeeKrId },
+    select: { id: true },
+  });
+  const managerMonthlyIds = managerMonthlyPlans.map((m: any) => m.id);
+
+  const managerWeeklyPlans = await tx.weeklyPlan.findMany({
+    where: {
+      employee_month_plan_id: { in: managerMonthlyIds },
+    },
+    select: { id: true },
+  });
+  const managerWeeklyIds = managerWeeklyPlans.map((w: any) => w.id);
+
+  // 3. Collect scores/values from contributors, EXCLUDING those with plan-level alignments
+  const sourceScores: Decimal[] = [];
+  let sourceValue = new Decimal(0);
+  const sourceIndirectScores: Decimal[] = [];
+  let sourceIndirectValue = new Decimal(0);
+
+  // Add manager's own results if they exist (non-zero or has plans)
+  // We consider manager's own work as one "contributor" in the average
+  const hasOwnWork =
+    ownResults.score.gt(0) ||
+    (await tx.employeeMonthPlan.count({ where: { employee_kr_id: employeeKrId } })) > 0 ||
+    (await tx.subtask.count({ where: { employee_kr_id: employeeKrId } })) > 0;
+
+  if (hasOwnWork) {
+    sourceScores.push(ownResults.score);
+    sourceValue = sourceValue.add(ownResults.value ?? new Decimal(0));
+    sourceIndirectScores.push(ownResults.indirectScore);
+    sourceIndirectValue = sourceIndirectValue.add(ownResults.indirectValue);
+  }
 
   for (const contributor of refreshed!.contributors) {
     const empObj = contributor.employeeObjectives;
     if (!empObj) continue;
-    if (empObj.final_score) allScores.push(empObj.final_score);
-    totalValue = totalValue.add(empObj.final_value ?? new Decimal(0));
-    if (hasDecimal((empObj as any).indirect_score)) {
-      indirectScores.push((empObj as any).indirect_score as Decimal);
+
+    // CHECK ALIGNMENT: If this contributor aligned a plan to the manager, skip them here
+    // to avoid double-counting (their progress is already in ownResults via plan rollup).
+    let hasPlanAlignment = false;
+    if (managerMonthlyIds.length > 0 || managerWeeklyIds.length > 0) {
+      const alignment = await tx.employeeMonthPlan.findFirst({
+        where: {
+          employeeKr: {
+            employee_objective_id: empObj.id,
+          },
+          OR: [
+            { aligned_manager_plan_id: { in: managerMonthlyIds } },
+            {
+              weeklyPlans: {
+                some: { aligned_manager_plan_id: { in: managerWeeklyIds } },
+              },
+            },
+          ],
+        },
+      });
+      if (alignment) hasPlanAlignment = true;
     }
-    if (hasDecimal((empObj as any).indirect_value)) {
-      indirectValue = indirectValue.add(
-        (empObj as any).indirect_value as Decimal,
-      );
+
+    if (hasPlanAlignment) continue;
+
+    if (hasDecimal(empObj.final_score)) {
+      sourceScores.push(empObj.final_score as Decimal);
     }
+    sourceValue = sourceValue.add(empObj.final_value ?? new Decimal(0));
+
+    if (hasDecimal(empObj.indirect_score)) {
+      sourceIndirectScores.push(empObj.indirect_score as Decimal);
+    }
+    sourceIndirectValue = sourceIndirectValue.add(empObj.indirect_value ?? new Decimal(0));
   }
 
-  let avgScore = new Decimal(0);
-  let avgIndirectScore = new Decimal(0);
+  let finalScore = new Decimal(0);
+  let finalIndirectScore = new Decimal(0);
 
-  if (allScores.length > 0) {
-    avgScore = allScores
-      .reduce((sum, s) => sum.add(s), new Decimal(0))
-      .div(allScores.length);
-    avgIndirectScore =
-      indirectScores.length > 0 ? avgDecimals(indirectScores) : new Decimal(0);
-  } else {
-    // Fallback to own plans/subtasks if no contributors
-    const results = await computeEmployeeKRScore(employeeKrId, tx);
-    avgScore = results.score;
-    totalValue = results.value ?? new Decimal(0);
-    avgIndirectScore = results.indirectScore;
-    indirectValue = results.indirectValue;
+  if (sourceScores.length > 0) {
+    if (metric?.allows_binary_completion) {
+      // AND logic for milestone metrics
+      const allCompleted = sourceScores.every((s) => s.gte(100));
+      finalScore = allCompleted ? new Decimal(100) : new Decimal(0);
+    } else {
+      finalScore = sourceScores
+        .reduce((sum, s) => sum.add(s), new Decimal(0))
+        .div(sourceScores.length);
+    }
+
+    finalIndirectScore = sourceIndirectScores.length > 0
+      ? sourceIndirectScores.reduce((sum, s) => sum.add(s), new Decimal(0)).div(sourceIndirectScores.length)
+      : new Decimal(0);
+  }
+
+  // If value-based, we might want to use the summed value instead of averaged progress
+  // But usually KR progress is the average of contributor's progress.
+  // The user said: "the progress should be determined by the value not the score".
+  // For KRs, this means the final_score should be (totalValue / targetValue) * 100.
+  if (isValueBased) {
+    const target = toDecimal(empKr.target_value) ?? new Decimal(0);
+    finalScore = target.gt(0)
+      ? clampPercent(sourceValue.div(target).mul(100))
+      : new Decimal(0);
   }
 
   await tx.employeeKeyResult.update({
     where: { id: employeeKrId },
     data: {
-      final_score: avgScore,
-      final_value: totalValue,
-      indirect_score: avgIndirectScore,
-      indirect_value: indirectValue,
+      final_score: finalScore,
+      final_value: sourceValue,
+      indirect_score: finalIndirectScore,
+      indirect_value: sourceIndirectValue,
     },
   });
 
@@ -1127,10 +771,10 @@ export async function rollupEmployeeKR(
 
   return {
     employeeKrId,
-    avgScore,
-    totalValue,
-    indirectScore: avgIndirectScore,
-    indirectValue,
+    finalScore,
+    sourceValue,
+    finalIndirectScore,
+    sourceIndirectValue,
   };
 }
 
@@ -1171,7 +815,45 @@ export async function rollupDepartmentKR(
     }
   }
 
-  // Re-fetch after rollup
+  // 1. Calculate manager's own score from their own plans/subtasks
+  const ownResults = await computeEmployeeKRScore(departmentKrId, tx);
+  const metric = deptKr.metricDefinition;
+  const isValueBased = isValueBasedProgressMetric(metric);
+
+  // 2. Identify manager's monthly and weekly plans for alignment checking
+  const managerMonthlyPlans = await tx.employeeMonthPlan.findMany({
+    where: { employee_kr_id: departmentKrId },
+    select: { id: true },
+  });
+  const managerMonthlyIds = managerMonthlyPlans.map((m: any) => m.id);
+
+  const managerWeeklyPlans = await tx.weeklyPlan.findMany({
+    where: {
+      employee_month_plan_id: { in: managerMonthlyIds },
+    },
+    select: { id: true },
+  });
+  const managerWeeklyIds = managerWeeklyPlans.map((w: any) => w.id);
+
+  // 3. Collect scores/values from contributors, EXCLUDING those with plan-level alignments
+  const sourceScores: Decimal[] = [];
+  let sourceValue = new Decimal(0);
+  const sourceIndirectScores: Decimal[] = [];
+  let sourceIndirectValue = new Decimal(0);
+
+  // Add manager's own results if they exist
+  const hasOwnWork =
+    ownResults.score.gt(0) ||
+    (await tx.employeeMonthPlan.count({ where: { employee_kr_id: departmentKrId } })) > 0 ||
+    (await tx.subtask.count({ where: { employee_kr_id: departmentKrId } })) > 0;
+
+  if (hasOwnWork) {
+    sourceScores.push(ownResults.score);
+    sourceValue = sourceValue.add(ownResults.value ?? new Decimal(0));
+    sourceIndirectScores.push(ownResults.indirectScore);
+    sourceIndirectValue = sourceIndirectValue.add(ownResults.indirectValue);
+  }
+
   const refreshed = await tx.employeeKeyResult.findUnique({
     where: { id: departmentKrId },
     include: {
@@ -1180,6 +862,7 @@ export async function rollupDepartmentKR(
         include: {
           employeeObjectives: {
             select: {
+              id: true,
               final_score: true,
               final_value: true,
               indirect_score: true,
@@ -1191,378 +874,91 @@ export async function rollupDepartmentKR(
     },
   });
 
-  // Average of contributor scores
-  const allScores: Decimal[] = [];
-  let totalValue = new Decimal(0);
-  const indirectScores: Decimal[] = [];
-  let indirectValue = new Decimal(0);
-
   for (const contributor of refreshed!.contributors) {
     const empObj = contributor.employeeObjectives;
-    if (empObj) {
-      if (empObj.final_score) allScores.push(empObj.final_score);
-      totalValue = totalValue.add(empObj.final_value ?? new Decimal(0));
-      if (hasDecimal((empObj as any).indirect_score)) {
-        indirectScores.push((empObj as any).indirect_score as Decimal);
-      }
-      if (hasDecimal((empObj as any).indirect_value)) {
-        indirectValue = indirectValue.add(
-          (empObj as any).indirect_value as Decimal,
-        );
-      }
+    if (!empObj) continue;
+
+    // CHECK ALIGNMENT
+    let hasPlanAlignment = false;
+    if (managerMonthlyIds.length > 0 || managerWeeklyIds.length > 0) {
+      const alignment = await tx.employeeMonthPlan.findFirst({
+        where: {
+          employee_objective_id: empObj.id,
+          OR: [
+            { aligned_manager_plan_id: { in: managerMonthlyIds } },
+            {
+              weeklyPlans: {
+                some: { aligned_manager_plan_id: { in: managerWeeklyIds } },
+              },
+            },
+          ],
+        },
+      });
+      if (alignment) hasPlanAlignment = true;
     }
+
+    if (hasPlanAlignment) continue;
+
+    if (hasDecimal(empObj.final_score)) {
+      sourceScores.push(empObj.final_score as Decimal);
+    }
+    sourceValue = sourceValue.add(empObj.final_value ?? new Decimal(0));
+
+    if (hasDecimal(empObj.indirect_score)) {
+      sourceIndirectScores.push(empObj.indirect_score as Decimal);
+    }
+    sourceIndirectValue = sourceIndirectValue.add(empObj.indirect_value ?? new Decimal(0));
   }
 
-  let avgScore: Decimal | null =
-    allScores.length > 0
-      ? allScores
-          .reduce((sum, s) => sum.add(s), new Decimal(0))
-          .div(allScores.length)
-      : new Decimal(0);
-  let avgIndirectScore: Decimal | null =
-    indirectScores.length > 0 ? avgDecimals(indirectScores) : new Decimal(0);
+  let finalScore = new Decimal(0);
+  let finalIndirectScore = new Decimal(0);
 
-  // Fallback to monthly/weekly measurable plans when no contributor objectives exist
-  if (allScores.length === 0 && totalValue.eq(0)) {
-    const planBased = await tx.employeeKeyResult.findUnique({
-      where: { id: departmentKrId },
-      include: {
-        monthlyPlans: {
-          include: {
-            weeklyPlans: {
-              include: {
-                metricDefinition: true,
-                dailyPlans: { include: { metricDefinition: true } },
-              },
-              orderBy: { week_number: "asc" },
-            },
-          },
-          orderBy: { month_number: "asc" },
-        },
-        metricDefinition: true,
-      },
-    });
-
-    if (planBased) {
-      const monthlyPlans = planBased.monthlyPlans ?? [];
-      const weeklyAggregates = monthlyPlans.flatMap((monthPlan: any) =>
-        (monthPlan.weeklyPlans ?? []).map((week: any) => {
-          const base = computeNodeScoreValue(
-            week,
-            week.metricDefinition ?? planBased.metricDefinition,
-          );
-
-          const directDailyScores: Decimal[] = [];
-          const directDailyValues: Decimal[] = [];
-          const indirectDailyScores: Decimal[] = [];
-          const indirectDailyValues: Decimal[] = [];
-
-          for (const dailyPlan of week.dailyPlans ?? []) {
-            const d = computeNodeScoreValue(
-              dailyPlan,
-              dailyPlan.metricDefinition ??
-                week.metricDefinition ??
-                planBased.metricDefinition,
-            );
-
-            const contributesScore = contributesToParentScore(dailyPlan);
-            if (contributesScore && hasDecimal(d.score)) {
-              directDailyScores.push(d.score);
-            }
-            if (!contributesScore && hasDecimal(d.score)) {
-              indirectDailyScores.push(d.score);
-            }
-
-            const contributesValue = contributesToParentValue(dailyPlan);
-            if (contributesValue && hasDecimal(d.value)) {
-              directDailyValues.push(d.value);
-            }
-            if (!contributesValue && hasDecimal(d.value)) {
-              indirectDailyValues.push(d.value);
-            }
-          }
-
-          return {
-            ...week,
-            monthPlanId: monthPlan.id,
-            employee_month_plan_id: monthPlan.id,
-            aggregateScore:
-              (week.dailyPlans ?? []).length > 0
-                ? weightedAvgOrSimpleAvg(
-                    (week.dailyPlans ?? []).map((d: any) => {
-                      const results = computeNodeScoreValue(
-                        d,
-                        d.metricDefinition ??
-                          week.metricDefinition ??
-                          planBased.metricDefinition,
-                      );
-                      return {
-                        score: contributesToParentScore(d)
-                          ? results.score
-                          : null,
-                        weight: getWeightPercent(d),
-                      };
-                    }),
-                  )
-                : base.score,
-            aggregateValue:
-              directDailyValues.length > 0
-                ? directDailyValues.reduce(
-                    (sum: Decimal, v: Decimal) => sum.add(v),
-                    new Decimal(0),
-                  )
-                : base.value,
-            indirectScore: avgOrNull(indirectDailyScores),
-            indirectValue: sumOrNull(indirectDailyValues),
-          };
-        }),
-      );
-
-      const monthlyAggregates = monthlyPlans.map((monthPlan: any) => {
-        const base = computeNodeScoreValue(
-          monthPlan,
-          planBased.metricDefinition,
-        );
-        const linkedWeeks = weeklyAggregates.filter(
-          (w: any) => w.employee_month_plan_id === monthPlan.id,
-        );
-
-        const weekScores = linkedWeeks
-          .filter(
-            (w: any) =>
-              contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-          )
-          .map((w: any) => w.aggregateScore as Decimal);
-
-        const weekValues = linkedWeeks
-          .filter(
-            (w: any) =>
-              contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-          )
-          .map((w: any) => w.aggregateValue as Decimal);
-
-        const weekIndirectScores = [
-          ...linkedWeeks
-            .filter(
-              (w: any) =>
-                !contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-            )
-            .map((w: any) => w.aggregateScore as Decimal),
-          ...linkedWeeks
-            .filter((w: any) => hasDecimal(w.indirectScore))
-            .map((w: any) => w.indirectScore as Decimal),
-        ];
-
-        const weekIndirectValues = [
-          ...linkedWeeks
-            .filter(
-              (w: any) =>
-                !contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-            )
-            .map((w: any) => w.aggregateValue as Decimal),
-          ...linkedWeeks
-            .filter((w: any) => hasDecimal(w.indirectValue))
-            .map((w: any) => w.indirectValue as Decimal),
-        ];
-
-        return {
-          ...monthPlan,
-          monthPlanId: monthPlan.id,
-          aggregateScore:
-            linkedWeeks.length > 0
-              ? weightedAvgOrSimpleAvg(
-                  linkedWeeks.map((w: any) => ({
-                    score: contributesToParentScore(w)
-                      ? w.aggregateScore
-                      : null,
-                    weight: getWeightPercent(w),
-                  })),
-                )
-              : base.score,
-          aggregateValue:
-            weekValues.length > 0
-              ? weekValues.reduce(
-                  (sum: Decimal, v: Decimal) => sum.add(v),
-                  new Decimal(0),
-                )
-              : base.value,
-          indirectScore: avgOrNull(weekIndirectScores),
-          indirectValue: sumOrNull(weekIndirectValues),
-        };
-      });
-
-      const monthScores = monthlyAggregates
-        .filter(
-          (m: any) =>
-            contributesToParentScore(m) && hasDecimal(m.aggregateScore),
-        )
-        .map((m: any) => m.aggregateScore as Decimal);
-
-      const monthValueItems = monthlyAggregates
-        .filter(
-          (m: any) =>
-            contributesToParentValue(m) && hasDecimal(m.aggregateValue),
-        )
-        .map((m: any) => m.aggregateValue as Decimal);
-
-      const monthIndirectScores = [
-        ...monthlyAggregates
-          .filter(
-            (m: any) =>
-              !contributesToParentScore(m) && hasDecimal(m.aggregateScore),
-          )
-          .map((m: any) => m.aggregateScore as Decimal),
-        ...monthlyAggregates
-          .filter((m: any) => hasDecimal(m.indirectScore))
-          .map((m: any) => m.indirectScore as Decimal),
-      ];
-
-      const monthIndirectValues = [
-        ...monthlyAggregates
-          .filter(
-            (m: any) =>
-              !contributesToParentValue(m) && hasDecimal(m.aggregateValue),
-          )
-          .map((m: any) => m.aggregateValue as Decimal),
-        ...monthlyAggregates
-          .filter((m: any) => hasDecimal(m.indirectValue))
-          .map((m: any) => m.indirectValue as Decimal),
-      ];
-
-      const hasMonthAggregateData =
-        monthScores.length > 0 ||
-        monthValueItems.length > 0 ||
-        monthIndirectScores.length > 0 ||
-        monthIndirectValues.length > 0;
-
-      if (hasMonthAggregateData) {
-        const computedScore =
-          monthScores.length > 0
-            ? weightedAvgOrSimpleAvg(
-                monthlyAggregates.map((m: any) => ({
-                  score: contributesToParentScore(m) ? m.aggregateScore : null,
-                  weight: getWeightPercent(m),
-                })),
-              )
-            : new Decimal(0);
-        avgScore = computedScore ?? new Decimal(0);
-        totalValue = monthValueItems.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-        avgIndirectScore =
-          monthIndirectScores.length > 0
-            ? avgDecimals(monthIndirectScores)
-            : new Decimal(0);
-        indirectValue = monthIndirectValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-      } else {
-        const weekScores = weeklyAggregates
-          .filter(
-            (w: any) =>
-              contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-          )
-          .map((w: any) => w.aggregateScore as Decimal);
-        if (weekScores.length > 0) {
-          const computedWeekScore = weightedAvgOrSimpleAvg(
-            weeklyAggregates.map((w: any) => ({
-              score: contributesToParentScore(w) ? w.aggregateScore : null,
-              weight: getWeightPercent(w),
-            })),
-          );
-          avgScore = computedWeekScore ?? new Decimal(0);
-        }
-
-        const weekValues = weeklyAggregates
-          .filter(
-            (w: any) =>
-              contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-          )
-          .map((w: any) => w.aggregateValue as Decimal);
-        totalValue = weekValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-
-        const weekIndirectScores = [
-          ...weeklyAggregates
-            .filter(
-              (w: any) =>
-                !contributesToParentScore(w) && hasDecimal(w.aggregateScore),
-            )
-            .map((w: any) => w.aggregateScore as Decimal),
-          ...weeklyAggregates
-            .filter((w: any) => hasDecimal(w.indirectScore))
-            .map((w: any) => w.indirectScore as Decimal),
-        ];
-
-        const weekIndirectValues = [
-          ...weeklyAggregates
-            .filter(
-              (w: any) =>
-                !contributesToParentValue(w) && hasDecimal(w.aggregateValue),
-            )
-            .map((w: any) => w.aggregateValue as Decimal),
-          ...weeklyAggregates
-            .filter((w: any) => hasDecimal(w.indirectValue))
-            .map((w: any) => w.indirectValue as Decimal),
-        ];
-
-        avgIndirectScore =
-          weekIndirectScores.length > 0
-            ? avgDecimals(weekIndirectScores)
-            : new Decimal(0);
-        indirectValue = weekIndirectValues.reduce(
-          (sum: Decimal, v: Decimal) => sum.add(v),
-          new Decimal(0),
-        );
-
-        // Sync confidence for sub-layers
-        for (const week of weeklyAggregates) {
-          const wConf = await calculateConfidenceLevel(
-            planBased.company_id,
-            week.aggregateScore,
-          );
-          await tx.weeklyPlan.update({
-            where: { id: week.id },
-            data: {
-              progress_pct: week.aggregateScore,
-              current_value: week.aggregateValue,
-              confidence_level: wConf,
-            },
-          });
-        }
-      }
+  if (sourceScores.length > 0) {
+    if (metric?.allows_binary_completion) {
+      // AND logic for milestone metrics
+      const allCompleted = sourceScores.every((s) => s.gte(100));
+      finalScore = allCompleted ? new Decimal(100) : new Decimal(0);
+    } else {
+      finalScore = sourceScores
+        .reduce((sum, s) => sum.add(s), new Decimal(0))
+        .div(sourceScores.length);
     }
+
+    finalIndirectScore = sourceIndirectScores.length > 0
+      ? sourceIndirectScores.reduce((sum, s) => sum.add(s), new Decimal(0)).div(sourceIndirectScores.length)
+      : new Decimal(0);
+  }
+
+  if (isValueBased) {
+    const target = toDecimal(deptKr.target_value) ?? new Decimal(0);
+    finalScore = target.gt(0)
+      ? clampPercent(sourceValue.div(target).mul(100))
+      : new Decimal(0);
   }
 
   await tx.employeeKeyResult.update({
     where: { id: departmentKrId },
     data: {
-      final_score: avgScore,
-      final_value: totalValue,
-      indirect_score: avgIndirectScore,
-      indirect_value: indirectValue,
+      final_score: finalScore,
+      final_value: sourceValue,
+      indirect_score: finalIndirectScore,
+      indirect_value: sourceIndirectValue,
     },
   });
 
-  // NOTE: Do NOT cascade to rollupDepartmentObjective here. The caller is responsible
-  // for upward propagation to avoid infinite recursion (rollupDepartmentObjective
-  // calls rollupDepartmentKR for each KR, so rollupDepartmentKR must not call back up).
-
   return {
     departmentKrId,
-    avgScore,
-    totalValue,
-    indirectScore: avgIndirectScore,
-    indirectValue,
+    finalScore,
+    sourceValue,
+    finalIndirectScore,
+    sourceIndirectValue,
   };
 }
 
 /**
+
  * Roll up Department KRs into their parent Department Objective.
+
  * NOTE: "Department Objective" is an EmployeeObjective with department_id set,
  * linked to CompanyKeyResult via chosen_parent_kr_id (parentCompanyKr relation).
  */
@@ -1738,19 +1134,12 @@ export async function rollupDepartmentObjective(
  * records (department-level) linked via chosen_parent_kr_id.
  */
 export async function rollupCompanyKR(companyKrId: number, tx: any = prisma) {
-  if (
-    !(await tx.companyKeyResult.findUnique({
-      where: { id: companyKrId },
-      select: { id: true },
-    }))
-  ) {
-    throw new Error("Company KR not found.");
-  }
-
-  // Do NOT re-roll department objectives here — callers are responsible for
-  // rolling up from the bottom before calling rollupCompanyKR. Re-rolling here
-  // caused double-work and recursive loops via rollupDepartmentObjective →
-  // rollupCompanyKR → rollupDepartmentObjective.
+  const companyKr = await tx.companyKeyResult.findUnique({
+    where: { id: companyKrId },
+    include: { metricDefinition: true },
+  });
+  if (!companyKr) throw new Error("Company KR not found.");
+  const metric = companyKr.metricDefinition;
 
   // Read already-computed department objective scores
   const refreshedDeptObjs = await tx.employeeObjective.findMany({
@@ -1766,12 +1155,19 @@ export async function rollupCompanyKR(companyKrId: number, tx: any = prisma) {
   const scores = refreshedDeptObjs
     .filter((o: any) => o.final_score)
     .map((o: any) => o.final_score!);
-  const avgScore =
-    scores.length > 0
-      ? scores
-          .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
-          .div(scores.length)
-      : new Decimal(0);
+
+  let avgScore = new Decimal(0);
+  if (scores.length > 0) {
+    if (metric?.allows_binary_completion) {
+      // AND logic for milestone metrics
+      const allCompleted = scores.every((s: Decimal) => s.gte(100));
+      avgScore = allCompleted ? new Decimal(100) : new Decimal(0);
+    } else {
+      avgScore = scores
+        .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
+        .div(scores.length);
+    }
+  }
   const totalValue = refreshedDeptObjs.reduce(
     (sum: Decimal, o: any) => sum.add(o.final_value ?? new Decimal(0)),
     new Decimal(0),
@@ -1985,10 +1381,11 @@ export async function rollupFromDepartmentKr(
     where: { id: departmentKr.employee_objective_id },
     select: { chosen_parent_kr_id: true },
   });
-  if (!departmentObjective || !departmentObjective.chosen_parent_kr_id)
-    throw new Error(
-      "Department objective not found for cascade or missing company KR link.",
-    );
+  // If the department objective isn't linked to a company KR yet, stop here
+  // gracefully instead of throwing — not all objectives are connected.
+  if (!departmentObjective || !departmentObjective.chosen_parent_kr_id) {
+    return departmentObjectiveResult;
+  }
 
   const companyKrResult = await rollupCompanyKR(
     departmentObjective.chosen_parent_kr_id,
@@ -2028,8 +1425,7 @@ export async function rollupFromEmployeeObjective(
     where: { id: employeeObjectiveId },
     select: { chosen_parent_kr_id: true, chosen_parent_employee_kr_id: true },
   });
-  if (!employeeObjective)
-    throw new Error("Employee objective not found for cascade.");
+  if (!employeeObjective) return;
 
   // 1. Recompute the employee objective itself first
   const employeeObjectiveResult = await rollupEmployeeObjective(
@@ -2037,11 +1433,50 @@ export async function rollupFromEmployeeObjective(
     tx,
   );
 
+  // 2. DUPLICATION AVOIDANCE: If any descendant weekly or monthly plan is aligned to a manager,
+  // we don't roll up this objective to the manager KR because progress already arrives via the aligned plans.
+  const hasAlignedWeekly = await tx.weeklyPlan.findFirst({
+    where: {
+      monthPlan: {
+        employeeKr: {
+          employee_objective_id: employeeObjectiveId
+        }
+      },
+      aligned_manager_plan_id: { not: null }
+    }
+  });
+
+  const hasAlignedMonthly = await tx.employeeMonthPlan.findFirst({
+    where: {
+      employeeKr: {
+        employee_objective_id: employeeObjectiveId
+      },
+      aligned_manager_plan_id: { not: null }
+    }
+  });
+
+  if (hasAlignedWeekly || hasAlignedMonthly) {
+    console.log(`[RollupEngine] Objective ${employeeObjectiveId} has aligned weekly/monthly descendants. Skipping manager KR rollup to avoid duplication.`);
+    return employeeObjectiveResult;
+  }
+
   if (employeeObjective.chosen_parent_kr_id) {
-    return rollupFromDepartmentKr(employeeObjective.chosen_parent_kr_id, tx);
+    // chosen_parent_kr_id points to a CompanyKeyResult (department → CEO link).
+    // Cascade: CompanyKR → CompanyObjective
+    await rollupCompanyKR(employeeObjective.chosen_parent_kr_id, tx);
+
+    const companyKr = await tx.companyKeyResult.findUnique({
+      where: { id: employeeObjective.chosen_parent_kr_id },
+      select: { objective_id: true },
+    });
+    if (companyKr?.objective_id) {
+      await rollupCompanyObjective(companyKr.objective_id, tx);
+    }
+    return;
   } else if ((employeeObjective as any).chosen_parent_employee_kr_id) {
+    // chosen_parent_employee_kr_id points to an EmployeeKeyResult (employee → dept KR link).
+    // Cascade upward through the parent KR's objective.
     const parentKrId = (employeeObjective as any).chosen_parent_employee_kr_id;
-    // Recursive cascade through employee layers
     await rollupEmployeeKR(parentKrId, tx);
     const parentKr = await tx.employeeKeyResult.findUnique({
       where: { id: parentKrId },
@@ -2207,11 +1642,11 @@ export async function getFinancialBreakdown(
   const financialAvgScore =
     financial.length > 0
       ? financial
-          .reduce(
-            (sum, kr) => sum.add(kr.final_score ?? new Decimal(0)),
-            new Decimal(0),
-          )
-          .div(financial.length)
+        .reduce(
+          (sum, kr) => sum.add(kr.final_score ?? new Decimal(0)),
+          new Decimal(0),
+        )
+        .div(financial.length)
       : new Decimal(0);
 
   return {
@@ -2339,82 +1774,139 @@ async function rollupWeeklyPlanFromDailies(
 ) {
   const weekly = await tx.weeklyPlan.findUnique({
     where: { id: weeklyPlanId },
-    include: { dailyPlans: { where: { contribute_to_score: true } } },
+    include: { metricDefinition: true },
   });
-  if (!weekly) return;
-
-  const manager_weekly = await tx.weeklyPlan.findUnique({
-    where: { id: weekly.aligned_manager_plan_id },
-  });
-  if (!manager_weekly) return;
-
-  // Calculate employee's progress from dailies
-  let employeeProgress: Decimal;
-  const dailies = weekly.dailyPlans || [];
-
-  if (dailies.length === 0) {
-    employeeProgress = new Decimal(0);
-  } else {
-    const total = dailies.reduce(
-      (sum: Decimal, d: any) => sum.add(decOrZero(d.progress_pct)),
-      new Decimal(0),
-    );
-    employeeProgress = total.div(dailies.length);
+  if (!weekly) {
+    return;
   }
-  employeeProgress = clampPercent(employeeProgress);
+
+  const metric = weekly.metricDefinition;
+  const isValueBased = isValueBasedProgressMetric(metric);
+
+  console.log(`  - title: ${weekly.title}`);
+  console.log(`  - start_value: ${weekly.start_value}, target_value: ${weekly.target_value}, current_value: ${weekly.current_value}`);
+  console.log(`  - contribute_to_score: ${weekly.contribute_to_score}, contribute_to_value: ${weekly.contribute_to_value}`);
+  console.log(`  - metricDefinition: ${metric ? JSON.stringify({ id: metric.id, name: metric.name, value_based_progress: metric.value_based_progress }) : 'NULL'}`);
+  console.log(`  - isValueBased: ${isValueBased}`);
+  console.log(`  - aligned_manager_plan_id: ${weekly.aligned_manager_plan_id}`);
+  console.log(`  - employee_month_plan_id: ${weekly.employee_month_plan_id}`);
+
+  // 1. Aggregate progress from this weekly's own direct dailies
+  // IMPORTANT: Also query ALL dailies (without contribute filter) for debugging
+  const allDailies = await tx.dailyPlan.findMany({
+    where: { weekly_plan_id: weeklyPlanId },
+    select: { id: true, title: true, progress_pct: true, current_value: true, target_value: true, start_value: true, contribute_to_score: true, contribute_to_value: true, status: true },
+  });
+
+  const dailies = allDailies.filter((d: any) => d.contribute_to_score || d.contribute_to_value);
+
+  for (const d of allDailies as any[]) {
+    console.log(`  - Daily id=${d.id} "${d.title}": current=${d.current_value}, target=${d.target_value}, start=${d.start_value}, progress=${d.progress_pct}, status=${d.status}, contribute_score=${d.contribute_to_score}, contribute_value=${d.contribute_to_value}`);
+  }
+
+  // 2. Aggregate progress from employee weekly plans aligned to this weekly.
+  const alignedWeeklies = await tx.weeklyPlan.findMany({
+    where: {
+      aligned_manager_plan_id: weeklyPlanId,
+      OR: [{ contribute_to_score: true }, { contribute_to_value: true }],
+    },
+    select: { id: true, progress_pct: true, current_value: true, contribute_to_score: true, contribute_to_value: true },
+  });
+
+  for (const aw of alignedWeeklies as any[]) {
+    console.log(`  - Aligned Weekly id=${aw.id}: current=${aw.current_value}, progress=${aw.progress_pct}, contribute_score=${aw.contribute_to_score}, contribute_value=${aw.contribute_to_value}`);
+  }
+
+  let progress: Decimal = new Decimal(0);
+  let current: Decimal = new Decimal(0);
 
   // Calculate employee's current value based on progress
   const start = decOrZero(weekly.start_value);
   const target = decOrZero(weekly.target_value);
-  const employeeCurrent = weekly.contribute_to_value
-    ? start.add(target.sub(start).mul(employeeProgress).div(100))
-    : decOrZero(weekly.current_value);
+
+  const hasChildren = dailies.length > 0 || alignedWeeklies.length > 0;
+
+  if (!hasChildren) {
+    current = decOrZero(weekly.current_value);
+    if (target.sub(start).gt(0)) {
+      progress = clampPercent(current.sub(start).div(target.sub(start)).mul(100));
+    } else {
+      progress = new Decimal(current.gte(target) ? 100 : 0);
+    }
+  } else {
+    if (isValueBased) {
+      let totalValue = new Decimal(0);
+      // Value aggregation only includes nodes with contribute_to_value = true
+      for (const d of dailies as any[]) {
+        if (d.contribute_to_value) {
+          const val = decOrZero(d.current_value);
+          totalValue = totalValue.add(val);
+        }
+      }
+      for (const aw of alignedWeeklies as any[]) {
+        if (aw.contribute_to_value) {
+          const val = decOrZero(aw.current_value);
+          totalValue = totalValue.add(val);
+        }
+      }
+      current = totalValue;
+      progress = target.sub(start).gt(0)
+        ? clampPercent(current.sub(start).div(target.sub(start)).mul(100))
+        : new Decimal(0);
+    } else {
+      // Score aggregation only includes nodes with contribute_to_score = true
+      const sources: Decimal[] = [
+        ...dailies.filter((d: any) => d.contribute_to_score).map((d: any) => decOrZero(d.progress_pct)),
+        ...alignedWeeklies.filter((aw: any) => aw.contribute_to_score).map((aw: any) => decOrZero(aw.progress_pct)),
+      ];
+
+      if (sources.length === 0) {
+        progress = new Decimal(0);
+      } else {
+        if (metric?.allows_binary_completion) {
+          // AND logic for milestone metrics
+          const allCompleted = sources.every((p: Decimal) => p.gte(100));
+          progress = allCompleted ? new Decimal(100) : new Decimal(0);
+        } else {
+          const total = sources.reduce(
+            (sum: Decimal, p: Decimal) => sum.add(p),
+            new Decimal(0),
+          );
+          progress = total.div(sources.length);
+        }
+      }
+      progress = clampPercent(progress);
+
+      // Even if it's score-based, it can contribute its own calculated current_value upward
+      current = weekly.contribute_to_value
+        ? start.add(target.sub(start).mul(progress).div(100))
+        : decOrZero(weekly.current_value);
+    }
+  }
+
+  // Update confidence level
+  const companyId = await getCompanyIdForNode("weekly_plan", weeklyPlanId, tx);
+  const confidence = await calculateConfidenceLevel(companyId, progress);
+
 
   // Update employee's weekly plan
   await tx.weeklyPlan.update({
     where: { id: weeklyPlanId },
     data: {
-      progress_pct: employeeProgress,
-      current_value: employeeCurrent,
+      progress_pct: progress,
+      current_value: current,
+      confidence_level: confidence
     },
   });
 
-  // Now update manager's plan based on the employee's PROGRESS percentage,
-  // not the employee's current value directly
-  const managerTarget = decOrZero(manager_weekly.target_value);
-  let managerProgress: Decimal;
 
-  if (manager_weekly.contribute_to_value) {
-    // Calculate manager's progress as: (achieved / target) * 100
-    // Where achieved is the employee's progress relative to manager's target
-    const achieved = managerTarget.mul(employeeProgress).div(100);
-    managerProgress = clampPercent(achieved.div(managerTarget).mul(100));
-
-    // Calculate manager's current value
-    const managerStart = decOrZero(manager_weekly.start_value);
-    const managerCurrent = manager_weekly.contribute_to_value
-      ? managerStart.add(
-          managerTarget.sub(managerStart).mul(managerProgress).div(100),
-        )
-      : employeeCurrent; // Use employee's actual value if manager doesn't contribute to value
-
-    await tx.weeklyPlan.update({
-      where: { id: manager_weekly.id },
-      data: {
-        progress_pct: managerProgress,
-        current_value: managerCurrent,
-      },
-    });
-  } else {
-    // If manager doesn't contribute to value, just propagate the progress percentage
-    await tx.weeklyPlan.update({
-      where: { id: manager_weekly.id },
-      data: {
-        progress_pct: employeeProgress,
-        current_value: employeeCurrent,
-      },
-    });
-  }
+  // NOTE: Do NOT update the manager's weekly plan here. The cascade in
+  // recalculateRollUp handles this correctly: after this function returns,
+  // recalculateRollUp checks aligned_manager_plan_id and calls
+  // rollupWeeklyPlanFromDailies(managerWeeklyPlanId), which aggregates
+  // ALL aligned employee weekly plans via the alignedWeeklies query.
+  // Previously, a direct update here would overwrite the aggregate with
+  // only this single employee's contribution, breaking multi-employee rollup.
 }
 async function rollupMonthlyPlanFromWeeklies(
   monthlyPlanId: number,
@@ -2422,200 +1914,324 @@ async function rollupMonthlyPlanFromWeeklies(
 ) {
   const monthly = await tx.employeeMonthPlan.findUnique({
     where: { id: monthlyPlanId },
+    include: { metricDefinition: true },
   });
   if (!monthly) return;
 
+  const metric = monthly.metricDefinition;
+  const isValueBased = isValueBasedProgressMetric(metric);
+
+  // 1. Aggregate from this monthly's own direct weeklies
   const weeklies = await tx.weeklyPlan.findMany({
     where: {
-      OR: [
-        { employee_month_plan_id: monthlyPlanId },
-        { monthPlan: { aligned_manager_plan_id: monthlyPlanId } },
-      ],
-      contribute_to_score: true,
+      employee_month_plan_id: monthlyPlanId,
+      OR: [{ contribute_to_score: true }, { contribute_to_value: true }],
     },
-    select: { progress_pct: true, weight_pct: true },
+    select: { id: true, progress_pct: true, weight_pct: true, current_value: true, contribute_to_score: true, contribute_to_value: true },
   });
 
-  let progress: Decimal;
-  if (weeklies.length === 0) {
-    progress = new Decimal(0);
-  } else {
-    let weightedSum = new Decimal(0);
-    let weightTotal = new Decimal(0);
-    for (const w of weeklies) {
-      const wt = decOrZero(w.weight_pct);
-      const pp = decOrZero(w.progress_pct);
-      weightedSum = weightedSum.add(pp.mul(wt));
-      weightTotal = weightTotal.add(wt);
+  // 2. Aggregate from employee monthly plans aligned to this monthly.
+  const rawAlignedMonthlies = await tx.employeeMonthPlan.findMany({
+    where: {
+      aligned_manager_plan_id: monthlyPlanId,
+      OR: [{ contribute_to_score: true }, { contribute_to_value: true }],
+    },
+    select: { id: true, progress_pct: true, weight_pct: true, current_value: true, contribute_to_score: true, contribute_to_value: true },
+  });
+
+  console.log(`[RollupEngine] MonthlyPlan ${monthlyPlanId}: Found ${weeklies.length} weeklies and ${rawAlignedMonthlies.length} raw aligned monthlies`);
+
+  // FILTER: Exclude any employee monthly plan if the employee ALSO aligned a weekly plan
+  // to ANY of this manager's weekly plans. This prevents double-counting progress!
+  const managerWeeklyIds = weeklies.map((w: any) => w.id);
+  const alignedMonthlies: typeof rawAlignedMonthlies = [];
+  for (const am of rawAlignedMonthlies) {
+    if (managerWeeklyIds.length > 0) {
+      const hasLowerAlignment = await tx.weeklyPlan.findFirst({
+        where: {
+          employee_month_plan_id: am.id,
+          aligned_manager_plan_id: { in: managerWeeklyIds },
+        },
+      });
+      if (hasLowerAlignment) {
+        console.log(`[RollupEngine] MonthlyPlan ${monthlyPlanId}: Skipping aligned monthly ${am.id} due to lower-level weekly alignment.`);
+        continue;
+      }
     }
-    progress = weightTotal.gt(0)
-      ? weightedSum.div(weightTotal)
-      : new Decimal(0);
+    alignedMonthlies.push(am);
   }
-  progress = clampPercent(progress);
+
+  let progress: Decimal;
+  let current: Decimal;
 
   const start = decOrZero(monthly.start_value);
   const target = decOrZero(monthly.target_value);
-  const current = monthly.contribute_to_value
-    ? start.add(target.sub(start).mul(progress).div(100))
-    : decOrZero(monthly.current_value);
+
+  const hasChildren = weeklies.length > 0 || alignedMonthlies.length > 0;
+
+  if (!hasChildren) {
+    current = decOrZero(monthly.current_value);
+    if (target.sub(start).gt(0)) {
+      progress = clampPercent(current.sub(start).div(target.sub(start)).mul(100));
+    } else {
+      progress = new Decimal(current.gte(target) ? 100 : 0);
+    }
+  } else {
+    if (isValueBased) {
+      // SUM values for value-based metrics
+      let totalValue = new Decimal(0);
+      for (const w of weeklies as any[]) {
+        if (w.contribute_to_value) {
+          totalValue = totalValue.add(decOrZero(w.current_value));
+        }
+      }
+      for (const am of alignedMonthlies as any[]) {
+        if (am.contribute_to_value) {
+          totalValue = totalValue.add(decOrZero(am.current_value));
+        }
+      }
+      current = totalValue;
+      progress = target.sub(start).gt(0)
+        ? clampPercent(current.sub(start).div(target.sub(start)).mul(100))
+        : new Decimal(0);
+      console.log(`[RollupEngine] MonthlyPlan ${monthlyPlanId} (Value-Based): TotalValue=${totalValue}, Progress=${progress}`);
+    } else {
+      // WEIGHTED AVERAGE for score-based metrics
+      let weightedSum = new Decimal(0);
+      let weightTotal = new Decimal(0);
+
+      for (const w of weeklies as any[]) {
+        if (w.contribute_to_score) {
+          const wt = decOrZero(w.weight_pct);
+          const pp = decOrZero(w.progress_pct);
+          weightedSum = weightedSum.add(pp.mul(wt));
+          weightTotal = weightTotal.add(wt);
+        }
+      }
+
+      for (const am of alignedMonthlies as any[]) {
+        if (am.contribute_to_score) {
+          const wt = decOrZero(am.weight_pct);
+          const pp = decOrZero(am.progress_pct);
+          weightedSum = weightedSum.add(pp.mul(wt));
+          weightTotal = weightTotal.add(wt);
+        }
+      }
+
+      if (weightTotal.gt(0)) {
+        if (metric?.allows_binary_completion) {
+          // AND logic for milestone metrics when weights are used
+          const allCompleted = [...weeklies, ...alignedMonthlies]
+            .filter((p: any) => p.contribute_to_score)
+            .every((p: any) => decOrZero(p.progress_pct).gte(100));
+          progress = allCompleted ? new Decimal(100) : new Decimal(0);
+        } else {
+          progress = weightedSum.div(weightTotal);
+        }
+      } else if (weeklies.length + alignedMonthlies.length > 0) {
+        const allProgress = [
+          ...weeklies.filter((w: any) => w.contribute_to_score).map((w: any) => decOrZero(w.progress_pct)),
+          ...alignedMonthlies.filter((am: any) => am.contribute_to_score).map((am: any) => decOrZero(am.progress_pct)),
+        ];
+        if (metric?.allows_binary_completion) {
+          const allCompleted = allProgress.every((p: Decimal) => p.gte(100));
+          progress = allCompleted ? new Decimal(100) : new Decimal(0);
+        } else {
+          const total = allProgress.reduce(
+            (sum: Decimal, p: Decimal) => sum.add(p),
+            new Decimal(0),
+          );
+          progress = total.div(allProgress.length);
+        }
+      } else {
+        progress = new Decimal(0);
+      }
+      progress = clampPercent(progress);
+      current = monthly.contribute_to_value
+        ? start.add(target.sub(start).mul(progress).div(100))
+        : decOrZero(monthly.current_value);
+    }
+  }
+
+  // Update confidence level
+  const companyId = await getCompanyIdForNode("monthly_plan", monthlyPlanId, tx);
+  const confidence = await calculateConfidenceLevel(companyId, progress);
 
   await tx.employeeMonthPlan.update({
     where: { id: monthlyPlanId },
-    data: { progress_pct: progress, current_value: current },
+    data: {
+      progress_pct: progress,
+      current_value: current,
+      // NOTE: EmployeeMonthPlan does NOT have a confidence_level field,
+      // unlike WeeklyPlan and DailyPlan. Do not try to set it here.
+    },
   });
 }
 
 export async function recalculateRollUp(
   nodeType: RollupNodeType,
   nodeId: number,
-  tx: any = prisma,
+  tx?: any,
 ): Promise<void> {
-  switch (nodeType) {
-    case "daily_plan": {
-      const daily = await tx.dailyPlan.findUnique({
-        where: { id: nodeId },
-        select: { weekly_plan_id: true },
-      });
-      if (daily?.weekly_plan_id) {
-        await recalculateRollUp("weekly_plan", daily.weekly_plan_id, tx);
+  // Auto-wrap in a transaction when called without one, so the entire cascade
+  // is atomic and partial failures don't leave inconsistent state.
+  if (!tx) {
+    return prisma.$transaction(
+      async (txn) => recalculateRollUp(nodeType, nodeId, txn),
+      { maxWait: 10000, timeout: 60000 },
+    );
+  }
 
-        // Also trigger rollup for aligned manager's weekly plan
-        const weekly = await tx.weeklyPlan.findUnique({
-          where: { id: daily.weekly_plan_id },
-          select: { aligned_manager_plan_id: true },
+  console.log(`[RollupEngine] Starting recalculateRollUp for ${nodeType} ID ${nodeId}`);
+  try {
+    switch (nodeType) {
+      case "daily_plan": {
+        const daily = await tx.dailyPlan.findUnique({
+          where: { id: nodeId },
+          select: { weekly_plan_id: true },
         });
-        if (weekly?.aligned_manager_plan_id) {
+        console.log(`[RollupEngine] DailyPlan ${nodeId} found parent WeeklyPlan ${daily?.weekly_plan_id}`);
+        if (daily?.weekly_plan_id) {
+          await recalculateRollUp("weekly_plan", daily.weekly_plan_id, tx);
+        }
+        break;
+      }
+
+      case "weekly_plan": {
+        console.log(`[RollupEngine] Processing WeeklyPlan ${nodeId}`);
+        await rollupWeeklyPlanFromDailies(nodeId, tx);
+
+        const thisWeekly = await tx.weeklyPlan.findUnique({
+          where: { id: nodeId },
+          select: { employee_month_plan_id: true, aligned_manager_plan_id: true, current_value: true, progress_pct: true },
+        });
+
+        console.log(`[RollupEngine] WeeklyPlan ${nodeId} updated: value=${thisWeekly?.current_value}, progress=${thisWeekly?.progress_pct}`);
+
+        if (thisWeekly?.aligned_manager_plan_id) {
+          console.log(`[RollupEngine] WeeklyPlan ${nodeId} is ALIGNED to Manager WeeklyPlan ${thisWeekly.aligned_manager_plan_id}`);
+          await recalculateRollUp("weekly_plan", thisWeekly.aligned_manager_plan_id, tx);
+        }
+
+        if (thisWeekly?.employee_month_plan_id) {
+          console.log(`[RollupEngine] WeeklyPlan ${nodeId} is cascading to its own MonthlyPlan ${thisWeekly.employee_month_plan_id}`);
+          await recalculateRollUp("monthly_plan", thisWeekly.employee_month_plan_id, tx);
+        }
+        break;
+      }
+
+      case "monthly_plan": {
+        console.log(`[RollupEngine] Processing MonthlyPlan ${nodeId}`);
+        await rollupMonthlyPlanFromWeeklies(nodeId, tx);
+
+        const thisMonthly = await tx.employeeMonthPlan.findUnique({
+          where: { id: nodeId },
+          select: { employee_kr_id: true, aligned_manager_plan_id: true, current_value: true, progress_pct: true },
+        });
+
+        console.log(`[RollupEngine] MonthlyPlan ${nodeId} updated: value=${thisMonthly?.current_value}, progress=${thisMonthly?.progress_pct}`);
+
+        if (thisMonthly?.aligned_manager_plan_id) {
+          console.log(`[RollupEngine] MonthlyPlan ${nodeId} is ALIGNED to Manager MonthlyPlan ${thisMonthly.aligned_manager_plan_id}`);
+          await recalculateRollUp("monthly_plan", thisMonthly.aligned_manager_plan_id, tx);
+        }
+
+        if (thisMonthly?.employee_kr_id) {
+          console.log(`[RollupEngine] MonthlyPlan ${nodeId} is cascading to its own EmployeeKR ${thisMonthly.employee_kr_id}`);
+          await recalculateRollUp("employee_key_result", thisMonthly.employee_kr_id, tx);
+        }
+        break;
+      }
+
+      case "employee_key_result": {
+        console.log(`[RollupEngine] Processing EmployeeKR ${nodeId}`);
+        await rollupEmployeeKR(nodeId, tx, true);
+        const kr = await tx.employeeKeyResult.findUnique({
+          where: { id: nodeId },
+          select: { employee_objective_id: true, final_value: true, final_score: true },
+        });
+
+        console.log(`[RollupEngine] EmployeeKR ${nodeId} updated: value=${kr?.final_value}, score=${kr?.final_score}`);
+
+        if (kr?.employee_objective_id) {
+          await rollupEmployeeObjective(kr.employee_objective_id, tx, true);
           await recalculateRollUp(
-            "weekly_plan",
-            weekly.aligned_manager_plan_id,
+            "employee_objective",
+            kr.employee_objective_id,
             tx,
           );
         }
-        return;
+        break;
       }
-      return;
-    }
 
-    case "weekly_plan": {
-      await rollupWeeklyPlanFromDailies(nodeId, tx);
-      const weekly = await tx.weeklyPlan.findUnique({
-        where: { id: nodeId },
-        select: { employee_month_plan_id: true },
-      });
+      case "employee_objective": {
+        await rollupFromEmployeeObjective(nodeId, tx);
+        break;
+      }
 
-      if (weekly?.employee_month_plan_id) {
-        await recalculateRollUp(
-          "monthly_plan",
-          weekly.employee_month_plan_id,
-          tx,
-        );
-
-        // Also trigger rollup for aligned manager's monthly plan
-        const monthly = await tx.employeeMonthPlan.findUnique({
-          where: { id: weekly.employee_month_plan_id },
-          select: { aligned_manager_plan_id: true },
+      case "company_key_result": {
+        const kr = await tx.companyKeyResult.findUnique({
+          where: { id: nodeId },
+          select: { objective_id: true },
         });
-        if (monthly?.aligned_manager_plan_id) {
-          await recalculateRollUp(
-            "monthly_plan",
-            monthly.aligned_manager_plan_id,
-            tx,
-          );
+        if (kr?.objective_id) {
+          await rollupCompanyKR(nodeId, tx);
+          await recalculateRollUp("company_objective", kr.objective_id, tx);
         }
-        return;
+        break;
       }
-      return;
-    }
 
-    case "monthly_plan": {
-      await rollupMonthlyPlanFromWeeklies(nodeId, tx);
-      const monthly = await tx.employeeMonthPlan.findUnique({
-        where: { id: nodeId },
-        select: { employee_kr_id: true },
-      });
-      if (monthly?.employee_kr_id) {
-        return recalculateRollUp(
-          "employee_key_result",
-          monthly.employee_kr_id,
-          tx,
-        );
+      case "company_objective": {
+        await rollupCompanyObjective(nodeId, tx);
+        break;
       }
-      return;
+
+      default:
+        console.warn(`[RollupEngine] Unknown node type: ${nodeType}`);
     }
+    console.log(`[RollupEngine] Finished direct rollup for ${nodeType} ID ${nodeId}`);
+  } catch (error) {
+    console.error(`[RollupEngine] ERROR in recalculateRollUp for ${nodeType} ID ${nodeId}:`, error);
+    throw error;
+  }
+}
 
-    case "employee_key_result": {
-      // Use rollupEmployeeKR which handles both contributor-aggregated KRs
-      // (parent KRs with employee contributors) and own-plan KRs (fallback to
-      // computeEmployeeKRScore). skipUpward=true so we control the upward
-      // propagation ourselves via recalculateRollUp below.
-      await rollupEmployeeKR(nodeId, tx, true);
-      const kr = await tx.employeeKeyResult.findUnique({
-        where: { id: nodeId },
-        select: { employee_objective_id: true },
-      });
-      if (!kr) return;
-
-      if (kr.employee_objective_id) {
-        await rollupEmployeeObjective(kr.employee_objective_id, tx, true);
-        return recalculateRollUp(
-          "employee_objective",
-          kr.employee_objective_id,
-          tx,
-        );
-      }
-      return;
-    }
-
-    case "employee_objective": {
-      // First compute the employee objective score from its KRs
-      await rollupEmployeeObjective(nodeId, tx, true);
-
-      const obj = await tx.employeeObjective.findUnique({
+async function getCompanyIdForNode(
+  nodeType: string,
+  nodeId: number,
+  tx: any = prisma,
+): Promise<number> {
+  try {
+    if (nodeType === "weekly_plan") {
+      const w = await tx.weeklyPlan.findUnique({
         where: { id: nodeId },
         select: {
-          chosen_parent_kr_id: true,
-          chosen_parent_employee_kr_id: true,
+          monthPlan: {
+            select: {
+              employeeKr: { select: { company_id: true } },
+            },
+          },
         },
       });
-      // NOTE: Disconnected upward rollup for employee objectives to avoid duplicate values
-      // as progress now flows through aligned plans.
-
-      if (obj?.chosen_parent_kr_id) {
-        return recalculateRollUp(
-          "company_key_result",
-          obj.chosen_parent_kr_id,
-          tx,
-        );
-      } else if (obj?.chosen_parent_employee_kr_id) {
-        return recalculateRollUp(
-          "employee_key_result",
-          obj.chosen_parent_employee_kr_id,
-          tx,
-        );
-      }
-
-      return;
+      return w?.monthPlan?.employeeKr?.company_id ?? 0;
     }
-
-    case "company_key_result": {
-      const kr = await tx.companyKeyResult.findUnique({
+    if (nodeType === "monthly_plan") {
+      const m = await tx.employeeMonthPlan.findUnique({
         where: { id: nodeId },
-        select: { objective_id: true },
+        select: { employeeKr: { select: { company_id: true } } },
       });
-      if (kr?.objective_id) {
-        await rollupCompanyKR(nodeId, tx);
-        return recalculateRollUp("company_objective", kr.objective_id, tx);
-      }
-      return;
+      return m?.employeeKr?.company_id ?? 0;
     }
-
-    case "company_objective": {
-      await rollupCompanyObjective(nodeId, tx);
-      return;
+    if (nodeType === "employee_key_result") {
+      const kr = await tx.employeeKeyResult.findUnique({
+        where: { id: nodeId },
+        select: { company_id: true },
+      });
+      return kr?.company_id ?? 0;
     }
-
-    default:
-      console.warn(`[RollupEngine] Unknown node type: ${nodeType}`);
+    return 0;
+  } catch (error) {
+    console.error(`[RollupEngine] Error fetching companyId for ${nodeType} ${nodeId}:`, error);
+    return 0;
   }
 }

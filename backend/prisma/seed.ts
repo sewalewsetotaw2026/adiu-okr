@@ -695,18 +695,18 @@ async function main() {
   // List of employees to add (12 employees)
   const employeesToAdd = [
     { id: "37", fullName: "Ermiyas Endalamaw", email: "ermiyas.e@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-05") },
-    { id: "30", fullName: "Addisu Aynayehu Admas", email: "addisu.aynayehu@adiucommunication.com.et", gender: "Male", dob: new Date("1993-01-07") },
-    { id: "35", fullName: "Sibhat Solomon Tikeher", email: "sibhat.solomon@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-06") },
-    { id: "8", fullName: "Dagmawit Solomon Deneke", email: "dagmawit.solomon@adiucommunication.com.et", gender: "Female", dob: new Date("1987-03-16") },
-    { id: "19", fullName: "Selamawit Temechu Dagne", email: "selamawit.temechu@adiucommunication.com.et", gender: "Female", dob: new Date("1999-12-04") },
-    { id: "52", fullName: "Gelantu Tesfaye Yebase", email: "gelantu.tesfaye@adiucommunication.com.et", gender: "Female", dob: new Date("1997-08-16") },
-    { id: "46", fullName: "Samuel Abebe Birle", email: "samuel.abebe@adiucommunication.com.et", gender: "Male", dob: new Date("1997-07-26") },
-    { id: "60", fullName: "Sewalew Setotaw Fentabile", email: "sewalew.setotaw@adiucommunication.com.et", gender: "Male", dob: new Date("1996-04-07") },
-    { id: "57", fullName: "Daniel Tujuma", email: "daniel.tujuma@adiucommunication.com.et", gender: "Male", dob: new Date("1990-01-01") },
-    { id: "53", fullName: "Eden Shitahun Asmare", email: "eden.shitahun@adiucommunication.com.et", gender: "Female", dob: new Date("1998-01-31") },
-    { id: "29", fullName: "Emnet Abebe Getahun", email: "emnet.abebe@adiucommunication.com.et", gender: "Female", dob: new Date("1997-06-30") },
-    { id: "45", fullName: "Tina Kibru Desalegn", email: "tina.kibru@adiucommunication.com.et", gender: "Female", dob: new Date("1998-05-25") },
-    { id: "54", fullName: "Yonas Sheferaw Urgessa", email: "yonas.sheferaw@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-12") },
+    { id: "30", fullName: "Addisu Aynayehu Admas", email: "addisu.a@adiucommunication.com.et", gender: "Male", dob: new Date("1993-01-07") },
+    { id: "35", fullName: "Sibhat Solomon Tikeher", email: "sibhat.s@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-06") },
+    { id: "8", fullName: "Dagmawit Solomon Deneke", email: "dagmawit.s@adiucommunication.com.et", gender: "Female", dob: new Date("1987-03-16") },
+    { id: "19", fullName: "Selamawit Temechu Dagne", email: "selamawit.t@adiucommunication.com.et", gender: "Female", dob: new Date("1999-12-04") },
+    { id: "52", fullName: "Gelantu Tesfaye Yebase", email: "gelantu.t@adiucommunication.com.et", gender: "Female", dob: new Date("1997-08-16") },
+    { id: "46", fullName: "Samuel Abebe Birle", email: "samuel.a@adiucommunication.com.et", gender: "Male", dob: new Date("1997-07-26") },
+    { id: "60", fullName: "Sewalew Setotaw Fentabile", email: "sewalew.s@adiucommunication.com.et", gender: "Male", dob: new Date("1996-04-07") },
+    { id: "57", fullName: "Daniel Tujuma", email: "daniel.t@adiucommunication.com.et", gender: "Male", dob: new Date("1990-01-01") },
+    { id: "53", fullName: "Eden Shitahun Asmare", email: "eden.s@adiucommunication.com.et", gender: "Female", dob: new Date("1998-01-31") },
+    { id: "29", fullName: "Emnet Abebe Getahun", email: "emnet.a@adiucommunication.com.et", gender: "Female", dob: new Date("1997-06-30") },
+    { id: "45", fullName: "Tina Kibru Desalegn", email: "tina.k@adiucommunication.com.et", gender: "Female", dob: new Date("1998-05-25") },
+    { id: "54", fullName: "Yonas Sheferaw Urgessa", email: "yonas.s@adiucommunication.com.et", gender: "Male", dob: new Date("1992-01-12") },
   ];
 
   const defaultPasswordHash = await bcrypt.hash("password123", 12);
