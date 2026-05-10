@@ -12,7 +12,7 @@ export default function EmployeeSettingsPage() {
   return (
     <AdminLayout>
       <Helmet>
-        <title>Employee Settings | Kacha Digital Financial Service</title>
+        <title>Employee Settings | ADIU Communication Service PLC</title>
       </Helmet>
       <div className="max-w-7xl mx-auto space-y-8">
         <PageHeader>

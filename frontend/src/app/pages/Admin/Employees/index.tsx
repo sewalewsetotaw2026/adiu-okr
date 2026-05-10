@@ -452,7 +452,7 @@ export default function Employees() {
   return (
     <AdminLayout>
       <Helmet>
-        <title>Employees | Kacha Digital Financial Service</title>
+        <title>Employees | ADIU Communication Service PLC</title>
       </Helmet>
       <div className="max-w-7xl mx-auto space-y-8">
         <PageHeader>
