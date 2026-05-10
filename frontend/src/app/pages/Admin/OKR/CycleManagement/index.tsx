@@ -338,14 +338,14 @@ export default function CycleManagement() {
                     Create a cycle with start and end dates. Open it when you
                     are ready to run company objectives for that period.
                   </p>
-                  <Button
+                  {/* <Button
                     variant="primary"
                     onClick={openCreate}
                     icon={MdAdd}
                     className="mt-6"
                   >
                     Create Cycle
-                  </Button>
+                  </Button> */}
                 </div>
               ) : (
                 <div className="rounded-2xl bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-100 overflow-hidden">
