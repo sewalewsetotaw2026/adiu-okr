@@ -52,7 +52,13 @@ export default function KeyResultCard({
       {/* Left accent bar with gradient */}
       <div className="absolute left-0 top-0 h-full w-2 bg-slate-50 group-hover:bg-gradient-to-b group-hover:from-primary group-hover:to-primary-600 transition-all duration-500" />
 
-      <div className="pl-8 pr-8 py-7">
+      {index !== undefined && (
+        <div className="absolute top-4 left-4 z-10 w-8 h-8 rounded-full bg-primary text-white text-xs font-black flex items-center justify-center shadow-lg shadow-primary/20 ring-4 ring-white">
+          {index + 1}
+        </div>
+      )}
+
+      <div className="pl-14 pr-8 py-7">
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
           <div className="min-w-0 flex-1 space-y-3">
@@ -69,7 +75,7 @@ export default function KeyResultCard({
 
             {/* Title - Bold & Premium */}
             <h4 className="text-lg font-black text-slate-900 tracking-tight group-hover:text-primary transition-colors leading-tight">
-              {index !== undefined ? `${index + 1}. ` : ""}{kr.title}
+              {kr.title}
             </h4>
 
             {/* Description - Better line height */}
@@ -168,14 +174,16 @@ export default function KeyResultCard({
               Departments
             </div>
             <div className="flex flex-wrap gap-2">
-              {kr.assignedDepartmentIds.map((deptId) => (
-                <span
-                  key={deptId}
-                  className="px-3 py-1.5 rounded-full bg-primary/5 text-[10px] font-bold text-primary border border-primary/10 hover:bg-primary/10 transition-colors cursor-default"
-                >
-                  {kr.departmentNameById?.get(deptId) ?? `Dept ${deptId}`}
-                </span>
-              ))}
+              {kr.assignedDepartmentIds
+                .filter((id) => kr.departmentNameById?.has(id))
+                .map((deptId) => (
+                  <span
+                    key={deptId}
+                    className="px-3 py-1.5 rounded-full bg-primary/5 text-[10px] font-bold text-primary border border-primary/10 hover:bg-primary/10 transition-colors cursor-default"
+                  >
+                    {kr.departmentNameById?.get(deptId)}
+                  </span>
+                ))}
             </div>
           </div>
         )}
@@ -187,19 +195,21 @@ export default function KeyResultCard({
               Owners
             </div>
             <div className="flex flex-wrap gap-2">
-              {kr.assignedEmployeeIds.map((eid) => (
-                <div
-                  key={eid}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-full group/owner hover:border-primary/30 transition-all cursor-default"
-                >
-                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
-                    <MdGroups className="text-primary text-[10px]" />
+              {kr.assignedEmployeeIds
+                .filter((eid) => kr.employeeNameById?.has(eid))
+                .map((eid) => (
+                  <div
+                    key={eid}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-full group/owner hover:border-primary/30 transition-all cursor-default"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                      <MdGroups className="text-primary text-[10px]" />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-600 tracking-widest font-space uppercase">
+                      {kr.employeeNameById?.get(eid)}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-black text-slate-600 tracking-widest font-space uppercase">
-                    {kr.employeeNameById?.get(eid) ?? `User ${eid}`}
-                  </span>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
