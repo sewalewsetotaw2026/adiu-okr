@@ -1,15 +1,20 @@
+import { useState } from "react";
+import { MdHistory } from "react-icons/md";
 import type { PlanStatus } from "../../../../types/okr.types";
+import FeedbackBanner from "./FeedbackBanner";
+
+export interface FeedbackItem {
+  status: string;
+  reviewerName?: string;
+  feedbackNote?: string;
+  targetTitle?: string;
+  timestamp?: string;
+}
 
 /**
  * Banner shown at the top of a period section (month or week) once the
  * period has been submitted. Replaces the "Submit" button while in any
  * non-DRAFT state.
- *
- * Variants per spec (Task 4 of Packet 2):
- *   SUBMITTED / UNDER_REVIEW → 🕐 amber, "Under review by …"
- *   APPROVED                → ✅ teal, "Approved by …"
- *   PUBLISHED               → 🟢 green, "Live and active"
- *   REJECTED                → ❌ red, "Changes requested"
  */
 export interface PlanStatusBannerProps {
   plan_status: PlanStatus;
@@ -17,9 +22,10 @@ export interface PlanStatusBannerProps {
   approved_at?: string;
   published_at?: string;
   reviewer_name?: string;
-  feedback_note?: string;
-  onViewFeedback?: () => void;
+  feedback_note?: string; // Legacy: for backward compatibility
+  feedbackItems?: FeedbackItem[]; // NEW: List of all specific feedback
   className?: string;
+  hideStatusBanner?: boolean; // NEW: Option to only show feedback items
 }
 
 function fmtDate(iso?: string) {
@@ -42,15 +48,30 @@ export default function PlanStatusBanner({
   published_at,
   reviewer_name,
   feedback_note,
-  onViewFeedback,
+  feedbackItems = [],
   className = "",
+  hideStatusBanner = false,
 }: PlanStatusBannerProps) {
-  if (plan_status === "DRAFT") return null;
+  const [isHistoryRevealed, setIsHistoryRevealed] = useState(false);
+
+  // If no specific feedback items provided, but a legacy feedback_note exists, wrap it.
+  const normalizedFeedback = [...feedbackItems];
+  if (normalizedFeedback.length === 0 && feedback_note) {
+    normalizedFeedback.push({
+      status: plan_status,
+      reviewerName: reviewer_name,
+      feedbackNote: feedback_note,
+      timestamp: approved_at || submitted_at,
+    });
+  }
+
+  // If in DRAFT with no feedback, we don't show the banner.
+  if (plan_status === "DRAFT" && normalizedFeedback.length === 0) return null;
 
   const reviewer = reviewer_name?.trim() || "your reviewer";
 
   const variants: Record<
-    Exclude<PlanStatus, "DRAFT">,
+    PlanStatus,
     {
       icon: string;
       ring: string;
@@ -60,6 +81,18 @@ export default function PlanStatusBanner({
       body: React.ReactNode;
     }
   > = {
+    DRAFT: {
+      icon: "✍️",
+      ring: "ring-orange-200",
+      bg: "bg-orange-50",
+      title: "REVISION NEEDED",
+      titleColor: "text-orange-800",
+      body: (
+        <span className="text-orange-600">
+          Your plan has feedback and is in draft. Review the notes below and resubmit.
+        </span>
+      ),
+    },
     SUBMITTED: {
       icon: "🕐",
       ring: "ring-amber-200",
@@ -124,22 +157,8 @@ export default function PlanStatusBanner({
           <div>
             By <strong>{reviewer}</strong>.
           </div>
-          {feedback_note ? (
-            <div className="bg-white/70 rounded-lg px-3 py-2 text-rose-900 text-xs italic ring-1 ring-rose-100">
-              "{feedback_note}"
-            </div>
-          ) : null}
           <div className="text-xs">
-            Review comments below, revise your plan, and resubmit.
-            {onViewFeedback ? (
-              <button
-                type="button"
-                onClick={onViewFeedback}
-                className="ml-2 inline-flex items-center gap-1 text-rose-700 hover:text-rose-900 font-bold underline"
-              >
-                View ↓
-              </button>
-            ) : null}
+            Review the comments, revise your plan, and resubmit.
           </div>
         </div>
       ),
@@ -148,19 +167,57 @@ export default function PlanStatusBanner({
 
   const v = variants[plan_status];
 
+
   return (
-    <div
-      className={`rounded-2xl ${v.bg} ring-1 ring-inset ${v.ring} px-5 py-4 flex items-start gap-4 ${className}`}
-    >
-      <span className="text-2xl leading-none flex-shrink-0">{v.icon}</span>
-      <div className="flex-1 min-w-0">
+    <div className={`space-y-4 ${className}`}>
+      {/* Main Status Banner */}
+      {!hideStatusBanner && (
         <div
-          className={`text-[11px] font-black tracking-widest uppercase ${v.titleColor} mb-1`}
+          className={`rounded-2xl ${v.bg} ring-1 ring-inset ${v.ring} px-5 py-4 flex items-start gap-4 transition-all duration-300 shadow-sm`}
         >
-          {v.title}
+          <span className="text-2xl leading-none flex-shrink-0">{v.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div
+              className={`text-[11px] font-black tracking-widest uppercase ${v.titleColor} mb-1`}
+            >
+              {v.title}
+            </div>
+            <div className="text-sm font-medium">{v.body}</div>
+          </div>
         </div>
-        <div className="text-sm font-medium">{v.body}</div>
-      </div>
+      )}
+
+      {/* Unified History Reveal Button */}
+      {normalizedFeedback.length > 0 && !isHistoryRevealed && (
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setIsHistoryRevealed(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-800 hover:bg-slate-100 hover:border-slate-300 transition-all text-[11px] font-bold uppercase tracking-wider group cursor-pointer shadow-sm active:scale-95"
+          >
+            <MdHistory className="text-sm group-hover:rotate-[-45deg] transition-transform duration-300" />
+            View Feedback History
+          </button>
+        </div>
+      )}
+
+      {/* Specific Feedback Items using FeedbackBanner */}
+      {normalizedFeedback.length > 0 && isHistoryRevealed && (
+        <div className="space-y-3 pl-4 border-l-2 border-slate-100 mt-2">
+          {normalizedFeedback.map((item, idx) => (
+            <FeedbackBanner
+              key={idx}
+              status={item.status}
+              reviewerName={item.reviewerName}
+              feedback_note={item.feedbackNote}
+              targetTitle={item.targetTitle}
+              timestamp={item.timestamp}
+              isRevealed={true}
+              onDismiss={() => setIsHistoryRevealed(false)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

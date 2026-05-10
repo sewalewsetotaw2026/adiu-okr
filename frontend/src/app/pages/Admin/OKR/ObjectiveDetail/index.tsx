@@ -53,22 +53,9 @@ function collectDepartmentIdsFromKr(kr: Record<string, unknown>): number[] {
     "departments",
     "department_assignments",
     "departmentAssignments",
+    "departmentAssignments",
   ] as const;
 
-  const contributors = kr["contributors"];
-  if (Array.isArray(contributors)) {
-    for (const c of contributors) {
-      if (c && typeof c === "object") {
-        const emp = (c as any).user?.employee?.employments;
-        if (Array.isArray(emp)) {
-          for (const e of emp) {
-            add(e.department_id);
-          }
-        }
-      }
-    }
-  }
-  console.log();
 
   for (const key of listKeys) {
     const list = kr[key];
@@ -85,19 +72,30 @@ function collectDepartmentIdsFromKr(kr: Record<string, unknown>): number[] {
     }
   }
 
-  for (const key of [
-    "department_objectives",
-    "departmentObjectives",
-  ] as const) {
-    const arr = kr[key];
-    if (!Array.isArray(arr)) continue;
-    for (const row of arr) {
-      if (!row || typeof row !== "object") continue;
-      const o = row as Record<string, unknown>;
-      add(o.department_id ?? o.departmentId);
-      const dept = o.department;
-      if (dept && typeof dept === "object")
-        add((dept as Record<string, unknown>).id);
+  return uniqNums(out);
+}
+
+function collectEmployeeIdsFromKr(kr: any): number[] {
+  if (!kr) return [];
+  const out: number[] = [];
+  const add = (v: any) => {
+    if (v == null || v === "") return;
+    const n = Number(v);
+    if (!Number.isNaN(n) && n > 0) out.push(n);
+  };
+
+  const listKeys = ["contributors", "assigned_users", "assignees"] as const;
+  for (const key of listKeys) {
+    const list = kr[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (typeof item === "string" || typeof item === "number") add(item);
+      else if (item && typeof item === "object") {
+        add(item.user_id ?? item.userId ?? item.employee_id ?? item.employeeId ?? item.id);
+        if (item.employee && typeof item.employee === "object") {
+          add(item.employee.id);
+        }
+      }
     }
   }
 
@@ -156,6 +154,20 @@ export default function ObjectiveDetail() {
     return m;
   }, [departments]);
 
+  const employeeNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    objective?.keyResults?.forEach((kr: any) => {
+      (kr.contributors || []).forEach((c: any) => {
+        const emp = c.user?.employee || c.employee;
+        const eid = emp?.id ?? c.employee_id ?? c.user_id;
+        if (eid && emp?.full_name) {
+          m.set(Number(eid), emp.full_name);
+        }
+      });
+    });
+    return m;
+  }, [objective]);
+
   /* ================= FETCH DEPARTMENTS ================= */
   useEffect(() => {
     dispatch(actions.fetchDepartmentsStart({ page: 1, limit: 100 }));
@@ -191,10 +203,14 @@ export default function ObjectiveDetail() {
 
       setKrs(
         (data?.keyResults || []).map((kr: any) => ({
+          // Spread raw backend data first so the edit modal gets everything
+          ...kr,
+          // Then override with mapped/computed display fields
           id: Number(kr.id),
           title: kr.title,
           description: kr.description || "",
           targetValue: Number(kr.target_value) || 0,
+          target_value: kr.target_value,
           progress: (() => {
             const directRaw =
               kr.final_score ??
@@ -204,7 +220,6 @@ export default function ObjectiveDetail() {
             if (directRaw !== null && directRaw !== undefined) {
               return Math.max(0, Math.min(100, Number(directRaw)));
             }
-
             const tgt = Number(kr.target_value ?? 0);
             const cur = Number(
               kr.current_value ?? kr.currentValue ?? kr.final_value ?? 0,
@@ -224,8 +239,12 @@ export default function ObjectiveDetail() {
               ? Number(kr.metric_definition_id)
               : undefined,
           assignedDepartmentIds: collectDepartmentIdsFromKr(kr),
+          assignedEmployeeIds: collectEmployeeIdsFromKr(kr),
           contributesToScore: kr.contributes_to_objective_score !== false,
           contributesToValue: kr.contributes_to_objective_value !== false,
+          // Preserve raw arrays for edit modal pre-fill
+          contributors: kr.contributors ?? [],
+          departments: kr.departments ?? [],
         })),
       );
     } catch (err) {
@@ -515,24 +534,17 @@ export default function ObjectiveDetail() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {/* {objective.status_code !== "published" && (
-                      <Button
-                        onClick={openAddModal}
-                        icon={MdAdd}
-                        className="mt-8 rounded-xl bg-slate-900 px-6 py-3 text-[10px] font-black text-white tracking-widest font-space hover:bg-slate-800 transition shadow-xl shadow-slate-200"
-                      >
-                        Define Key Result
-                      </Button>
-                    )} */}
                   </div>
                 ) : (
-                  krs.map((kr) => (
+                  krs.map((kr, index) => (
                     <KeyResultCard
                       key={kr.id}
                       kr={{
                         ...kr,
                         departmentNameById,
+                        employeeNameById,
                       }}
+                      index={index}
                       variant="admin"
                       onEdit={openEditModal}
                       onDelete={(k) => setDeleteKRId(k.id)}

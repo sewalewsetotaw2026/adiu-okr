@@ -33,75 +33,25 @@ import { useDepartments } from "../../Admin/Departments/slice";
 import type { Department } from "../../Admin/Departments/slice/types";
 import { selectDepartments } from "../../Admin/Departments/slice/selectors";
 
-/* ================= UTIL ================= */
-function uniqNums(ids: number[]): number[] {
-  return [...new Set(ids.filter((n) => !Number.isNaN(n) && n > 0))];
+
+
+function collectDepartmentIdsFromKr(kr: any): number[] {
+  if (!kr || !kr.departments) return [];
+  const ids = kr.departments
+    .map((d: any) => d.department?.id ?? d.department_id)
+    .filter(Boolean);
+  return Array.from(new Set(ids));
 }
 
-function collectDepartmentIdsFromKr(kr: Record<string, unknown>): number[] {
-  const out: number[] = [];
-  const add = (v: unknown) => {
-    if (v == null || v === "") return;
-    const n = Number(v);
-    if (!Number.isNaN(n) && n > 0) out.push(n);
-  };
-
-  const listKeys = [
-    "assignedDepartments",
-    "assigned_departments",
-    "departments",
-    "department_assignments",
-    "departmentAssignments",
-    "departmentAssignments",
-  ] as const;
-
-  const contributors = kr["contributors"];
-  if (Array.isArray(contributors)) {
-    for (const c of contributors) {
-      if (c && typeof c === "object") {
-        const emp = (c as any).user?.employee?.employments;
-        if (Array.isArray(emp)) {
-          for (const e of emp) {
-            add(e.department_id);
-          }
-        }
-      }
-    }
-  }
-
-  for (const key of listKeys) {
-    const list = kr[key];
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      if (typeof item === "number" || typeof item === "string") add(item);
-      else if (item && typeof item === "object") {
-        const o = item as Record<string, unknown>;
-        add(o.id ?? o.department_id ?? o.departmentId);
-        const dept = o.department;
-        if (dept && typeof dept === "object")
-          add((dept as Record<string, unknown>).id);
-      }
-    }
-  }
-
-  for (const key of [
-    "department_objectives",
-    "departmentObjectives",
-  ] as const) {
-    const arr = kr[key];
-    if (!Array.isArray(arr)) continue;
-    for (const row of arr) {
-      if (!row || typeof row !== "object") continue;
-      const o = row as Record<string, unknown>;
-      add(o.department_id ?? o.departmentId);
-      const dept = o.department;
-      if (dept && typeof dept === "object")
-        add((dept as Record<string, unknown>).id);
-    }
-  }
-
-  return uniqNums(out);
+function collectEmployeeIdsFromKr(kr: any): number[] {
+  if (!kr || !kr.contributors) return [];
+  const ids = kr.contributors
+    .map((c: any) => c.employee?.id ?? c.employee_id)
+    .filter(Boolean);
+  return Array.from(new Set(ids));
 }
+
+
 
 /* ================= TYPES ================= */
 type KR = {
@@ -121,7 +71,6 @@ type KR = {
   contributesToValue?: boolean;
 };
 
-
 /* ================= COMPONENT ================= */
 export default function EmployeeObjectiveDetailPage() {
   const { objectiveId } = useParams();
@@ -131,7 +80,10 @@ export default function EmployeeObjectiveDetailPage() {
 
   const roleName = getRoleNameById(user?.role_id);
   const isAdminView = location.pathname.startsWith("/admin");
-  const Layout = isAdminView && (roleName === "Admin" || roleName === "HR") ? AdminLayout : EmployeeLayout;
+  const Layout =
+    isAdminView && (roleName === "Admin" || roleName === "HR")
+      ? AdminLayout
+      : EmployeeLayout;
 
   const dispatch = useDispatch();
   const { actions } = useDepartments();
@@ -154,11 +106,24 @@ export default function EmployeeObjectiveDetailPage() {
     return m;
   }, [departments]);
 
+  const employeeNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    krs.forEach((kr: any) => {
+      (kr.contributors || []).forEach((c: any) => {
+        const emp = c.user?.employee || c.employee;
+        const eid = emp?.id ?? c.employee_id ?? c.user_id;
+        if (eid && emp?.full_name) {
+          m.set(Number(eid), emp.full_name);
+        }
+      });
+    });
+    return m;
+  }, [krs]);
+
   /* ================= FETCH DEPARTMENTS ================= */
   useEffect(() => {
     dispatch(actions.fetchDepartmentsStart({ page: 1, limit: 100 }));
   }, [dispatch, actions]);
-
 
   /* ================= FETCH OBJECTIVE ================= */
   const fetchObjective = async () => {
@@ -202,7 +167,13 @@ export default function EmployeeObjectiveDetailPage() {
             isSecureRoute: true,
           });
           allComments = commentRes?.data?.data || commentRes?.data || [];
-          setComments(allComments.filter((c: any) => c.entity_type === "EMPLOYEE_OBJECTIVE" && c.entity_id === Number(objectiveId)));
+          setComments(
+            allComments.filter(
+              (c: any) =>
+                c.entity_type === "EMPLOYEE_OBJECTIVE" &&
+                c.entity_id === Number(objectiveId),
+            ),
+          );
         } catch (ce) {
           console.warn("Failed to fetch objective comments", ce);
         }
@@ -240,7 +211,13 @@ export default function EmployeeObjectiveDetailPage() {
           contributes_to_value: kr.contributes_to_objective_value !== false,
           contributesToScore: kr.contributes_to_objective_score !== false,
           contributesToValue: kr.contributes_to_objective_value !== false,
-          comments: allComments.filter((c: any) => c.entity_type === "EMPLOYEE_KR" && Number(c.entity_id) === Number(kr.id)),
+          assignedEmployeeIds: collectEmployeeIdsFromKr(kr),
+          contributors: kr.contributors ?? [],
+          comments: allComments.filter(
+            (c: any) =>
+              c.entity_type === "EMPLOYEE_KR" &&
+              Number(c.entity_id) === Number(kr.id),
+          ),
         })),
       );
     } catch (err) {
@@ -339,7 +316,13 @@ export default function EmployeeObjectiveDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate(isAdminView ? routeConstants.okr : routeConstants.okrMyExecution)}
+              onClick={() =>
+                navigate(
+                  isAdminView
+                    ? routeConstants.okr
+                    : routeConstants.okrMyExecution,
+                )
+              }
               className="text-gray-500 hover:text-gray-800 transition-colors !px-0"
             >
               {isAdminView ? "OKR" : "OKR"}
@@ -348,7 +331,13 @@ export default function EmployeeObjectiveDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate(isAdminView ? routeConstants.okrObjectives : routeConstants.okrMyExecution)}
+              onClick={() =>
+                navigate(
+                  isAdminView
+                    ? routeConstants.okrObjectives
+                    : routeConstants.okrMyExecution,
+                )
+              }
               className="text-gray-500 hover:text-gray-800 transition-colors !px-0"
             >
               {isAdminView ? "Objectives" : "Objectives"}
@@ -388,16 +377,27 @@ export default function EmployeeObjectiveDetailPage() {
                     icon={MdAdd}
                     onClick={openAddModal}
                     disabled={
-                      Number(configMenu?.additional_configuration?.allowed_krs?.max) > 0 &&
-                      krs.length >= Number(configMenu?.additional_configuration?.allowed_krs?.max) &&
+                      Number(
+                        configMenu?.additional_configuration?.allowed_krs?.max,
+                      ) > 0 &&
+                      krs.length >=
+                        Number(
+                          configMenu?.additional_configuration?.allowed_krs
+                            ?.max,
+                        ) &&
                       !editingKR
                     }
                     className="uppercase tracking-widest font-space text-[10px] font-black"
                   >
-                    {Number(configMenu?.additional_configuration?.allowed_krs?.max) > 0 &&
-                    krs.length >= Number(configMenu?.additional_configuration?.allowed_krs?.max) &&
+                    {Number(
+                      configMenu?.additional_configuration?.allowed_krs?.max,
+                    ) > 0 &&
+                    krs.length >=
+                      Number(
+                        configMenu?.additional_configuration?.allowed_krs?.max,
+                      ) &&
                     !editingKR
-                      ? "KR Limit Reached"
+                      ? "Key Result Limit Reached"
                       : "Add Key Result"}
                   </Button>
                 )}
@@ -481,7 +481,9 @@ export default function EmployeeObjectiveDetailPage() {
                   <MdModeComment size={20} />
                 </div>
                 <div>
-                  <h4 className="font-bold text-amber-900">Reviewer Feedback</h4>
+                  <h4 className="font-bold text-amber-900">
+                    Reviewer Feedback
+                  </h4>
                   <p className="text-xs text-amber-700/70 uppercase tracking-wider font-semibold">
                     Revision Required
                   </p>
@@ -495,9 +497,13 @@ export default function EmployeeObjectiveDetailPage() {
                         "{c.content}"
                       </p>
                       <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-400 font-medium uppercase tracking-tight">
-                        <span>{new Date(c.created_at).toLocaleDateString()}</span>
+                        <span>
+                          {new Date(c.created_at).toLocaleDateString()}
+                        </span>
                         <span>•</span>
-                        <span className="text-amber-600 font-bold">Reviewer</span>
+                        <span className="text-amber-600 font-bold">
+                          Reviewer
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -530,25 +536,17 @@ export default function EmployeeObjectiveDetailPage() {
                       Measuring Performance Starts With Granular Key Results.
                       Add One To Begin Tracking.
                     </p>
-                    {/* {objective.status_code !== "published" && (
-                      <Button
-                        variant="primary"
-                        onClick={openAddModal}
-                        icon={MdAdd}
-                        className="mt-8 !bg-slate-900 !border-0 text-white shadow-xl shadow-slate-200"
-                      >
-                        Define Key Result
-                      </Button>
-                    )} */}
                   </div>
                 ) : (
-                  krs.map((kr) => (
+                  krs.map((kr, index) => (
                     <KeyResultCard
                       key={kr.id}
                       kr={{
                         ...kr,
                         departmentNameById,
+                        employeeNameById,
                       }}
+                      index={index}
                       variant={isAdminView ? "admin" : "employee"}
                       onEdit={openEditModal}
                       onDelete={(k) => setDeleteKRId(k.id)}

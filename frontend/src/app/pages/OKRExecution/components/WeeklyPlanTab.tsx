@@ -20,6 +20,7 @@ import {
   fetchWeeklyPlans,
   publishWeeklyPeriod,
   submitWeeklyPeriod,
+  updateWeeklyPlan,
 } from "../../../services/okr-execution.api";
 import type {
   AvailableWeight,
@@ -32,6 +33,8 @@ import PlanStatusBanner from "./PlanStatusBanner";
 import WeeklyPlanCard from "./WeeklyPlanCard";
 import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
 import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
+import WeeklyPlanProgressModal from "./modals/WeeklyPlanProgressModal";
+import { formatReadableDate } from "../utils/calendarDates";
 
 const NON_DRAFT_LIFECYCLE = new Set([
   "SUBMITTED",
@@ -63,10 +66,20 @@ export interface WeeklyPlanTabProps {
   allowAdd?: boolean;
   /** The current OKR cycle ID. */
   cycleId?: string | number | null;
+  /** Cycle boundaries used to render calendar-aware labels. */
+  cycleStartDate?: string | null;
+  cycleEndDate?: string | null;
   /** The user's role level. */
   userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+  /** Level-based cadence configuration for all roles. */
+  levelConfig?: Record<
+    string,
+    { allow_monthly: boolean; allow_weekly: boolean; allow_daily: boolean }
+  > | null;
   /** Callback to trigger a post-publish edit request. */
   onPostPublishEdit?: (plan: WeeklyPlan) => void;
+  /** Whether the user can update progress at the weekly level based on cadence. */
+  allowUpdateProgress?: boolean;
 }
 
 interface PeriodSubmissionState {
@@ -77,6 +90,7 @@ interface PeriodSubmissionState {
   bannerStatus?: WeeklyPlan["plan_status"];
   reviewerName?: string;
   feedbackNote?: string;
+  feedbackItems: any[]; // List of specific feedback items
   submittedAt?: string;
   approvedAt?: string;
   publishedAt?: string;
@@ -94,8 +108,12 @@ export default function WeeklyPlanTab({
   refreshNonce,
   allowAdd = true,
   cycleId,
+  cycleStartDate,
+  cycleEndDate,
   userRoleLevel,
+  levelConfig,
   onPostPublishEdit,
+  allowUpdateProgress = false,
 }: WeeklyPlanTabProps) {
   const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>([]);
   const [plans, setPlans] = useState<WeeklyPlan[]>([]);
@@ -103,7 +121,6 @@ export default function WeeklyPlanTab({
     Record<string, AvailableWeight | null>
   >({});
   const [loading, setLoading] = useState(false);
-
 
   const [expanded, setExpanded] = useState<Record<number, boolean>>(() => {
     const active = (() => {
@@ -138,7 +155,12 @@ export default function WeeklyPlanTab({
     monthlyPlanId: string;
   } | null>(null);
   const [publishingPeriod, setPublishingPeriod] = useState(false);
-  const [postPublishEditing, setPostPublishEditing] = useState<WeeklyPlan | null>(null);
+  // Top-level batch CTA loaders
+  const [publishAllLoading, setPublishAllLoading] = useState(false);
+  const [submitAllLoading, setSubmitAllLoading] = useState(false);
+  const [postPublishEditing, setPostPublishEditing] =
+    useState<WeeklyPlan | null>(null);
+  const [progressPlan, setProgressPlan] = useState<WeeklyPlan | null>(null);
 
   // ── Loaders ────────────────────────────────────────────────────────────
 
@@ -197,7 +219,6 @@ export default function WeeklyPlanTab({
     setExpanded((prev) => ({ ...prev, [initialExpandWeek]: true }));
   }, [initialExpandWeek]);
 
-
   // ── Derived state ──────────────────────────────────────────────────────
 
   // Determine how many week slots to render: at least `weeksInMonth`, and
@@ -230,10 +251,7 @@ export default function WeeklyPlanTab({
     const out: Record<number, PeriodSubmissionState> = {} as any;
     for (const w of slots) {
       const list = plansByWeek[w] ?? [];
-      const total = list.reduce(
-        (acc, p) => acc + Number(p.weight_pct || 0),
-        0,
-      );
+      const total = list.reduce((acc, p) => acc + Number(p.weight_pct || 0), 0);
       const isSubmitted = list.some((p) =>
         NON_DRAFT_LIFECYCLE.has(p.plan_status),
       );
@@ -247,20 +265,68 @@ export default function WeeklyPlanTab({
         "APPROVED",
         "PUBLISHED",
       ];
-      const banner = order.find((s) =>
-        list.some((p) => p.plan_status === s),
-      );
+      const banner = order.find((s) => list.some((p) => p.plan_status === s));
       const bannerPlan = banner
         ? list.find((p) => p.plan_status === banner)
         : undefined;
       const parentIds = Array.from(
         new Set(list.map((p) => p.parent_monthly_id).filter(Boolean)),
       );
-      // Find rejected plan for feedback note
-      const rejectedPlan = list.find((p) => p.plan_status === "REJECTED");
+
+      // Find ALL plans with feedback (Legacy + History)
+      const feedbackItems: any[] = [];
+      list.forEach((p) => {
+        const planFeedback: any[] = [];
+
+        // 1. Add historical comments
+        if (p.comments && (p.comments as any[]).length > 0) {
+          (p.comments as any[]).forEach((c: any) => {
+            planFeedback.push({
+              status: p.plan_status,
+              reviewerName: c.author_name,
+              feedbackNote: c.content,
+              targetTitle: p.title,
+              timestamp: c.created_at,
+            });
+          });
+        }
+
+        // 2. Add legacy note if not already covered by comments
+        const legacyNote =
+          p.feedback_note || p.rejection_reason || p.reviewer_note;
+        if (legacyNote) {
+          const alreadyAdded = planFeedback.some(
+            (f) => f.feedbackNote === legacyNote,
+          );
+          if (!alreadyAdded) {
+            planFeedback.push({
+              status: p.plan_status,
+              reviewerName: p.reviewer_name,
+              feedbackNote: legacyNote,
+              targetTitle: p.title,
+              timestamp: p.approved_at || p.submitted_at,
+            });
+          }
+        }
+        feedbackItems.push(...planFeedback);
+      });
+
+      // Sort by timestamp descending
+      feedbackItems.sort(
+        (a, b) =>
+          new Date(b.timestamp || 0).getTime() -
+          new Date(a.timestamp || 0).getTime(),
+      );
+
+      // Find plan with feedback (REJECTED takes priority)
+      const feedbackPlan =
+        list.find((p) => p.plan_status === "REJECTED") ||
+        list.find(
+          (p) => p.feedback_note || p.rejection_reason || p.reviewer_note,
+        );
+
       const canShowPublish =
-        list.length > 0 &&
-        list.some((p) => p.plan_status === "APPROVED");
+        list.length > 0 && list.some((p) => p.plan_status === "APPROVED");
       out[w] = {
         isSubmitted,
         canShowSubmit,
@@ -270,8 +336,12 @@ export default function WeeklyPlanTab({
         submittedAt: bannerPlan?.submitted_at,
         approvedAt: bannerPlan?.approved_at,
         publishedAt: bannerPlan?.published_at,
-        reviewerName: rejectedPlan?.reviewer_name || bannerPlan?.reviewer_name,
-        feedbackNote: rejectedPlan?.feedback_note || rejectedPlan?.rejection_reason || rejectedPlan?.reviewer_note,
+        reviewerName: feedbackPlan?.reviewer_name || bannerPlan?.reviewer_name,
+        feedbackNote:
+          feedbackPlan?.feedback_note ||
+          feedbackPlan?.rejection_reason ||
+          feedbackPlan?.reviewer_note,
+        feedbackItems,
         parentMonthlyPlanIds: parentIds,
       };
     }
@@ -298,16 +368,16 @@ export default function WeeklyPlanTab({
     void refreshAllocations();
     onAllocationsChanged?.();
     if (created.length === 1) {
-      ToastService.success(`Weekly plan created for Week ${created[0].week_number}.`);
+      ToastService.success(
+        `Weekly plan created for Week ${created[0].week_number}.`,
+      );
     } else {
       ToastService.success(`${created.length} weekly plans created.`);
     }
   };
 
   const handleEdited = (updated: WeeklyPlan) => {
-    setPlans((prev) =>
-      prev.map((p) => (p.id === updated.id ? updated : p)),
-    );
+    setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     ToastService.success("Weekly plan updated.");
   };
 
@@ -351,10 +421,16 @@ export default function WeeklyPlanTab({
   const startSubmitPeriod = (w: number) => {
     const list = plansByWeek[w] ?? [];
     const errors: string[] = [];
-    if (list.length === 0) {
-      errors.push("This week has no plans yet.");
+
+    // Filter to only editable plans (draft/rejected) for validation
+    const editablePlans = list.filter((p) =>
+      EDITABLE_LIFECYCLE.has(p.plan_status),
+    );
+
+    if (editablePlans.length === 0) {
+      errors.push("No editable plans found for submission.");
     }
-    list.forEach((p) => {
+    editablePlans.forEach((p) => {
       if (!Number(p.target_value)) errors.push(`"${p.title}" has no target.`);
       if (!Number(p.weight_pct)) errors.push(`"${p.title}" has no weight.`);
     });
@@ -362,19 +438,16 @@ export default function WeeklyPlanTab({
       ToastService.error(errors.join(" "));
       return;
     }
+
     const meta = periodMeta[w];
     if (meta.parentMonthlyPlanIds.length === 0) {
       ToastService.error("No plans found to submit.");
       return;
     }
-    const total = meta.totalWeight;
     setSubmitConfirm({
       weekNumber: w,
       monthlyPlanId: meta.parentMonthlyPlanIds[0], // dummy for type safety
-      warning:
-        Math.abs(total - 100) > 0.01
-          ? `Plans sum to ${total}%, not 100%. Proceed anyway?`
-          : undefined,
+      warning: undefined, // Removed the 100% validation as it's not required for weekly plans
     });
   };
 
@@ -385,8 +458,23 @@ export default function WeeklyPlanTab({
       const meta = periodMeta[submitConfirm.weekNumber];
       const parentIds = meta.parentMonthlyPlanIds;
 
+      // Only submit editable plans (draft/rejected) for review
+      const plansForWeek = plansByWeek[submitConfirm.weekNumber] ?? [];
+      const editablePlans = plansForWeek.filter((p) =>
+        EDITABLE_LIFECYCLE.has(p.plan_status),
+      );
+
+      if (editablePlans.length === 0) {
+        ToastService.error("No editable plans found for submission.");
+        return;
+      }
+
+      const editablePlanIds = editablePlans.map((p) => p.id);
+
       await Promise.all(
-        parentIds.map((id) => submitWeeklyPeriod(submitConfirm.weekNumber, id)),
+        parentIds.map((id) =>
+          submitWeeklyPeriod(submitConfirm.weekNumber, id, editablePlanIds),
+        ),
       );
 
       ToastService.success(
@@ -410,7 +498,10 @@ export default function WeeklyPlanTab({
     if (!publishConfirm) return;
     setPublishingPeriod(true);
     try {
-      await publishWeeklyPeriod(publishConfirm.weekNumber, publishConfirm.monthlyPlanId);
+      await publishWeeklyPeriod(
+        publishConfirm.weekNumber,
+        publishConfirm.monthlyPlanId,
+      );
       ToastService.success(
         `Week ${publishConfirm.weekNumber} plan published successfully.`,
       );
@@ -419,9 +510,7 @@ export default function WeeklyPlanTab({
       onAllocationsChanged?.();
     } catch (err: any) {
       ToastService.error(
-        err?.data?.message ||
-          err?.message ||
-          "Could not publish weekly plans.",
+        err?.data?.message || err?.message || "Could not publish weekly plans.",
       );
     } finally {
       setPublishingPeriod(false);
@@ -465,7 +554,11 @@ export default function WeeklyPlanTab({
   // The next unlocked week = first unlocked week with zero plans (ready to start).
   const nextUnlockedWeek = useMemo<number | null>(() => {
     for (const w of slots) {
-      if (!weekLocked[w] && (plansByWeek[w] ?? []).length === 0 && w !== activeWeek) {
+      if (
+        !weekLocked[w] &&
+        (plansByWeek[w] ?? []).length === 0 &&
+        w !== activeWeek
+      ) {
         return w;
       }
     }
@@ -488,11 +581,15 @@ export default function WeeklyPlanTab({
       <RealignmentBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-slate-800">
-            Weekly Plans
-          </h3>
+          <h3 className="text-lg font-semibold text-slate-800">Weekly Plans</h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Decompose each published monthly plan into weekly executions.
+            {cycleStartDate && cycleEndDate ? (
+              <span className="ml-2 font-semibold text-slate-400">
+                {formatReadableDate(cycleStartDate)} -{" "}
+                {formatReadableDate(cycleEndDate)}
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -501,18 +598,35 @@ export default function WeeklyPlanTab({
               variant="outline"
               size="sm"
               icon={MdPublish}
-              onClick={() => {
-                const approvedWeeks = slots.filter((w) => periodMeta[w]?.canShowPublish);
+              loading={publishAllLoading}
+              onClick={async () => {
+                const approvedWeeks = slots.filter(
+                  (w) => periodMeta[w]?.canShowPublish,
+                );
                 if (approvedWeeks.length === 0) return;
-                
-                Promise.all(approvedWeeks.flatMap(w => {
-                  const meta = periodMeta[w];
-                  return meta.parentMonthlyPlanIds.map(id => publishWeeklyPeriod(w, id));
-                })).then(() => {
-                  ToastService.success("Approved plans published successfully.");
-                  reload();
+
+                setPublishAllLoading(true);
+                try {
+                  await Promise.all(
+                    approvedWeeks.flatMap((w) => {
+                      const meta = periodMeta[w];
+                      return meta.parentMonthlyPlanIds.map((id) =>
+                        publishWeeklyPeriod(w, id),
+                      );
+                    }),
+                  );
+                  ToastService.success(
+                    "Approved plans published successfully.",
+                  );
+                  await reload();
                   onAllocationsChanged?.();
-                });
+                } catch (err: any) {
+                  ToastService.error(
+                    err?.message || "Failed to publish approved plans.",
+                  );
+                } finally {
+                  setPublishAllLoading(false);
+                }
               }}
             >
               Publish Approved
@@ -523,18 +637,37 @@ export default function WeeklyPlanTab({
               variant="outline"
               size="sm"
               icon={MdSend}
-              onClick={() => {
-                const draftWeeks = slots.filter((w) => periodMeta[w]?.canShowSubmit);
+              loading={submitAllLoading}
+              onClick={async () => {
+                const draftWeeks = slots.filter(
+                  (w) => periodMeta[w]?.canShowSubmit,
+                );
                 if (draftWeeks.length === 0) return;
-                
-                Promise.all(draftWeeks.flatMap(w => {
-                  const meta = periodMeta[w];
-                  return meta.parentMonthlyPlanIds.map(id => submitWeeklyPeriod(w, id));
-                })).then(() => {
+
+                setSubmitAllLoading(true);
+                try {
+                  await Promise.all(
+                    draftWeeks.flatMap((w) => {
+                      const meta = periodMeta[w];
+                      const draftPlanIds = (plansByWeek[w] ?? [])
+                        .filter((p) => EDITABLE_LIFECYCLE.has(p.plan_status))
+                        .map((p) => p.id);
+                      if (draftPlanIds.length === 0) return [];
+                      return meta.parentMonthlyPlanIds.map((id) =>
+                        submitWeeklyPeriod(w, id, draftPlanIds),
+                      );
+                    }),
+                  );
                   ToastService.success("Draft plans submitted for review.");
-                  reload();
+                  await reload();
                   onAllocationsChanged?.();
-                });
+                } catch (err: any) {
+                  ToastService.error(
+                    err?.message || "Failed to submit draft plans.",
+                  );
+                } finally {
+                  setSubmitAllLoading(false);
+                }
               }}
             >
               Submit Drafts
@@ -584,10 +717,14 @@ export default function WeeklyPlanTab({
             onPublish={() => {
               const meta = periodMeta[w];
               if (meta.parentMonthlyPlanIds.length > 0) {
-                setPublishConfirm({ weekNumber: w, monthlyPlanId: meta.parentMonthlyPlanIds[0] });
+                setPublishConfirm({
+                  weekNumber: w,
+                  monthlyPlanId: meta.parentMonthlyPlanIds[0],
+                });
               }
             }}
             allowAdd={allowAdd}
+            onUpdateProgress={allowUpdateProgress ? setProgressPlan : undefined}
           />
         ))
       )}
@@ -599,8 +736,9 @@ export default function WeeklyPlanTab({
         weeksInMonth={weeksInMonth}
         onCreated={handleCreated}
         preselectedWeekNumber={addForWeek ? addForWeek : undefined}
-        cycleId={cycleId}
+        cycleId={cycleId ?? undefined}
         userRoleLevel={userRoleLevel}
+        levelConfig={levelConfig}
       />
 
       <EditWeeklyPlanModal
@@ -615,13 +753,30 @@ export default function WeeklyPlanTab({
         entity={postPublishEditing}
         entityType="WEEKLY_PLAN"
         companyId={Number(localStorage.getItem("companyId") || 1)}
-        cycleId={cycleId || 0}
+        cycleId={Number(cycleId) || 0}
         onClose={() => setPostPublishEditing(null)}
         onSuccess={() => {
           setPostPublishEditing(null);
           void reload();
         }}
       />
+
+      {progressPlan && (
+        <WeeklyPlanProgressModal
+          isOpen={!!progressPlan}
+          plan={progressPlan}
+          onClose={() => setProgressPlan(null)}
+          onSave={async (data) => {
+            try {
+              await updateWeeklyPlan(progressPlan.id, data);
+              setProgressPlan(null);
+              void reload();
+            } catch (err: any) {
+              ToastService.error("Failed to update progress");
+            }
+          }}
+        />
+      )}
 
       <ConfirmationModal
         isOpen={!!deleting}
@@ -688,6 +843,7 @@ function WeekSection({
   onEdit,
   onDelete,
   onPostPublishEdit,
+  onUpdateProgress,
   onSubmit,
   onPublish,
   allowAdd = true,
@@ -703,7 +859,8 @@ function WeekSection({
   onAdd: () => void;
   onEdit: (plan: WeeklyPlan) => void;
   onDelete: (plan: WeeklyPlan) => void;
-  onPostPublishEdit: (plan: WeeklyPlan) => void;
+  onPostPublishEdit?: (plan: WeeklyPlan) => void;
+  onUpdateProgress?: (plan: WeeklyPlan) => void;
   onSubmit: () => void;
   onPublish: () => void;
   allowAdd?: boolean;
@@ -757,7 +914,7 @@ function WeekSection({
           }
         }}
         className={`w-full flex items-center justify-between gap-4 px-6 py-5 text-left transition-colors ${
-          isLocked ? "cursor-not-allowed" : "hover:bg-black/[0.02] cursor-pointer"
+          isLocked ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
         } ${headerBg}`}
       >
         {/* Left: badge + title */}
@@ -822,12 +979,18 @@ function WeekSection({
             <>
               <div className="flex flex-col items-center gap-1">
                 <MdLockOpen
-                  className={isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"}
+                  className={
+                    isActive || isNextUnlocked
+                      ? "text-primary"
+                      : "text-emerald-500"
+                  }
                   style={{ fontSize: 28 }}
                 />
                 <span
                   className={`text-[9px] font-semibold uppercase tracking-wider ${
-                    isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"
+                    isActive || isNextUnlocked
+                      ? "text-primary"
+                      : "text-emerald-500"
                   }`}
                 >
                   Unlocked
@@ -838,7 +1001,11 @@ function WeekSection({
                 size="sm"
                 icon={MdAdd}
                 disabled={!allowAdd}
-                title={!allowAdd ? "Weekly plans are not enabled for your role" : undefined}
+                title={
+                  !allowAdd
+                    ? "Weekly plans are not enabled for your role"
+                    : undefined
+                }
                 onClick={(e) => {
                   e.stopPropagation();
                   onAdd();
@@ -878,23 +1045,28 @@ function WeekSection({
       {/* Expanded content */}
       {!isLocked && expanded && (
         <div className="border-t border-slate-100 p-6 space-y-4 bg-slate-50/30">
-          {meta.isSubmitted && meta.bannerStatus && (
+          {(meta.isSubmitted || meta.feedbackNote) && (
             <PlanStatusBanner
-              plan_status={meta.bannerStatus}
+              plan_status={meta.bannerStatus || "DRAFT"}
               submitted_at={meta.submittedAt}
               approved_at={meta.approvedAt}
               published_at={meta.publishedAt}
               reviewer_name={meta.reviewerName}
               feedback_note={meta.feedbackNote}
+              feedbackItems={meta.feedbackItems}
+              hideStatusBanner={meta.bannerStatus === "PUBLISHED"}
             />
           )}
 
           {plans.length === 0 ? (
             <div className="rounded-2xl bg-white border border-dashed border-slate-200 px-5 py-10 text-center">
-              <MdAdd className="mx-auto text-slate-300 mb-2" style={{ fontSize: 36 }} />
+              <MdAdd
+                className="mx-auto text-slate-300 mb-2"
+                style={{ fontSize: 36 }}
+              />
               <p className="text-sm text-slate-600 mb-3">
-                No plan yet for Week {weekNumber}. Click "+ Add Weekly Plan"
-                to start.
+                No plan yet for Week {weekNumber}. Click "+ Add Weekly Plan" to
+                start.
               </p>
               {/* <Button variant="outline" size="sm" icon={MdAdd} onClick={onAdd}>
                 Add Weekly Plan
@@ -909,6 +1081,7 @@ function WeekSection({
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onPostPublishEdit={onPostPublishEdit}
+                  onUpdateProgress={onUpdateProgress}
                 />
               ))}
             </div>

@@ -6,6 +6,8 @@ import {
   MdCheckCircle,
 } from "react-icons/md";
 import KeyResultListItem from "./KeyResultListItem";
+import { formatOkrCount, formatOkrNumber } from "../../utils/okrNumber";
+import FeedbackBanner from "../../pages/OKRExecution/components/FeedbackBanner";
 
 // Status types matched to the UI mockup
 export type ObjectiveStatusValue =
@@ -54,6 +56,8 @@ export interface ObjectiveCardProps {
   onClick?: (e?: React.MouseEvent) => void;
   showId?: boolean;
   onDecomposeKR?: (krId: number, title: string) => void;
+  feedbackNote?: string;
+  reviewerName?: string;
 }
 
 function getStatusStyles(status: string, progress: number = 0) {
@@ -136,11 +140,15 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
   const title = objective?.title ?? props.title ?? "";
   const status = objective?.status ?? props.status ?? "draft";
   const progress = objective?.progress ?? props.progress ?? 0;
-  const indirectProgress = objective?.indirectProgress ?? props.indirectProgress ?? 0;
+  const indirectProgress =
+    objective?.indirectProgress ?? props.indirectProgress ?? 0;
   const ownerName = objective?.ownerName ?? props.ownerName;
   const krCount = objective?.krCount ?? props.krCount ?? props.krsCount;
-  const departmentsLinkedCount = objective?.departmentsLinkedCount ?? props.departmentsLinkedCount;
+  const departmentsLinkedCount =
+    objective?.departmentsLinkedCount ?? props.departmentsLinkedCount;
   const description = objective?.description ?? props.description;
+  const feedbackNote = props.feedbackNote;
+  const reviewerName = props.reviewerName;
 
   const statusStyles = getStatusStyles(status, progress);
   const clampedProgress = Math.min(100, Math.max(0, progress));
@@ -178,7 +186,7 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
       >
         <div className="flex items-center gap-5 flex-1 min-w-0 w-full">
           <div
-            className={`flex-shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center ${statusStyles.iconBg} ${statusStyles.iconText} shadow-inner`}
+            className={`shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center ${statusStyles.iconBg} ${statusStyles.iconText} shadow-inner`}
           >
             <IconComponent className="text-3xl" />
           </div>
@@ -190,12 +198,6 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
               >
                 {statusStyles.label}
               </span>
-              {/* {showId && (
-                <span className="text-slate-300 text-[10px] font-bold font-space uppercase tracking-widest">
-                  ID: {id}
-                </span>
-              )} */}
-
             </div>
 
             <h3 className="text-xl font-bold text-slate-900 leading-tight tracking-tight mb-2 group-hover:text-primary transition-colors">
@@ -203,7 +205,9 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
             </h3>
 
             {props.headerContext && (
-               <div className="mb-2 text-sm text-slate-500">{props.headerContext}</div>
+              <div className="mb-2 text-sm text-slate-500">
+                {props.headerContext}
+              </div>
             )}
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -212,8 +216,10 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                 <span className="text-slate-400 text-xs font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
                   {krCount !== undefined && (
                     <span>
-                      {krCount}{" "}
-                      <span className="font-medium text-slate-300">KRs</span>
+                      {formatOkrCount(krCount)}{" "}
+                      <span className="font-medium text-slate-300">
+                        Key Results
+                      </span>
                     </span>
                   )}
                   {krCount !== undefined &&
@@ -222,7 +228,7 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                     )}
                   {departmentsLinkedCount !== undefined && (
                     <span>
-                      {departmentsLinkedCount}{" "}
+                      {formatOkrCount(departmentsLinkedCount)}{" "}
                       <span className="font-medium text-slate-300">Depts</span>
                     </span>
                   )}
@@ -247,29 +253,47 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                 {description}
               </div>
             )}
+
+            <FeedbackBanner
+              status={status}
+              reviewerName={reviewerName}
+              feedback_note={feedbackNote}
+              targetTitle={title}
+              hideByDefault={
+                status.toLowerCase() === "published" ||
+                status.toLowerCase() === "on_track" ||
+                status.toLowerCase() === "completed"
+              }
+            />
           </div>
         </div>
 
         <div className="flex items-center gap-6 sm:gap-10 justify-between w-full sm:w-auto shrink-0 mt-4 sm:mt-0 px-2 sm:px-0">
           <div className="text-right flex flex-col items-end gap-1">
             {progressLabel && (
-              <span className="text-[10px] font-black tracking-widest text-slate-400 font-space uppercase mb-1">{progressLabel}</span>
+              <span className="text-[10px] font-black tracking-widest text-slate-400 font-space uppercase mb-1">
+                {progressLabel}
+              </span>
             )}
             <div className="flex items-center gap-3">
               <div className="text-right">
                 <div className="text-2xl font-black text-slate-900 tracking-tighter">
-                  {clampedProgress}
+                  {formatOkrNumber(clampedProgress)}
                   <span className="text-sm text-slate-400 ml-0.5">%</span>
                 </div>
-                <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Direct</div>
+                <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                  Direct
+                </div>
               </div>
               {indirectProgress > 0 && (
                 <div className="text-right">
                   <div className="text-2xl font-black text-slate-900 tracking-tighter">
-                    {clampedIndirectProgress}
+                    {formatOkrNumber(clampedIndirectProgress)}
                     <span className="text-sm text-slate-400 ml-0.5">%</span>
                   </div>
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Indirect</div>
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                    Indirect
+                  </div>
                 </div>
               )}
             </div>
@@ -306,21 +330,43 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                   </h4>
                 </div>
                 <div className="flex flex-col gap-4">
-                  {keyResults.map((kr: any) => {
+                  {keyResults.map((kr: any, index: number) => {
                     const krTgt = Number(kr.target_value ?? 0);
-                    const krCur = Number(kr.current_value ?? kr.currentValue ?? kr.final_value ?? 0);
-                    const directRaw = kr.final_score ?? kr.progress_percent ?? kr.progress_pct ?? kr.progress;
-                    const krPct = directRaw != null ? Number(directRaw) : (krTgt > 0 ? Number(((krCur / krTgt) * 100).toFixed(2)) : 0);
-                    const krIndirectPct = Number(kr.indirect_score ?? kr.indirect_score_percent ?? kr.indirectProgress ?? 0);
+                    const krCur = Number(
+                      kr.current_value ??
+                        kr.currentValue ??
+                        kr.final_value ??
+                        0,
+                    );
+                    const directRaw =
+                      kr.final_score ??
+                      kr.progress_percent ??
+                      kr.progress_pct ??
+                      kr.progress;
+                    const krPct =
+                      directRaw != null
+                        ? Number(directRaw)
+                        : krTgt > 0
+                          ? Number(((krCur / krTgt) * 100).toFixed(2))
+                          : 0;
+                    const krIndirectPct = Number(
+                      kr.indirect_score ??
+                        kr.indirect_score_percent ??
+                        kr.indirectProgress ??
+                        0,
+                    );
                     return (
                       <KeyResultListItem
                         key={kr.id}
                         title={kr.title}
+                        index={index}
                         progress={krPct}
                         indirectProgress={krIndirectPct}
                         status={kr.status_code || kr.status || "draft"}
-                        targetString={`${kr.unit_of_measure === "ETB" ? "ETB " : ""}${krCur} / ${krTgt}${kr.unit_of_measure === "%" ? "%" : ""}`}
-                        metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
+                        targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
+                        metricTypeString={`Weight: ${formatOkrNumber(kr.weight_percent ?? 0)}%`}
+                        feedbackNote={kr.feedbackNote}
+                        reviewerName={kr.reviewerName}
                         actions={
                           onDecomposeKR && (
                             <button

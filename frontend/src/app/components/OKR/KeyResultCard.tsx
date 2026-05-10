@@ -2,6 +2,7 @@ import type { Status } from "../../pages/Admin/OKR/components/StatusBadge";
 import StatusBadge from "../../pages/Admin/OKR/components/StatusBadge";
 import BulletText from "../common/BulletText";
 import { MdTrendingUp, MdTrackChanges, MdGroups, MdBusiness, MdSend, MdModeComment } from "react-icons/md";
+import { formatOkrNumber } from "../../utils/okrNumber";
 
 export interface KeyResultData {
   id: number;
@@ -31,6 +32,7 @@ export interface KeyResultCardProps {
   onDecompose?: (krId: number) => void;
   showDecompose?: boolean;
   isReadOnly?: boolean;
+  index?: number;
 }
 
 export default function KeyResultCard({
@@ -41,8 +43,8 @@ export default function KeyResultCard({
   onDecompose,
   showDecompose = false,
   isReadOnly = false,
+  index,
 }: KeyResultCardProps) {
-  const isAdmin = variant === "admin";
   const isDraft = kr.status !== "published" && kr.status !== "approved";
 
   return (
@@ -67,7 +69,7 @@ export default function KeyResultCard({
 
             {/* Title - Bold & Premium */}
             <h4 className="text-lg font-black text-slate-900 tracking-tight group-hover:text-primary transition-colors leading-tight">
-              {kr.title}
+              {index !== undefined ? `${index + 1}. ` : ""}{kr.title}
             </h4>
 
             {/* Description - Better line height */}
@@ -142,18 +144,24 @@ export default function KeyResultCard({
               Current / Target
             </p>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-black text-primary tracking-tighter">{kr.currentValue ?? 0}</span>
+              <span className="text-2xl font-black text-primary tracking-tighter">
+                {formatOkrNumber(kr.currentValue ?? 0)}
+              </span>
               <span className="text-lg font-black text-slate-200">/</span>
-              <span className="text-lg font-black text-slate-400 tracking-tighter">{kr.targetValue ?? 0}</span>
+              <span className="text-lg font-black text-slate-400 tracking-tighter">
+                {formatOkrNumber(kr.targetValue ?? 0)}
+              </span>
               {kr.unitOfMeasure && (
-                <span className="text-[10px] font-black text-slate-400 uppercase ml-1">{kr.unitOfMeasure}</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase ml-1">
+                  {kr.unitOfMeasure}
+                </span>
               )}
             </div>
           </div>
         </div>
 
         {/* Assignments Row - Cleaner Presentation */}
-        {isAdmin && kr.assignedDepartmentIds && kr.assignedDepartmentIds.length > 0 && (
+        {kr.assignedDepartmentIds && kr.assignedDepartmentIds.length > 0 && (
           <div className="mt-6 pt-6 border-t border-slate-50 flex items-center gap-4">
              <div className="shrink-0 flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
               <MdBusiness className="text-base" />
@@ -172,7 +180,7 @@ export default function KeyResultCard({
           </div>
         )}
 
-        {!isAdmin && kr.assignedEmployeeIds && kr.assignedEmployeeIds.length > 0 && (
+        {kr.assignedEmployeeIds && kr.assignedEmployeeIds.length > 0 && (
           <div className="mt-6 pt-6 border-t border-slate-50 flex items-center gap-4">
             <div className="shrink-0 flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
               <MdGroups className="text-base" />

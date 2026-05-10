@@ -18,19 +18,17 @@ import {
   fetchMonthlyPlans,
   publishMonthlyPeriod,
   submitMonthlyPeriod,
+  updateMonthlyPlan,
 } from "../../../services/okr-execution.api";
-import type {
-  AvailableWeight,
-  MonthlyPlan,
-} from "../../../../types/okr.types";
-import AddMonthlyPlanModal, {
-  type AddMonthlyKR,
-} from "./AddMonthlyPlanModal";
+import type { AvailableWeight, MonthlyPlan } from "../../../../types/okr.types";
+import AddMonthlyPlanModal, { type AddMonthlyKR } from "./AddMonthlyPlanModal";
 import EditMonthlyPlanModal from "./EditMonthlyPlanModal";
 import MonthlyPlanCard from "./MonthlyPlanCard";
 import PlanStatusBanner from "./PlanStatusBanner";
 import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
 import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
+import MonthlyPlanProgressModal from "./modals/MonthlyPlanProgressModal";
+import { formatReadableDate } from "../utils/calendarDates";
 
 const MONTHS: (1 | 2 | 3)[] = [1, 2, 3];
 
@@ -59,14 +57,24 @@ export interface MonthlyPlanTabProps {
   onAllocationsChanged?: () => void;
   /** Optional nonce to trigger a refresh from the parent. */
   refreshNonce?: number;
+  /** Cycle boundaries used to render calendar-aware labels. */
+  cycleStartDate?: string | null;
+  cycleEndDate?: string | null;
   /** ID of a plan to auto-expand and focus (deep link support). */
   focusItemId?: string | number;
   /** Whether adding monthly plans is allowed by cadence configuration. */
   allowAdd?: boolean;
   /** The user's role level. */
   userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+  /** Level-based cadence configuration for all roles. */
+  levelConfig?: Record<
+    string,
+    { allow_monthly: boolean; allow_weekly: boolean; allow_daily: boolean }
+  > | null;
   /** Callback to trigger a post-publish edit request. */
   onPostPublishEdit?: (plan: MonthlyPlan) => void;
+  /** Whether the user can update progress at the monthly level based on cadence. */
+  allowUpdateProgress?: boolean;
 }
 
 interface PeriodSubmissionState {
@@ -78,6 +86,7 @@ interface PeriodSubmissionState {
   bannerStatus?: MonthlyPlan["plan_status"];
   reviewerName?: string;
   feedbackNote?: string;
+  feedbackItems: any[]; // List of specific feedback items
   submittedAt?: string;
   approvedAt?: string;
   publishedAt?: string;
@@ -90,10 +99,14 @@ export default function MonthlyPlanTab({
   initialExpandMonth,
   onAllocationsChanged,
   refreshNonce,
+  cycleStartDate,
+  cycleEndDate,
   focusItemId,
   allowAdd = true,
   userRoleLevel,
+  levelConfig,
   onPostPublishEdit,
+  allowUpdateProgress = false,
 }: MonthlyPlanTabProps) {
   const [plans, setPlans] = useState<MonthlyPlan[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,11 +126,19 @@ export default function MonthlyPlanTab({
     warning?: string;
   } | null>(null);
   const [submittingPeriod, setSubmittingPeriod] = useState(false);
-  const [publishConfirm, setPublishConfirm] = useState<{ monthNumber: 1 | 2 | 3 } | null>(null);
+  const [publishConfirm, setPublishConfirm] = useState<{
+    monthNumber: 1 | 2 | 3;
+  } | null>(null);
   const [publishingPeriod, setPublishingPeriod] = useState(false);
-  const [postPublishEditing, setPostPublishEditing] = useState<MonthlyPlan | null>(null);
+  // Top-level batch CTA loaders
+  const [publishAllLoading, setPublishAllLoading] = useState(false);
+  const [submitAllLoading, setSubmitAllLoading] = useState(false);
+  const [postPublishEditing, setPostPublishEditing] =
+    useState<MonthlyPlan | null>(null);
+  const [progressPlan, setProgressPlan] = useState<MonthlyPlan | null>(null);
 
-  const krIds = useMemo(() => krs.map((k) => k.id), [krs]);
+  const krIdsString = JSON.stringify(krs.map((k) => k.id));
+  const krIds = useMemo(() => krs.map((k) => k.id), [krIdsString]);
 
   const loadPlans = useCallback(async () => {
     if (krIds.length === 0) {
@@ -156,7 +177,6 @@ export default function MonthlyPlanTab({
     setExpanded((prev) => ({ ...prev, [initialExpandMonth]: true }));
   }, [initialExpandMonth]);
 
-
   const plansByMonth = useMemo(() => {
     const map: Record<number, MonthlyPlan[]> = { 1: [], 2: [], 3: [] };
     for (const p of plans) {
@@ -184,30 +204,80 @@ export default function MonthlyPlanTab({
         "APPROVED",
         "PUBLISHED",
       ];
-      const banner = order.find((s) =>
-        list.some((p) => p.plan_status === s),
-      );
+      const banner = order.find((s) => list.some((p) => p.plan_status === s));
       const bannerPlan = banner
         ? list.find((p) => p.plan_status === banner)
         : undefined;
-      // Find rejected plan for feedback note
-      const rejectedPlan = list.find((p) => p.plan_status === "REJECTED");
+
+      // Find ALL plans with feedback (Legacy + History)
+      const feedbackItems: any[] = [];
+      list.forEach((p) => {
+        const planFeedback: any[] = [];
+
+        // 1. Add historical comments
+        if (p.comments && p.comments.length > 0) {
+          p.comments.forEach((c: any) => {
+            planFeedback.push({
+              status: p.plan_status,
+              reviewerName: c.author_name,
+              feedbackNote: c.content,
+              targetTitle: p.title,
+              timestamp: c.created_at,
+            });
+          });
+        }
+
+        // 2. Add legacy note if not already covered by comments
+        const legacyNote =
+          p.feedback_note || p.rejection_reason || p.reviewer_note;
+        if (legacyNote) {
+          const alreadyAdded = planFeedback.some(
+            (f) => f.feedbackNote === legacyNote,
+          );
+          if (!alreadyAdded) {
+            planFeedback.push({
+              status: p.plan_status,
+              reviewerName: p.reviewer_name,
+              feedbackNote: legacyNote,
+              targetTitle: p.title,
+              timestamp: p.approved_at || p.submitted_at,
+            });
+          }
+        }
+        feedbackItems.push(...planFeedback);
+      });
+
+      // Sort by timestamp descending
+      feedbackItems.sort(
+        (a, b) =>
+          new Date(b.timestamp || 0).getTime() -
+          new Date(a.timestamp || 0).getTime(),
+      );
+
+      // Find plan with feedback (REJECTED takes priority)
+      const feedbackPlan =
+        list.find((p) => p.plan_status === "REJECTED") ||
+        list.find(
+          (p) => p.feedback_note || p.rejection_reason || p.reviewer_note,
+        );
+
       const canShowPublish =
-        list.length > 0 &&
-        list.some((p) => p.plan_status === "APPROVED");
+        list.length > 0 && list.some((p) => p.plan_status === "APPROVED");
       out[m] = {
         isSubmitted,
         canShowSubmit,
         canShowPublish,
-        // Weight is tracked per-KR (each KR's months must sum to 100% across
-        // its own months). Cross-KR sum in a single month is meaningless.
         totalWeight: 100,
         bannerStatus: bannerPlan?.plan_status,
         submittedAt: bannerPlan?.submitted_at,
         approvedAt: bannerPlan?.approved_at,
         publishedAt: bannerPlan?.published_at,
-        reviewerName: rejectedPlan?.reviewer_name || bannerPlan?.reviewer_name,
-        feedbackNote: rejectedPlan?.feedback_note || rejectedPlan?.rejection_reason || rejectedPlan?.reviewer_note,
+        reviewerName: feedbackPlan?.reviewer_name || bannerPlan?.reviewer_name,
+        feedbackNote:
+          feedbackPlan?.feedback_note ||
+          feedbackPlan?.rejection_reason ||
+          feedbackPlan?.reviewer_note,
+        feedbackItems,
       };
     }
     return out;
@@ -230,16 +300,16 @@ export default function MonthlyPlanTab({
     setPlans((prev) => [...prev, ...created]);
     onAllocationsChanged?.();
     if (created.length === 1) {
-      ToastService.success(`Monthly plan created for Month ${created[0].month_number}.`);
+      ToastService.success(
+        `Monthly plan created for Month ${created[0].month_number}.`,
+      );
     } else {
       ToastService.success(`${created.length} monthly plans created.`);
     }
   };
 
   const handleEdited = (updated: MonthlyPlan) => {
-    setPlans((prev) =>
-      prev.map((p) => (p.id === updated.id ? updated : p)),
-    );
+    setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     ToastService.success("Monthly plan updated.");
   };
 
@@ -267,10 +337,16 @@ export default function MonthlyPlanTab({
   const startSubmitPeriod = (m: 1 | 2 | 3) => {
     const list = plansByMonth[m];
     const errors: string[] = [];
-    if (list.length === 0) {
-      errors.push("This month has no plans yet.");
+
+    // Filter to only editable plans (draft/rejected) for validation
+    const editablePlans = list.filter((p) =>
+      EDITABLE_LIFECYCLE.has(p.plan_status),
+    );
+
+    if (editablePlans.length === 0) {
+      errors.push("No editable plans found for submission.");
     }
-    list.forEach((p) => {
+    editablePlans.forEach((p) => {
       if (!Number(p.target_value)) {
         errors.push(`"${p.title}" has no target value.`);
       }
@@ -290,7 +366,20 @@ export default function MonthlyPlanTab({
     if (!submitConfirm || !cycleId) return;
     setSubmittingPeriod(true);
     try {
-      await submitMonthlyPeriod(submitConfirm.monthNumber, String(cycleId));
+      const draftPlanIds = (plansByMonth[submitConfirm.monthNumber] ?? [])
+        .filter((p) => EDITABLE_LIFECYCLE.has(p.plan_status))
+        .map((p) => p.id);
+
+      if (draftPlanIds.length === 0) {
+        ToastService.error("No draft plans found for submission.");
+        return;
+      }
+
+      await submitMonthlyPeriod(
+        submitConfirm.monthNumber,
+        String(cycleId),
+        draftPlanIds,
+      );
       ToastService.success(
         `Month ${submitConfirm.monthNumber} plan submitted for review.`,
       );
@@ -321,9 +410,7 @@ export default function MonthlyPlanTab({
       onAllocationsChanged?.();
     } catch (err: any) {
       ToastService.error(
-        err?.data?.message ||
-          err?.message ||
-          "Could not publish plans.",
+        err?.data?.message || err?.message || "Could not publish plans.",
       );
     } finally {
       setPublishingPeriod(false);
@@ -370,7 +457,11 @@ export default function MonthlyPlanTab({
   // This is distinct from active — it just has a primary border hint.
   const nextUnlockedMonth = useMemo<1 | 2 | 3 | null>(() => {
     for (const m of MONTHS) {
-      if (!monthLocked[m] && plansByMonth[m].length === 0 && m !== activeMonth) {
+      if (
+        !monthLocked[m] &&
+        plansByMonth[m].length === 0 &&
+        m !== activeMonth
+      ) {
         return m;
       }
     }
@@ -399,6 +490,12 @@ export default function MonthlyPlanTab({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Break the quarter into Month 1, 2 and 3 plans for each Key Result.
+            {cycleStartDate && cycleEndDate ? (
+              <span className="ml-2 font-semibold text-slate-400">
+                {formatReadableDate(cycleStartDate)} -{" "}
+                {formatReadableDate(cycleEndDate)}
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -407,20 +504,36 @@ export default function MonthlyPlanTab({
               variant="outline"
               size="sm"
               icon={MdPublish}
-              onClick={() => {
-                const approvedMonths = MONTHS.filter((m) => periodMeta[m]?.canShowPublish);
+              loading={publishAllLoading}
+              onClick={async () => {
+                const approvedMonths = MONTHS.filter(
+                  (m) => periodMeta[m]?.canShowPublish,
+                );
                 if (approvedMonths.length === 0) return;
-                Promise.all(approvedMonths.map(async (m) => {
-                  try {
-                    await publishMonthlyPeriod(m, String(cycleId));
-                  } catch (e) {
-                    console.error("Failed to publish month " + m, e);
-                  }
-                })).then(() => {
-                  ToastService.success("Approved plans published successfully.");
-                  loadPlans();
+
+                setPublishAllLoading(true);
+                try {
+                  await Promise.all(
+                    approvedMonths.map(async (m) => {
+                      try {
+                        await publishMonthlyPeriod(m, String(cycleId));
+                      } catch (e) {
+                        console.error("Failed to publish month " + m, e);
+                      }
+                    }),
+                  );
+                  ToastService.success(
+                    "Approved plans published successfully.",
+                  );
+                  await loadPlans();
                   onAllocationsChanged?.();
-                });
+                } catch (err: any) {
+                  ToastService.error(
+                    err?.message || "Failed to publish approved plans.",
+                  );
+                } finally {
+                  setPublishAllLoading(false);
+                }
               }}
             >
               Publish Approved
@@ -431,20 +544,42 @@ export default function MonthlyPlanTab({
               variant="outline"
               size="sm"
               icon={MdSend}
-              onClick={() => {
-                const draftMonths = MONTHS.filter((m) => periodMeta[m]?.canShowSubmit);
+              loading={submitAllLoading}
+              onClick={async () => {
+                const draftMonths = MONTHS.filter(
+                  (m) => periodMeta[m]?.canShowSubmit,
+                );
                 if (draftMonths.length === 0) return;
-                Promise.all(draftMonths.map(async (m) => {
-                  try {
-                    await submitMonthlyPeriod(m, String(cycleId));
-                  } catch (e) {
-                    console.error("Failed to submit month " + m, e);
-                  }
-                })).then(() => {
+
+                setSubmitAllLoading(true);
+                try {
+                  await Promise.all(
+                    draftMonths.map(async (m) => {
+                      try {
+                        const draftPlanIds = (plansByMonth[m] ?? [])
+                          .filter((p) => EDITABLE_LIFECYCLE.has(p.plan_status))
+                          .map((p) => p.id);
+                        if (draftPlanIds.length === 0) return;
+                        await submitMonthlyPeriod(
+                          m,
+                          String(cycleId),
+                          draftPlanIds,
+                        );
+                      } catch (e) {
+                        console.error("Failed to submit month " + m, e);
+                      }
+                    }),
+                  );
                   ToastService.success("Draft plans submitted for review.");
-                  loadPlans();
+                  await loadPlans();
                   onAllocationsChanged?.();
-                });
+                } catch (err: any) {
+                  ToastService.error(
+                    err?.message || "Failed to submit draft plans.",
+                  );
+                } finally {
+                  setSubmitAllLoading(false);
+                }
               }}
             >
               Submit Drafts
@@ -493,6 +628,7 @@ export default function MonthlyPlanTab({
             onSubmit={() => startSubmitPeriod(m)}
             onPublish={() => setPublishConfirm({ monthNumber: m as 1 | 2 | 3 })}
             allowAdd={allowAdd}
+            onUpdateProgress={allowUpdateProgress ? setProgressPlan : undefined}
           />
         ))
       )}
@@ -503,8 +639,9 @@ export default function MonthlyPlanTab({
         krs={krs}
         onCreated={handleCreated}
         preselectedMonth={addForMonth ? (addForMonth as 1 | 2 | 3) : undefined}
-        cycleId={cycleId}
+        cycleId={cycleId ?? undefined}
         userRoleLevel={userRoleLevel}
+        levelConfig={levelConfig}
       />
 
       <EditMonthlyPlanModal
@@ -526,6 +663,24 @@ export default function MonthlyPlanTab({
           loadPlans();
         }}
       />
+
+      {progressPlan && (
+        <MonthlyPlanProgressModal
+          isOpen={!!progressPlan}
+          plan={progressPlan}
+          onClose={() => setProgressPlan(null)}
+          onSave={async (data) => {
+            try {
+              await updateMonthlyPlan(progressPlan.id, data);
+              setProgressPlan(null);
+              void loadPlans();
+              onAllocationsChanged?.();
+            } catch (err: any) {
+              ToastService.error("Failed to update progress");
+            }
+          }}
+        />
+      )}
 
       <ConfirmationModal
         isOpen={!!deleting}
@@ -592,6 +747,7 @@ function MonthSection({
   onEdit,
   onDelete,
   onPostPublishEdit,
+  onUpdateProgress,
   onSubmit,
   onPublish,
   allowAdd = true,
@@ -607,12 +763,14 @@ function MonthSection({
   onAdd: () => void;
   onEdit: (plan: MonthlyPlan) => void;
   onDelete: (plan: MonthlyPlan) => void;
-  onPostPublishEdit: (plan: MonthlyPlan) => void;
+  onPostPublishEdit?: (plan: MonthlyPlan) => void;
+  onUpdateProgress?: (plan: MonthlyPlan) => void;
   onSubmit: () => void;
   onPublish: () => void;
   allowAdd?: boolean;
 }) {
-  const isCompleted = meta.bannerStatus === "PUBLISHED" || meta.bannerStatus === "APPROVED";
+  const isCompleted =
+    meta.bannerStatus === "PUBLISHED" || meta.bannerStatus === "APPROVED";
 
   // Border theming: locked=slate, active=primary ring, completed=emerald, next-unlocked=primary(no ring), default=slate
   const cardBorder = isLocked
@@ -661,7 +819,7 @@ function MonthSection({
           }
         }}
         className={`w-full flex items-center justify-between gap-4 px-6 py-5 text-left transition-colors ${
-          isLocked ? "cursor-not-allowed" : "hover:bg-black/[0.02] cursor-pointer"
+          isLocked ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
         } ${headerBg}`}
       >
         {/* Left: badge + title */}
@@ -727,12 +885,18 @@ function MonthSection({
             <>
               <div className="flex flex-col items-center gap-1">
                 <MdLockOpen
-                  className={isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"}
+                  className={
+                    isActive || isNextUnlocked
+                      ? "text-primary"
+                      : "text-emerald-500"
+                  }
                   style={{ fontSize: 28 }}
                 />
                 <span
                   className={`text-[9px] font-semibold uppercase tracking-wider ${
-                    isActive || isNextUnlocked ? "text-primary" : "text-emerald-500"
+                    isActive || isNextUnlocked
+                      ? "text-primary"
+                      : "text-emerald-500"
                   }`}
                 >
                   Unlocked
@@ -743,7 +907,11 @@ function MonthSection({
                 size="sm"
                 icon={MdAdd}
                 disabled={!allowAdd}
-                title={!allowAdd ? "Monthly plans are not enabled for your role" : undefined}
+                title={
+                  !allowAdd
+                    ? "Monthly plans are not enabled for your role"
+                    : undefined
+                }
                 onClick={(e) => {
                   e.stopPropagation();
                   onAdd();
@@ -784,21 +952,26 @@ function MonthSection({
       {!isLocked && expanded && (
         <div className="border-t border-slate-100 p-6 space-y-4 bg-slate-50/30">
           {/* Banner if submitted; otherwise nothing here. */}
-          {meta.isSubmitted && meta.bannerStatus && (
+          {(meta.isSubmitted || meta.feedbackNote) && (
             <PlanStatusBanner
-              plan_status={meta.bannerStatus}
+              plan_status={meta.bannerStatus || "DRAFT"}
               submitted_at={meta.submittedAt}
               approved_at={meta.approvedAt}
               published_at={meta.publishedAt}
               reviewer_name={meta.reviewerName}
               feedback_note={meta.feedbackNote}
+              feedbackItems={meta.feedbackItems}
+              hideStatusBanner={meta.bannerStatus === "PUBLISHED"}
             />
           )}
 
           {/* Plans grid */}
           {plans.length === 0 ? (
             <div className="rounded-2xl bg-white border border-dashed border-slate-200 px-5 py-10 text-center">
-              <MdAdd className="mx-auto text-slate-300 mb-2" style={{ fontSize: 36 }} />
+              <MdAdd
+                className="mx-auto text-slate-300 mb-2"
+                style={{ fontSize: 36 }}
+              />
               <p className="text-sm text-slate-600 mb-3">
                 No plan yet for Month {monthNumber}. Click "+ Add Monthly Plan"
                 to start.
@@ -817,6 +990,9 @@ function MonthSection({
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onPostPublishEdit={onPostPublishEdit}
+                  onUpdateProgress={
+                    onUpdateProgress ? () => onUpdateProgress(plan) : undefined
+                  }
                 />
               ))}
             </div>

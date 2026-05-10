@@ -7,6 +7,7 @@ import PageHeader from "../../../components/common/PageHeader";
 import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
 import { routeConstants } from "../../../../utils/constants";
+import ObjectiveCard from "../../../components/common/ObjectiveCard";
 
 import { useCycleSlice } from "./CycleManagement/slice";
 import {
@@ -201,8 +202,7 @@ export default function OKRDashboard() {
 
   const objectiveProgressPreview = useMemo(() => {
     return objectives.slice(0, 6).map((o) => ({
-      id: o.id,
-      title: o.title,
+      ...o,
       progress: Math.max(0, Math.min(100, Number(o.progress || 0))),
     }));
   }, [objectives]);
@@ -494,9 +494,9 @@ export default function OKRDashboard() {
               )}
 
               {loading ? (
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                  {Array.from({ length: 6 }).map((_, idx) => (
-                    <div key={idx} className="h-32 rounded-2xl bg-slate-50 animate-pulse" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="h-48 rounded-2xl bg-slate-50 animate-pulse" />
                   ))}
                 </div>
               ) : objectiveProgressPreview.length === 0 ? (
@@ -506,25 +506,25 @@ export default function OKRDashboard() {
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {objectiveProgressPreview.map((item) => (
-                    <div
+                    <ObjectiveCard
                       key={item.id}
-                      className="group p-4 rounded-2xl bg-slate-50/50 hover:bg-white border border-transparent hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-4 gap-2">
-                        <span className="text-[10px] font-black text-slate-400 uppercase truncate flex-1">{item.title}</span>
-                        <span className="text-[10px] font-black text-primary shrink-0">{item.progress}%</span>
-                      </div>
-                      <div className="h-12 w-full bg-white rounded-lg p-1.5 ring-1 ring-slate-100">
-                        <div className="h-full w-full bg-slate-100 rounded-md overflow-hidden">
-                          <div
-                            className="h-full bg-primary transition-all duration-700 ease-out"
-                            style={{ width: `${item.progress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                      id={`CO-${item.id}`}
+                      title={item.title}
+                      status={item.status}
+                      progress={item.progress}
+                      krCount={item.krCount}
+                      expandable={false}
+                      onClick={() =>
+                        navigate(
+                          routeConstants.okrObjectiveDetail.replace(
+                            ":objectiveId",
+                            String(item.id),
+                          ),
+                        )
+                      }
+                    />
                   ))}
                 </div>
               )}

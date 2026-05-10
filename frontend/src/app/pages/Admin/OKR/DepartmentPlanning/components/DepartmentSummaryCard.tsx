@@ -1,12 +1,14 @@
-import React from "react";
 import {
   MdOutlineCorporateFare,
   MdChevronRight,
   MdCheckCircle,
   MdWarning,
-  MdPeople,
   MdTrendingUp,
 } from "react-icons/md";
+import {
+  formatOkrCount,
+  formatOkrNumber,
+} from "../../../../../utils/okrNumber";
 
 type DepartmentSummaryCardProps = {
   id: number;
@@ -55,13 +57,7 @@ export default function DepartmentSummaryCard({
           : "bg-red-50";
 
   const statusLabel =
-    progressPercent >= 75
-      ? "On Track"
-      : progressPercent >= 50
-        ? "In Progress"
-        : progressPercent >= 25
-          ? "At Risk"
-          : "Off Track";
+    atRiskCount > 0 || progressPercent < 75 ? "Off Track" : "On Track";
 
   return (
     <button
@@ -80,7 +76,7 @@ export default function DepartmentSummaryCard({
               {name}
             </h3>
             <p className="text-xs text-slate-500 font-medium mt-1 line-clamp-1">
-              {employeeCount}{" "}
+              {formatOkrCount(employeeCount)}{" "}
               {employeeCount === 1 ? "team member" : "team members"}
             </p>
           </div>
@@ -100,7 +96,7 @@ export default function DepartmentSummaryCard({
             Objectives
           </div>
           <div className="text-2xl font-black text-slate-900">
-            {objectiveCount}
+            {formatOkrCount(objectiveCount)}
           </div>
         </div>
 
@@ -109,7 +105,9 @@ export default function DepartmentSummaryCard({
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
             Key Results
           </div>
-          <div className="text-2xl font-black text-slate-900">{krCount}</div>
+          <div className="text-2xl font-black text-slate-900">
+            {formatOkrCount(krCount)}
+          </div>
         </div>
 
         {/* Progress */}
@@ -120,7 +118,7 @@ export default function DepartmentSummaryCard({
             Progress
           </div>
           <div className={`text-2xl font-black ${progressColor}`}>
-            {progressPercent}%
+            {formatOkrNumber(progressPercent)}%
           </div>
         </div>
       </div>
@@ -128,7 +126,7 @@ export default function DepartmentSummaryCard({
       {/* Status bar & alerts */}
       <div className="flex items-center justify-between pt-3 border-t border-slate-100">
         <div className="flex items-center gap-2">
-          {progressPercent >= 75 ? (
+          {statusLabel === "On Track" ? (
             <MdCheckCircle className="text-green-600 text-base" />
           ) : atRiskCount > 0 ? (
             <MdWarning className="text-amber-600 text-base" />
@@ -136,14 +134,10 @@ export default function DepartmentSummaryCard({
             <MdTrendingUp className="text-blue-600 text-base" />
           )}
           <span className="text-xs font-semibold text-slate-600">
-            {progressPercent >= 75
-              ? "On Track"
-              : atRiskCount > 0
-                ? `${atRiskCount} at risk`
-                : "In Progress"}
+            {statusLabel}
           </span>
         </div>
-        <span className="text-[10px] font-black uppercase tracking-[0.1em] text-primary font-space">
+        <span className="text-[10px] font-black uppercase tracking-widest text-primary font-space">
           View Details
         </span>
       </div>

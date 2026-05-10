@@ -399,7 +399,12 @@ export default function CEOStrategicDashboardPage() {
                   variant="white"
                   size="sm"
                   onClick={generateSnapshots}
-                  disabled={!cycleId || loading || snapshotGeneratingLoading}
+                  disabled={
+                    !cycleId ||
+                    loading ||
+                    snapshotGeneratingLoading ||
+                    rollupRefreshLoading
+                  }
                   loading={snapshotGeneratingLoading}
                   className="tracking-widest font-space text-[10px] font-black"
                 >

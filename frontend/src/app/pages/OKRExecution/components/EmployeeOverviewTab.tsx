@@ -2,13 +2,12 @@ import React, { useEffect, useState } from "react";
 import {
   MdTrendingUp,
   MdCheckCircle,
-  MdComment,
-  MdTimeline,
-  MdFeedback,
   MdCalendarMonth,
   MdDateRange,
   MdToday,
   MdFlagCircle,
+  MdFlag,
+  MdTimeline,
 } from "react-icons/md";
 import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
@@ -16,6 +15,7 @@ import LoadingSkeleton from "../../../components/common/LoadingSkeleton";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { okrUnwrap } from "../../../utils/okrApi";
+import { formatOkrCount, formatOkrNumber } from "../../../utils/okrNumber";
 
 dayjs.extend(relativeTime);
 
@@ -128,6 +128,19 @@ export default function EmployeeOverviewTab({
             100,
         )
       : 0;
+  // Dynamic health status based on KR distribution
+  const healthStatus =
+    confidenceStats.off_track > 0
+      ? "Off Track"
+      : confidenceStats.at_risk > 0
+        ? "At Risk"
+        : "On Track";
+  const healthBadge =
+    confidenceStats.off_track > 0
+      ? "Watch"
+      : confidenceStats.at_risk > 0
+        ? "Caution"
+        : "Healthy";
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-12">
@@ -136,7 +149,7 @@ export default function EmployeeOverviewTab({
         <StatCard
           icon={<MdTrendingUp />}
           label="Overall Progress"
-          value={`${avgProgressDisplay}%`}
+          value={`${formatOkrNumber(avgProgressDisplay)}%`}
           subtext={`Across ${summary.totalObjectives} objective${summary.totalObjectives !== 1 ? "s" : ""}`}
           badge={
             avgProgressDisplay > 70
@@ -149,27 +162,33 @@ export default function EmployeeOverviewTab({
         />
         <StatCard
           icon={<MdCheckCircle />}
-          label="KR Health Score"
-          value={`${healthPct}%`}
-          subtext={`${confidenceStats.on_track} on track · ${confidenceStats.off_track} off track`}
-          badge={confidenceStats.off_track > 0 ? "Watch" : "Healthy"}
+          label="Key Result Health Score"
+          value={`${formatOkrNumber(healthPct)}%`}
+          subtext={`${healthStatus} · ${formatOkrCount(confidenceStats.on_track)} on track · ${formatOkrCount(confidenceStats.off_track)} off track`}
+          badge={healthBadge}
           color="green"
         />
         <StatCard
           icon={<MdCalendarMonth />}
           label="Planning Activity"
-          value={`${totalActivities}`}
-          subtext={`${compliance.monthlyPlans}M · ${compliance.weeklyPlans}W · ${compliance.dailyPlans}D`}
+          value={formatOkrCount(totalActivities)}
+          subtext={`${formatOkrCount(compliance.monthlyPlans)}M · ${formatOkrCount(compliance.weeklyPlans)}W · ${formatOkrCount(compliance.dailyPlans)}D`}
           badge={totalActivities > 0 ? "Active" : "Pending"}
           color="amber"
         />
         <StatCard
-          icon={<MdFeedback />}
-          label="Feedback Received"
-          value={`${recentComments.length}`}
-          subtext="Review comments this cycle"
-          badge={recentComments.length > 0 ? "Active" : "None"}
-          color="indigo"
+          icon={<MdFlag />}
+          label="KR Status Distribution"
+          value={`${formatOkrCount(confidenceStats.on_track + confidenceStats.at_risk + confidenceStats.off_track)}`}
+          subtext={`${formatOkrCount(confidenceStats.on_track)}✓ · ${formatOkrCount(confidenceStats.at_risk)}⚠ · ${formatOkrCount(confidenceStats.off_track)}✗`}
+          badge={healthStatus}
+          color={
+            confidenceStats.off_track > 0
+              ? "red"
+              : confidenceStats.at_risk > 0
+                ? "amber"
+                : "green"
+          }
         />
       </div>
 
@@ -397,10 +416,13 @@ function StatCard({ icon, label, value, subtext, badge, color }: any) {
     green: "text-emerald-600 bg-emerald-50 border-emerald-100",
     amber: "text-amber-600 bg-amber-50 border-amber-100",
     indigo: "text-indigo-600 bg-indigo-50 border-indigo-100",
+    red: "text-rose-600 bg-rose-50 border-rose-100",
   };
   const badgeSchemes: Record<string, string> = {
     Excellent: "text-emerald-700 bg-emerald-50 border-emerald-200",
     "On Track": "text-primary-700 bg-primary-50 border-primary-200",
+    "Off Track": "text-rose-700 bg-rose-50 border-rose-200",
+    Caution: "text-amber-700 bg-amber-50 border-amber-200",
     "Needs Focus": "text-rose-700 bg-rose-50 border-rose-200",
     Healthy: "text-emerald-700 bg-emerald-50 border-emerald-200",
     Watch: "text-amber-700 bg-amber-50 border-amber-200",
@@ -412,7 +434,7 @@ function StatCard({ icon, label, value, subtext, badge, color }: any) {
   const badgeScheme =
     badgeSchemes[badge] || "text-slate-600 bg-slate-50 border-slate-200";
   return (
-    <div className="group relative overflow-hidden rounded-[2rem] bg-white p-7 shadow-xl shadow-slate-200/40 border border-slate-100 transition-all hover:shadow-2xl hover:shadow-primary/5 hover:-translate-y-1">
+    <div className="group relative overflow-hidden rounded-4xl bg-white p-7 shadow-xl shadow-slate-200/40 border border-slate-100 transition-all hover:shadow-2xl hover:shadow-primary/5 hover:-translate-y-1">
       <div className="flex justify-between items-start mb-6">
         <div
           className={`p-3 rounded-2xl ${scheme} transition-colors group-hover:scale-110 duration-300`}
@@ -426,7 +448,7 @@ function StatCard({ icon, label, value, subtext, badge, color }: any) {
         </div>
       </div>
       <div className="space-y-1">
-        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.1em]">
+        <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">
           {label}
         </h4>
         <div className="text-4xl font-black text-slate-900 tracking-tighter">
@@ -474,9 +496,9 @@ function HealthBar({ label, count, total, color }: any) {
         <span className="text-slate-900">{count}</span>
       </div>
       <div className="h-2 w-full bg-slate-50 rounded-full overflow-hidden">
-        <div 
-          className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.1)]`} 
-          style={{ width: `${percentage}%` }} 
+        <div
+          className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.1)]`}
+          style={{ width: `${percentage}%` }}
         />
       </div>
     </div>

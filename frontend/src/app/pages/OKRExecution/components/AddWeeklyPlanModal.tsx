@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FiX, FiMaximize2, FiMinimize2 } from "react-icons/fi";
 import { MdCheck, MdAdd, MdDelete } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
+import Toggle from "../../../components/Core/ui/Toggle";
 import {
   createWeeklyPlan,
   fetchMetricDefinitions,
@@ -9,6 +10,10 @@ import {
   fetchMonthlyPlans,
   fetchManagerWeeklyPlans,
 } from "../../../services/okr-execution.api";
+import {
+  APPROVAL_GUARD_MESSAGE,
+  getPlanCreationErrorMessage,
+} from "./planCreationErrors";
 import type {
   AvailableWeight,
   MetricDefinition,
@@ -26,7 +31,14 @@ export interface AddWeeklyPlanModalProps {
   krIds: string[];
   onCreated: (plans: WeeklyPlan[]) => void;
   preselectedWeekNumber?: number;
+  weeksInMonth?: number;
   userRoleLevel?: "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
+  cycleId?: string | number | null;
+  /** Level-based cadence configuration for all roles. */
+  levelConfig?: Record<
+    string,
+    { allow_monthly: boolean; allow_weekly: boolean; allow_daily: boolean }
+  > | null;
 }
 
 type Step = 1 | 2;
@@ -70,6 +82,7 @@ export default function AddWeeklyPlanModal({
   onCreated,
   preselectedWeekNumber,
   userRoleLevel,
+  levelConfig,
 }: AddWeeklyPlanModalProps) {
   const [step, setStep] = useState<Step>(1);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -199,15 +212,17 @@ export default function AddWeeklyPlanModal({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !selectedPlan?.aligned_manager_plan_id) {
+    if (!isOpen || !selectedPlan?.id) {
       setManagerWeeklyPlans([]);
       return;
     }
+
     setLoadingManagerWeekly(true);
     fetchManagerWeeklyPlans(
-      String(selectedPlan.aligned_manager_plan_id),
+      String(selectedPlan.id),
       Number(preselectedWeekNumber),
     )
+
       .then(setManagerWeeklyPlans)
       .catch(() => setManagerWeeklyPlans([]))
       .finally(() => setLoadingManagerWeekly(false));
@@ -259,6 +274,20 @@ export default function AddWeeklyPlanModal({
     setSubmitting(true);
     setError(null);
     try {
+      const selectedMonthlyStatus = String(
+        selectedPlan?.plan_status ?? (selectedPlan as any)?.status_code ?? "",
+      ).toLowerCase();
+      const parentKrStatus = String(
+        (selectedPlan as any)?.parent_key_result?.status_code ?? "",
+      ).toLowerCase();
+      const isApproved = (status: string) =>
+        !status || ["approved", "published", "closed"].includes(status);
+
+      if (!isApproved(selectedMonthlyStatus) || !isApproved(parentKrStatus)) {
+        setError(APPROVAL_GUARD_MESSAGE);
+        return;
+      }
+
       const created: WeeklyPlan[] = [];
       for (const st of subtasks) {
         const weight = Number(st.weight);
@@ -288,9 +317,10 @@ export default function AddWeeklyPlanModal({
       onClose();
     } catch (err: any) {
       setError(
-        err?.data?.message ||
-          err?.message ||
+        getPlanCreationErrorMessage(
+          err,
           "Could not create plan(s). Try again.",
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -404,6 +434,7 @@ export default function AddWeeklyPlanModal({
               managerWeeklyPlans={managerWeeklyPlans}
               loadingManagerWeekly={loadingManagerWeekly}
               userRoleLevel={userRoleLevel}
+              levelConfig={levelConfig}
               setStep={setStep}
             />
           ) : (
@@ -441,6 +472,7 @@ export default function AddWeeklyPlanModal({
                     managerWeeklyPlans={managerWeeklyPlans}
                     loadingManagerWeekly={loadingManagerWeekly}
                     userRoleLevel={userRoleLevel}
+                    levelConfig={levelConfig}
                   />
                 ) : null)}
             </>
@@ -629,6 +661,7 @@ function ConfigurePanel({
   managerWeeklyPlans,
   loadingManagerWeekly,
   userRoleLevel,
+  levelConfig,
 }: {
   plan: MonthlyPlan;
   remainingPct: number;
@@ -647,6 +680,10 @@ function ConfigurePanel({
   managerWeeklyPlans: WeeklyPlan[];
   loadingManagerWeekly: boolean;
   userRoleLevel?: string;
+  levelConfig?: Record<
+    string,
+    { allow_monthly: boolean; allow_weekly: boolean; allow_daily: boolean }
+  > | null;
 }) {
   const hasTargetInfo =
     selectedAW &&
@@ -723,6 +760,7 @@ function ConfigurePanel({
             }
             loadingManagerWeekly={loadingManagerWeekly}
             userRoleLevel={userRoleLevel}
+            levelConfig={levelConfig}
           />
         ))}
       </div>
@@ -733,7 +771,7 @@ function ConfigurePanel({
         disabled={!canAddSubtask}
         className={`w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed py-2.5 text-sm font-semibold transition-colors ${canAddSubtask ? "border-primary/40 text-primary hover:bg-primary/5" : "border-slate-200 text-slate-300 cursor-not-allowed"}`}
       >
-        <MdAdd size={18} /> Add Another Subtask
+        <MdAdd size={18} /> Add Weekly Subtask
       </button>
       <div className="rounded-xl bg-primary/5 ring-1 ring-inset ring-primary/15 px-4 py-2.5 text-xs flex items-center justify-between">
         <span className="text-primary/80">Total allocated:</span>
@@ -767,27 +805,29 @@ function SubtaskCard({
   remainingPct,
   metrics,
   fieldErrors,
-  plan,
   preselectedWeekNumber,
+  plan,
   selectedAW,
   managerWeeklyPlans,
   loadingManagerWeekly,
   userRoleLevel,
+  levelConfig,
 }: {
   index: number;
   subtask: SubtaskForm;
-  onUpdate: (p: Partial<SubtaskForm>) => void;
+  onUpdate: (fields: Partial<SubtaskForm>) => void;
   onRemove: () => void;
   canRemove: boolean;
   remainingPct: number;
   metrics: MetricDefinition[];
   fieldErrors: Record<string, string>;
-  plan: MonthlyPlan;
-  preselectedWeekNumber?: number;
-  selectedAW?: AvailableWeight | null;
-  managerWeeklyPlans: WeeklyPlan[];
-  loadingManagerWeekly: boolean;
+  preselectedWeekNumber?: string | number;
+  plan?: any;
+  selectedAW?: any;
+  managerWeeklyPlans?: any[];
+  loadingManagerWeekly?: boolean;
   userRoleLevel?: string;
+  levelConfig?: any;
 }) {
   const selectedMetric = metrics.find(
     (m) => m.id === subtask.metricDefinitionId,
@@ -807,7 +847,7 @@ function SubtaskCard({
 
   useEffect(() => {
     if (preselectedWeekNumber && subtask.weekNumber === "")
-      onUpdate({ weekNumber: preselectedWeekNumber });
+      onUpdate({ weekNumber: Number(preselectedWeekNumber) });
   }, []);
 
   useEffect(() => {
@@ -847,7 +887,7 @@ function SubtaskCard({
           const availableWeeks = selectedAW?.weeks || [];
           const weekNumbers = [1, 2, 3, 4, 5].filter((w) =>
             availableWeeks.some(
-              (aw) =>
+              (aw: any) =>
                 aw.week_number === w &&
                 (aw.plan_id === null || subtask.weekNumber === w),
             ),
@@ -891,38 +931,87 @@ function SubtaskCard({
         label="Align with Manager Weekly Plan"
         error={fieldErrors[`${pfx}alignment`]}
       >
-        {loadingManagerWeekly ? (
-          <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
-        ) : !plan.aligned_manager_plan_id ? (
-          <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-            <p className="text-[10px] text-slate-500">
-              This monthly plan is not aligned with any manager plan, so no
-              weekly alignment is possible.
-            </p>
-          </div>
-        ) : managerWeeklyPlans.length > 0 ? (
-          <select
-            value={subtask.alignedManagerPlanId}
-            onChange={(e) => onUpdate({ alignedManagerPlanId: e.target.value })}
-            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary"
-          >
-            <option value="">Align to manager…</option>
-            {managerWeeklyPlans.map((wp) => (
-              <option key={wp.id} value={wp.id}>
-                {wp.title}
-              </option>
-            ))}
-          </select>
-        ) : userRoleLevel === "DIRECTOR" || userRoleLevel === "CEO" ? (
-          <div className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-[10px] text-slate-500 italic">
-            Alignment is managed at the quarterly objective level for Department
-            Managers.
-          </div>
-        ) : (
-          <div className="rounded-xl bg-amber-50 border border-amber-100 p-2 text-[10px] text-amber-700 flex items-center gap-2">
-            <span>⚠️</span> Manager hasn't planned this week.
-          </div>
-        )}
+        {(() => {
+          // Determine the manager's role level (one level up in the hierarchy)
+          const ROLE_HIERARCHY: string[] = [
+            "EMPLOYEE",
+            "MANAGER_TEAM_LEADER",
+            "DIRECTOR",
+            "CEO",
+          ];
+          const currentIdx = ROLE_HIERARCHY.indexOf(
+            userRoleLevel || "EMPLOYEE",
+          );
+          const managerRole =
+            currentIdx >= 0 && currentIdx < ROLE_HIERARCHY.length - 1
+              ? ROLE_HIERARCHY[currentIdx + 1]
+              : null;
+
+          // Check if the manager's cadence config enables weekly planning
+          const managerCadence =
+            managerRole && levelConfig ? levelConfig[managerRole] : null;
+          const managerAllowsWeekly = managerCadence
+            ? managerCadence.allow_weekly
+            : true;
+
+          if (loadingManagerWeekly) {
+            return (
+              <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
+            );
+          }
+          if (!plan.aligned_manager_plan_id && (!managerWeeklyPlans || managerWeeklyPlans.length === 0)) {
+            return (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <p className="text-[10px] text-slate-500">
+                  This monthly plan is not aligned with any manager plan, and no
+                  manager plans were found for this period.
+                </p>
+              </div>
+            );
+          }
+
+          if (userRoleLevel === "DIRECTOR" || userRoleLevel === "CEO") {
+            return (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-[10px] text-slate-500 italic">
+                Alignment is managed at the quarterly objective level for
+                Department Managers.
+              </div>
+            );
+          }
+          if (!managerAllowsWeekly) {
+            return (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <p className="text-[10px] text-slate-500 italic">
+                  Weekly alignment is not applicable — your manager's planning
+                  cadence does not include weekly plans.
+                </p>
+              </div>
+            );
+          }
+          if (managerWeeklyPlans && managerWeeklyPlans.length > 0) {
+            return (
+              <select
+                value={subtask.alignedManagerPlanId}
+                onChange={(e) =>
+                  onUpdate({ alignedManagerPlanId: e.target.value })
+                }
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">Align to manager…</option>
+                {managerWeeklyPlans.map((wp: any) => (
+                  <option key={wp.id} value={wp.id}>
+                    {wp.title}
+                  </option>
+                ))}
+              </select>
+            );
+          }
+          return (
+            <div className="rounded-xl bg-amber-50 border border-amber-100 p-2 text-[10px] text-amber-700 flex items-center gap-2">
+              <span>⚠️</span> Manager hasn't planned this week.
+            </div>
+          );
+        })()}
       </Field>
 
       <Field label="Weight (%)" required error={fieldErrors[`${pfx}weight`]}>
@@ -990,31 +1079,21 @@ function SubtaskCard({
 
       <div className="pt-2 flex flex-col gap-2">
         {!selectedMetric?.value_based_progress && (
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={subtask.contributeToScore}
-              onChange={(e) =>
-                onUpdate({ contributeToScore: e.target.checked })
-              }
-              className="w-4 h-4 rounded text-primary border-slate-300"
-            />
-            <span className="text-xs font-medium text-slate-700">
-              Contribute to Score
-            </span>
-          </label>
-        )}
-        <label className="flex items-center gap-3 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={subtask.contributeToValue}
-            onChange={(e) => onUpdate({ contributeToValue: e.target.checked })}
-            className="w-4 h-4 rounded text-primary border-slate-300"
+          <Toggle
+            label="Contribute to Score"
+            description="Task completion affects overall plan score"
+            checked={subtask.contributeToScore}
+            onChange={(val: boolean) => onUpdate({ contributeToScore: val })}
           />
-          <span className="text-xs font-medium text-slate-700">
-            Contribute to Value
-          </span>
-        </label>
+        )}
+        {!selectedMetric?.is_financial && (
+          <Toggle
+            label="Contribute to Value"
+            description="Update progress affects the parent value"
+            checked={subtask.contributeToValue}
+            onChange={(val: boolean) => onUpdate({ contributeToValue: val })}
+          />
+        )}
       </div>
     </div>
   );
@@ -1046,6 +1125,7 @@ function FullViewLayout({
   managerWeeklyPlans,
   loadingManagerWeekly,
   userRoleLevel,
+  levelConfig,
 }: {
   candidates: MonthlyPlan[];
   loading: boolean;
@@ -1070,6 +1150,10 @@ function FullViewLayout({
   managerWeeklyPlans: WeeklyPlan[];
   loadingManagerWeekly: boolean;
   userRoleLevel?: string;
+  levelConfig?: Record<
+    string,
+    { allow_monthly: boolean; allow_weekly: boolean; allow_daily: boolean }
+  > | null;
 }) {
   const step1Done = !!selectedId;
   return (
@@ -1135,6 +1219,7 @@ function FullViewLayout({
                 managerWeeklyPlans={managerWeeklyPlans}
                 loadingManagerWeekly={loadingManagerWeekly}
                 userRoleLevel={userRoleLevel}
+                levelConfig={levelConfig}
               />
             ) : (
               <div className="text-center py-8 text-sm text-slate-400">

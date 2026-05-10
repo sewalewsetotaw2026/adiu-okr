@@ -9,6 +9,9 @@ export type AdoptableOption = {
   title: string;
   description: string;
   parentContext?: string;
+  requiredTarget?: number | null;
+  weightPercent?: number | null;
+  unitOfMeasure?: string | null;
 };
 
 type Props = {
@@ -59,11 +62,15 @@ export default function ExecutionSetupModal({
     <ModalLayout
       isOpen={isOpen}
       onClose={onClose}
-      title={parentTitle ? `Adopt KR: ${parentTitle}` : "Adopt Assigned KR"}
+      title={
+        parentTitle
+          ? `Adopt Key Result: ${parentTitle}`
+          : "Adopt Assigned Key Result"
+      }
       maxWidthClass="max-w-lg"
     >
       <div className="space-y-6">
-        {/* Dropdown for picking which KR to adopt */}
+        {/* Dropdown for picking which Key Result to adopt */}
         <div>
           <label className="mb-1.5 block text-xs font-bold text-gray-400 tracking-widest">
             Assigned Key Result
@@ -83,6 +90,37 @@ export default function ExecutionSetupModal({
             ))}
           </select>
         </div>
+
+        {/* Assignment info card – shows what was allocated to this user */}
+        {selectedOption && (
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-primary/70">Your Assignment</p>
+            <div className="flex flex-wrap gap-3">
+              {selectedOption.requiredTarget != null && (
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-medium">Target Required</span>
+                  <span className="text-base font-bold text-gray-800">
+                    {Number(selectedOption.requiredTarget).toLocaleString()}
+                    {selectedOption.unitOfMeasure ? (
+                      <span className="text-xs text-gray-500 font-normal ml-1">{selectedOption.unitOfMeasure}</span>
+                    ) : null}
+                  </span>
+                </div>
+              )}
+              {selectedOption.weightPercent != null && selectedOption.weightPercent > 0 && (
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 font-medium">Weight</span>
+                  <span className="text-base font-bold text-gray-800">
+                    {Math.round(selectedOption.weightPercent)}%
+                  </span>
+                </div>
+              )}
+              {selectedOption.requiredTarget == null && (selectedOption.weightPercent == null || selectedOption.weightPercent === 0) && (
+                <p className="text-xs text-gray-400 italic">No specific allocation set by your manager.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="space-y-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-300">
           {/* Adoption Mode Selection */}
@@ -106,7 +144,9 @@ export default function ExecutionSetupModal({
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
-                <span className="text-sm font-bold text-k-dark-grey">Direct</span>
+                <span className="text-sm font-bold text-k-dark-grey">
+                  Direct
+                </span>
                 <span className="text-[10px] text-k-medium-grey leading-relaxed">
                   Use manager's title & description.
                 </span>
@@ -121,7 +161,9 @@ export default function ExecutionSetupModal({
                     : "border-gray-200 bg-white hover:border-gray-300"
                 }`}
               >
-                <span className="text-sm font-bold text-k-dark-grey">Custom</span>
+                <span className="text-sm font-bold text-k-dark-grey">
+                  Custom
+                </span>
                 <span className="text-[10px] text-k-medium-grey leading-relaxed">
                   Define your own title & description.
                 </span>
@@ -139,7 +181,11 @@ export default function ExecutionSetupModal({
                 value={displayTitle}
                 onChange={(e) => onChangeCustomTitle(e.target.value)}
                 disabled={mode === "direct_adoption" || !selectedId}
-                placeholder={!selectedId ? "No KR Selected" : "Name Your Achievement..."}
+                placeholder={
+                  !selectedId
+                    ? "No Key Result Selected"
+                    : "Name Your Achievement..."
+                }
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 bg-white disabled:bg-gray-50 disabled:text-gray-400"
               />
             </div>
@@ -152,7 +198,11 @@ export default function ExecutionSetupModal({
                 value={displayDescription}
                 onValueChange={onChangeCustomDescription}
                 disabled={mode === "direct_adoption" || !selectedId}
-                placeholder={!selectedId ? "Description Will Be Synced From Manager's KR." : "Explain The Context And Success Criteria..."}
+                placeholder={
+                  !selectedId
+                    ? "Description Will Be Synced From Manager's KR."
+                    : "Explain The Context And Success Criteria..."
+                }
                 className="min-h-[120px] w-full resize-none rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-k-dark-grey outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 bg-white disabled:bg-gray-50 disabled:text-gray-400"
               />
             </div>

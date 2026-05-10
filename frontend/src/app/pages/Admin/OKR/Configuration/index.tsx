@@ -15,7 +15,6 @@ import {
   MdSettings,
 } from "react-icons/md";
 import RefreshButton from "../../../../components/common/RefreshButton";
-import FormAutocomplete from "../../../../components/Core/ui/FormAutocomplete";
 import ConfirmationModal from "../../../../components/common/ConfirmationModal";
 import Button from "../../../../components/Core/ui/Button";
 
@@ -44,8 +43,13 @@ const ConfigurationSkeleton = () => (
   </div>
 );
 
-type Tab = "general" | "statuses" | "categories" | "metrics" | "profiles" | "feature_flags";
-
+type Tab =
+  | "general"
+  | "statuses"
+  | "categories"
+  | "metrics"
+  | "profiles"
+  | "feature_flags";
 
 type PlanningApproach = "TOP_DOWN" | "BOTTOM_UP";
 type PlanningCadence = "MONTHLY" | "WEEKLY" | "DAILY";
@@ -203,6 +207,7 @@ interface MetricCreateForm {
   requires_target_value: boolean;
   allows_binary_completion: boolean;
   value_based_progress: boolean;
+  is_active?: boolean;
 }
 
 interface MetricCategoryDraft {
@@ -255,6 +260,7 @@ const EMPTY_METRIC_FORM: MetricCreateForm = {
   requires_target_value: true,
   allows_binary_completion: false,
   value_based_progress: false,
+  is_active: true,
 };
 
 const EMPTY_METRIC_CATEGORY_DRAFT: MetricCategoryDraft = {
@@ -471,11 +477,11 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
 
   const approachOptions = Array.isArray(planningRaw.options)
     ? planningRaw.options
-      .map((item) => String(item || "").toUpperCase())
-      .filter(
-        (item): item is PlanningApproach =>
-          item === "TOP_DOWN" || item === "BOTTOM_UP",
-      )
+        .map((item) => String(item || "").toUpperCase())
+        .filter(
+          (item): item is PlanningApproach =>
+            item === "TOP_DOWN" || item === "BOTTOM_UP",
+        )
     : defaults.planning_approach.options;
 
   const selectedCandidate = String(
@@ -531,12 +537,12 @@ function normalizeMenu(raw: unknown): OkrConfigurationMenu {
         metricRaw.allowed_metric_definition_ids,
       )
         ? Array.from(
-          new Set(
-            metricRaw.allowed_metric_definition_ids
-              .map((id) => Number(id))
-              .filter((id) => Number.isInteger(id) && id > 0),
-          ),
-        )
+            new Set(
+              metricRaw.allowed_metric_definition_ids
+                .map((id) => Number(id))
+                .filter((id) => Number.isInteger(id) && id > 0),
+            ),
+          )
         : defaults.metric_configuration.allowed_metric_definition_ids,
       allow_financial_metrics: asBoolean(
         metricRaw.allow_financial_metrics,
@@ -893,8 +899,8 @@ function isCollectionEmpty(value: unknown): boolean {
 
 const TABS: { id: Tab; label: string; isPreview?: boolean }[] = [
   { id: "general", label: "General" },
-  { id: "categories", label: "Metric Categories" },
   { id: "metrics", label: "Metrics" },
+  { id: "categories", label: "Metric Categories" },
   { id: "statuses", label: "Statuses", isPreview: true },
   // { id: "profiles", label: "Profiles", isPreview: true },
   // { id: "feature_flags", label: "Feature Flags", isPreview: true },
@@ -1145,7 +1151,8 @@ export default function Configuration() {
   const loadMetrics = useCallback(async () => {
     const response = await makeCall({
       method: "GET",
-      route: apiRoutes.okr.metrics,
+      // Ask the backend for all metrics including inactive (backend may ignore unknown params).
+      route: `${apiRoutes.okr.metrics}?include_inactive=true`,
       isSecureRoute: true,
     });
     const payload = extractPayload<unknown>(response);
@@ -1176,6 +1183,7 @@ export default function Configuration() {
       requires_target_value: metric.requires_target_value,
       allows_binary_completion: metric.allows_binary_completion,
       value_based_progress: metric.value_based_progress || false,
+      is_active: metric.is_active,
     });
     setMetricModalOpen(true);
   };
@@ -1211,6 +1219,7 @@ export default function Configuration() {
           requiresTargetValue: metricForm.requires_target_value,
           allowsBinaryCompletion: metricForm.allows_binary_completion,
           valueBasedProgress: metricForm.value_based_progress,
+          isActive: metricForm.is_active,
         },
       });
 
@@ -1277,7 +1286,10 @@ export default function Configuration() {
   }, [metricCategories, metricCategoryDraft.name]);
 
   // const createMetricCategory = async (value: string) => {
-  const createMetricCategory = async (value: string, description: string = "") => {
+  const createMetricCategory = async (
+    value: string,
+    description: string = "",
+  ) => {
     const name = value.trim();
     if (!name) throw new Error("Category name is required.");
 
@@ -2529,6 +2541,7 @@ export default function Configuration() {
               <th className="px-4 py-3 font-semibold">Financial</th>
               <th className="px-4 py-3 font-semibold">Milestone</th>
               <th className="px-4 py-3 font-semibold">Value-Based</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
               <th className="px-4 py-3 font-semibold text-right">Actions</th>
             </tr>
           </thead>
@@ -2555,7 +2568,12 @@ export default function Configuration() {
                     {row.allows_binary_completion ? "Enabled" : "Disabled"}
                   </td>
                   <td className="px-4 py-3 text-gray-700">
-                    {row.value_based_progress ? "Direct Value" : "Score Aggregated"}
+                    {row.value_based_progress
+                      ? "Direct Value"
+                      : "Score Aggregated"}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">
+                    {row.is_active ? "Active" : "Inactive"}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
@@ -2656,7 +2674,8 @@ export default function Configuration() {
             Metric Categoriess
           </h2>
           <p className="text-sm text-gray-600">
-            Group metrics into categories to help teams easily find the right measurement tools.
+            Group metrics into categories to help teams easily find the right
+            measurement tools.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2693,7 +2712,9 @@ export default function Configuration() {
             ) : (
               metricCategories.map((row) => (
                 <tr key={row.id} className="border-t border-slate-200/80">
-                  <td className="px-4 py-3 text-gray-800 font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 text-gray-800 font-semibold">
+                    {row.name}
+                  </td>
                   <td className="px-4 py-3 text-gray-700 max-w-sm truncate">
                     {row.description || "—"}
                   </td>
@@ -2720,7 +2741,9 @@ export default function Configuration() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setCategoryToDelete({ id: row.id, name: row.name })}
+                        onClick={() =>
+                          setCategoryToDelete({ id: row.id, name: row.name })
+                        }
                         className="p-1.5 h-auto text-gray-600 hover:bg-red-100 hover:text-red-600"
                         aria-label={`Delete ${row.name}`}
                         icon={MdDelete}
@@ -2735,8 +2758,6 @@ export default function Configuration() {
       </div>
     </section>
   );
-
-
 
   const renderProfilesTab = () => (
     <section className="space-y-6">
@@ -3243,6 +3264,20 @@ export default function Configuration() {
               />
             </label>
             <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
+              Active
+              <input
+                type="checkbox"
+                checked={metricForm.is_active}
+                onChange={(event) =>
+                  setMetricForm((prev) => ({
+                    ...prev,
+                    is_active: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 accent-primary"
+              />
+            </label>
+            <label className="flex items-center justify-between rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium">
               Requires Target Value
               <input
                 type="checkbox"
@@ -3289,9 +3324,15 @@ export default function Configuration() {
           {metricForm.value_based_progress && (
             <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
               <p className="text-[11px] leading-relaxed text-amber-700 font-medium">
-                <span className="font-bold block mb-0.5">Value-Based Calculation Enabled:</span>
-                This metric will calculate progress purely as <code className="bg-amber-100/50 px-1 rounded">Current / Target</code>.
-                It will bypass the standard weighted score aggregation for all associated plans and hierarchies.
+                <span className="font-bold block mb-0.5">
+                  Value-Based Calculation Enabled:
+                </span>
+                This metric will calculate progress purely as{" "}
+                <code className="bg-amber-100/50 px-1 rounded">
+                  Current / Target
+                </code>
+                . It will bypass the standard weighted score aggregation for all
+                associated plans and hierarchies.
               </p>
             </div>
           )}

@@ -12,20 +12,17 @@ import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkr
 import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 import ObjectiveCard from "../../../components/common/ObjectiveCard";
 import LoadingSkeleton from "../../../components/common/LoadingSkeleton";
+import PlanStatusBanner from "../components/PlanStatusBanner";
 import { routeConstants } from "../../../../utils/constants";
 import { fetchMonthlyAvailableWeight } from "../../../services/okr-execution.api";
 import type { AvailableWeight } from "../../../../types/okr.types";
 import {
   MdAdd,
-  MdEdit,
-  MdDelete,
-  MdLock,
   MdEditDocument,
   MdFactCheck,
   MdFlag,
   MdPublish,
   MdSend,
-  MdWarningAmber,
 } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
 import ExecutionSetupModal, {
@@ -45,6 +42,7 @@ import { useSelector } from "react-redux";
 import { selectAuthUser } from "../../../slice/authSlice/selectors";
 import KeyResultListItem from "../../../components/common/KeyResultListItem";
 import TabBar, { Tab } from "../../../components/common/TabBar";
+import { formatOkrNumber } from "../../../utils/okrNumber";
 
 type Card = {
   id: string;
@@ -56,6 +54,8 @@ type Card = {
   status: string;
   krId?: number;
   keyResults?: any[];
+  feedbackNote?: string;
+  reviewerName?: string;
 };
 
 type AssignedKR = {
@@ -64,6 +64,9 @@ type AssignedKR = {
   employee_kr_id: number | null;
   title: string;
   description: string;
+  required_target: number | null;
+  weight_percent: number | null;
+  unit_of_measure: string | null;
 };
 
 type LevelRole = "CEO" | "DIRECTOR" | "MANAGER_TEAM_LEADER" | "EMPLOYEE";
@@ -80,7 +83,6 @@ type LevelConfiguration = Record<LevelRole, CadenceRuleSet>;
 // Type removed here as it is imported from ExecutionSetupModal
 
 const TABS: Tab[] = [
-  { id: "overview", label: "Overview" },
   { id: "quarterly", label: "Quarterly OKR Plan" },
   { id: "monthly", label: "Monthly Plan" },
   { id: "weekly", label: "Weekly Plan" },
@@ -99,17 +101,15 @@ function keyResultsFromObjectiveRow(o: Record<string, unknown>): unknown[] {
 export default function MyExecutionDashboardPage() {
   const navigate = useNavigate();
   const user = useSelector(selectAuthUser);
-  type TabId = "overview" | "quarterly" | "monthly" | "weekly" | "daily";
+  type TabId = "quarterly" | "monthly" | "weekly" | "daily";
 
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as TabId;
     return (
-      (
-        ["overview", "quarterly", "monthly", "weekly", "daily"] as TabId[]
-      ).includes(tab)
+      (["quarterly", "monthly", "weekly", "daily"] as TabId[]).includes(tab)
         ? tab
-        : "overview"
+        : "quarterly"
     ) as TabId;
   });
 
@@ -165,6 +165,11 @@ export default function MyExecutionDashboardPage() {
   );
 
   const [currentCycleId, setCurrentCycleId] = useState<number | null>(null);
+  const [currentCycle, setCurrentCycle] = useState<{
+    id?: number;
+    start_date?: string;
+    end_date?: string;
+  } | null>(null);
 
   // Planning cadence configuration
   const [levelConfig, setLevelConfig] = useState<LevelConfiguration | null>(
@@ -188,7 +193,11 @@ export default function MyExecutionDashboardPage() {
   const [setupCustomTitle, setSetupCustomTitle] = useState("");
   const [setupCustomDescription, setSetupCustomDescription] = useState("");
   const [saveSetupBusy, setSaveSetupBusy] = useState(false);
-  const [postPublishEditingKr, setPostPublishEditingKr] = useState<any | null>(null);
+  const [postPublishEditingKr, setPostPublishEditingKr] = useState<any | null>(
+    null,
+  );
+  const [quarterlySubmitLoading, setQuarterlySubmitLoading] = useState(false);
+  const [quarterlyPublishLoading, setQuarterlyPublishLoading] = useState(false);
   const [postPublishEditingType, setPostPublishEditingType] = useState<
     "EMPLOYEE_KR" | "EMPLOYEE_MONTH_PLAN" | "WEEKLY_PLAN"
   >("EMPLOYEE_KR");
@@ -315,6 +324,7 @@ export default function MyExecutionDashboardPage() {
 
       const cycle = okrUnwrap(cycleRes) as { id?: number } | null;
       const cid = cycle?.id != null ? Number(cycle.id) : null;
+      setCurrentCycle((cycle as any) ?? null);
 
       if (!cid || !userId) {
         setAssignedKrs([]);
@@ -355,6 +365,17 @@ export default function MyExecutionDashboardPage() {
           r.department_kr?.description ||
           r.departmentKr?.description ||
           "",
+        requiredTarget:
+          r.required_target != null ? Number(r.required_target) : null,
+        weightPercent:
+          r.weight_percent != null ? Number(r.weight_percent) : null,
+        unitOfMeasure:
+          r.company_kr?.unit_of_measure ||
+          r.companyKr?.unit_of_measure ||
+          r.employee_kr?.unit_of_measure ||
+          r.department_kr?.unit_of_measure ||
+          r.unit_of_measure ||
+          null,
       }));
 
       setAssignedKrs(mapped);
@@ -533,6 +554,14 @@ export default function MyExecutionDashboardPage() {
             status: String(o.status_code || "draft").toLowerCase(),
             krId: first?.id ? Number(first.id) : undefined,
             keyResults: keyResults,
+            comments: o.comments,
+            feedbackNote: (o.feedbackNote ||
+              o.feedback_note ||
+              o.rejection_reason ||
+              o.reviewer_note) as string | undefined,
+            reviewerName: (o.reviewerName || o.reviewer_name) as
+              | string
+              | undefined,
           };
         }),
       );
@@ -629,7 +658,7 @@ export default function MyExecutionDashboardPage() {
   // Filter tabs based on cadence rules
   const visibleTabs = useMemo<Tab[]>(() => {
     return TABS.filter((tab) => {
-      if (tab.id === "overview" || tab.id === "quarterly") return true;
+      if (tab.id === "quarterly") return true;
       if (tab.id === "monthly") return cadenceRules.allow_monthly;
       if (tab.id === "weekly") return cadenceRules.allow_weekly;
       if (tab.id === "daily") return cadenceRules.allow_daily;
@@ -661,8 +690,13 @@ export default function MyExecutionDashboardPage() {
       start_value?: number;
       progress_pct: number;
       unit?: string;
+      status_code?: string;
+      objective_status_code?: string;
     }[] = [];
     cards.forEach((c) => {
+      const objectiveStatus = String(
+        (c as any).status_code ?? (c as any).status ?? "draft",
+      ).toLowerCase();
       (c.keyResults ?? []).forEach((kr: any) => {
         const tgt = Number(kr.target_value ?? kr.targetValue ?? 0);
         const cur = Number(
@@ -678,11 +712,18 @@ export default function MyExecutionDashboardPage() {
           start_value: start,
           progress_pct: pct,
           unit: kr.unit_of_measure ?? kr.unit,
+          status_code: String(
+            kr.status_code ?? kr.status ?? "draft",
+          ).toLowerCase(),
+          objective_status_code: objectiveStatus,
         });
       });
     });
     return out;
   }, [cards]);
+
+  const krIdsString = JSON.stringify(allKrs.map((kr) => kr.id));
+  const krIds = useMemo(() => allKrs.map((kr) => kr.id), [krIdsString]);
 
   const loadAllocations = useCallback(async () => {
     if (allKrs.length === 0) {
@@ -771,13 +812,13 @@ export default function MyExecutionDashboardPage() {
         isSecureRoute: true,
       });
 
-      ToastService.success("KR successfully adopted!");
+      ToastService.success("Key Result successfully adopted!");
       setSetupOpen(false);
 
       // Refresh lists
       await Promise.all([loadAssignedKRs(), loadObjectives()]);
     } catch (e: any) {
-      ToastService.error(okrErrorMessage(e) || "Failed to adopt KR");
+      ToastService.error(okrErrorMessage(e) || "Failed to adopt Key Result");
     } finally {
       setSaveSetupBusy(false);
     }
@@ -845,6 +886,93 @@ export default function MyExecutionDashboardPage() {
     }
   };
 
+  const quarterlyBannerMeta = useMemo(() => {
+    if (activeTab !== "quarterly" || cards.length === 0) return null;
+
+    const statuses = cards.map((c) => c.status.toUpperCase());
+    let bannerStatus: any = "DRAFT";
+
+    if (statuses.includes("REJECTED")) bannerStatus = "REJECTED";
+    else if (
+      statuses.includes("SUBMITTED") ||
+      statuses.includes("UNDER_REVIEW")
+    )
+      bannerStatus = "SUBMITTED";
+    else if (statuses.includes("APPROVED")) bannerStatus = "APPROVED";
+    else if (
+      statuses.every((s) => ["PUBLISHED", "ON_TRACK", "COMPLETED"].includes(s))
+    )
+      bannerStatus = "PUBLISHED";
+    else if (
+      statuses.some((s) => ["PUBLISHED", "ON_TRACK", "COMPLETED"].includes(s))
+    )
+      bannerStatus = "PUBLISHED";
+
+    const feedbackItems: any[] = [];
+    cards.forEach((c: any) => {
+      // 1. Add structured historical comments from Objective
+      if (Array.isArray(c.comments)) {
+        c.comments.forEach((comm: any) => {
+          feedbackItems.push({
+            status: (c.status || "DRAFT").toUpperCase(),
+            reviewerName: comm.authorName || comm.author_name || "Reviewer",
+            feedbackNote: comm.content,
+            targetTitle: c.title,
+            timestamp: comm.created_at,
+          });
+        });
+      }
+
+      // 1b. Add structured historical comments from Key Results
+      if (Array.isArray(c.keyResults)) {
+        c.keyResults.forEach((kr: any) => {
+          if (Array.isArray(kr.comments)) {
+            kr.comments.forEach((comm: any) => {
+              feedbackItems.push({
+                status: (kr.status_code || "DRAFT").toUpperCase(),
+                reviewerName: comm.authorName || comm.author_name || "Reviewer",
+                feedbackNote: comm.content,
+                targetTitle: kr.title,
+                timestamp: comm.created_at,
+              });
+            });
+          }
+        });
+      }
+
+      // 2. Backward compatibility: Add legacy rejection_note if not already represented
+      if (c.feedbackNote || c.rejection_note) {
+        const note = c.feedbackNote || c.rejection_note;
+        const isDuplicate = feedbackItems.some(
+          (f) => f.targetTitle === c.title && f.feedbackNote === note,
+        );
+        if (!isDuplicate) {
+          feedbackItems.push({
+            status: (c.status || "DRAFT").toUpperCase(),
+            reviewerName: c.reviewerName || c.reviewer_name || "Reviewer",
+            feedbackNote: note,
+            targetTitle: c.title,
+            timestamp: c.approved_at || c.submitted_at,
+          });
+        }
+      }
+    });
+
+    // Sort feedback by most recent first
+    feedbackItems.sort((a, b) => {
+      if (a.timestamp && b.timestamp) {
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      }
+      return 0;
+    });
+
+    return {
+      bannerStatus,
+      feedbackItems,
+      isSubmitted: bannerStatus !== "DRAFT",
+    };
+  }, [activeTab, cards]);
+
   const goDetail = (id: string) => {
     navigate(
       routeConstants.okrEmployeeObjectiveDetail.replace(":objectiveId", id),
@@ -853,7 +981,7 @@ export default function MyExecutionDashboardPage() {
 
   return (
     <EmployeeLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white -mx-4 md:-mx-8 px-4 md:px-8">
+      <div className="min-h-screen bg-linear-to-b from-slate-50 to-white -mx-4 md:-mx-8 px-4 md:px-8">
         <RealignmentBanner />
         <ExecutionShell
           breadcrumbs={[{ label: "Execution" }, { label: "My Execution" }]}
@@ -862,7 +990,7 @@ export default function MyExecutionDashboardPage() {
           icon={<MdFactCheck className="text-3xl" />}
           actions={
             <div className="flex gap-3">
-              {activeTab !== "daily" && activeTab !== "overview" && (
+              {activeTab !== "daily" && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -911,12 +1039,7 @@ export default function MyExecutionDashboardPage() {
                 const next = id as TabId;
                 setActiveTab(next);
 
-                // Refresh data when switching to relevant tabs
-                if (
-                  next === "quarterly" ||
-                  next === "overview" ||
-                  next === "monthly"
-                ) {
+                if (next === "quarterly" || next === "monthly") {
                   void loadObjectives();
                 }
                 if (next === "quarterly" || next === "monthly") {
@@ -935,275 +1058,336 @@ export default function MyExecutionDashboardPage() {
           </div>
 
           {activeTab === "quarterly" && (
-            <>
+            <div className="space-y-6">
+              {currentCycleId && (
+                <div className="animate-in fade-in slide-in-from-top-4 duration-700">
+                  <EmployeeOverviewTab cycleId={currentCycleId} />
+                </div>
+              )}
+
               {/* MY OBJECTIVES SECTION */}
-              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                <h3 className="text-lg font-semibold text-k-dark-grey flex items-center gap-2">
-                  <MdFlag className="text-k-medium-grey" />
-                  My Objectives
-                </h3>
-                <div className="flex items-center gap-3">
-                  {cards.some((c) =>
-                    ["draft", "rejected"].includes(c.status),
-                  ) && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={MdSend}
-                      onClick={async () => {
-                        try {
-                          const submittableIds = cards
-                            .filter((c) =>
-                              ["draft", "rejected"].includes(c.status),
-                            )
-                            .map((c) => Number(c.id));
-
-                          await makeCall({
-                            method: "PATCH",
-                            route: apiRoutes.okr.employeeBulkSubmit,
-                            isSecureRoute: true,
-                            body: { objective_ids: submittableIds, kr_ids: [] },
-                          });
-                          ToastService.success(
-                            "Quarterly plan submitted for review.",
-                          );
-                          loadObjectives();
-                        } catch (e) {
-                          ToastService.error(
-                            "Failed to submit quarterly plan.",
-                          );
-                        }
-                      }}
-                    >
-                      Submit for Review
-                    </Button>
-                  )}
-                  {cards.some((c) => c.status === "approved") && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      icon={MdPublish}
-                      onClick={async () => {
-                        try {
-                          const approvedIds = cards
-                            .filter((c) => c.status === "approved")
-                            .map((c) => Number(c.id));
-
-                          await makeCall({
-                            method: "PATCH",
-                            route: apiRoutes.okr.employeeBulkPublish,
-                            isSecureRoute: true,
-                            body: { objective_ids: approvedIds, kr_ids: [] },
-                          });
-                          ToastService.success(
-                            "Approved objectives published successfully.",
-                          );
-                          loadObjectives();
-                        } catch (e) {
-                          ToastService.error("Failed to publish objectives.");
-                        }
-                      }}
-                    >
-                      Publish Approved
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {loading ? (
-                <div className="flex flex-col gap-4">
-                  <LoadingSkeleton variant="card" count={3} />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  {cards.map((c) => (
-                    <ObjectiveCard
-                      key={c.id}
-                      id={`EO-${c.id}`}
-                      title={c.title}
-                      status={c.status}
-                      progress={c.progress}
-                      indirectProgress={c.indirectProgress}
-                      expandable={c.keyResults && c.keyResults.length > 0}
-                      onClick={() => goDetail(c.id)}
-                      headerContext={
-                        <div className="flex flex-col gap-1.5 mt-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
-                              Parent Key Result:
-                            </span>
-                            {c.parentKr ? (
-                              <span className="text-xs font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 line-clamp-1">
-                                {c.parentKr}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-slate-300 italic">
-                                Standalone
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      }
-                      actions={
-                        <div className="flex flex-wrap items-center gap-2 justify-end flex-1">
-                          <Button
-                            variant="subtle"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              goDetail(c.id);
-                            }}
-                          >
-                            View Details
-                          </Button>
-                          <Button
-                            variant="white"
-                            size="sm"
-                            className="text-emerald-700 bg-emerald-50 border-emerald-100"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(
-                                routeConstants.okrEmployeeObjectiveDetail.replace(
-                                  ":objectiveId",
-                                  String(c.id),
-                                ) + "?createKR=true",
-                              );
-                            }}
-                          >
-                            + Add Key Result
-                          </Button>
-                        </div>
-                      }
-                    >
-                      {c.keyResults && c.keyResults.length > 0 && (
-                        <div className="flex flex-col gap-4 mt-2">
-                          {c.keyResults.map((kr: any) => {
-                            const krTgt = Number(
-                              kr.target_value ?? kr.targetValue ?? 0,
-                            );
-                            const krCur = Number(
-                              kr.current_value ??
-                                kr.currentValue ??
-                                kr.final_value ??
-                                0,
-                            );
-                            const directRaw =
-                              kr.final_score ??
-                              kr.progress_percent ??
-                              kr.progress_pct ??
-                              kr.progress;
-                            const krPct =
-                              directRaw != null
-                                ? Number(directRaw)
-                                : krTgt > 0
-                                  ? Number(((krCur / krTgt) * 100).toFixed(2))
-                                  : 0;
-                            const krIndirectPct = Number(
-                              kr.indirect_score ??
-                                kr.indirect_score_percent ??
-                                0,
-                            );
-                            const aw = krAllocations[String(kr.id)];
-                            const allocated = aw?.allocated_pct ?? 0;
-                            const remaining = aw?.remaining_pct ?? 0;
-                            return (
-                              <div key={kr.id} className="flex flex-col gap-2">
-
-                                <KeyResultListItem
-                                  title={kr.title}
-                                  progress={krPct}
-                                  indirectProgress={krIndirectPct}
-                                  status={kr.status_code || "draft"}
-                                  targetString={`${kr.unit_of_measure === "ETB" ? "ETB " : ""}${krCur} / ${krTgt}${kr.unit_of_measure === "%" ? "%" : ""}`}
-                                  metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
-                                  actions={
-                                    kr.status_code === "published" && (
-                                      <Button
-                                        variant="white"
-                                        size="sm"
-                                        icon={MdEditDocument}
-                                        onClick={() => {
-                                          setPostPublishEditingType("EMPLOYEE_KR");
-                                          setPostPublishEditingKr(kr);
-                                        }}
-                                        className="!h-7 !px-3 !text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary/40 shadow-sm transition-all duration-300"
-                                      >
-                                        Edit Published
-                                      </Button>
-                                    )
-                                  }
-                                />
-                                <div className="ml-1 text-[11px] text-slate-500 flex items-center gap-3">
-                                  <span className="font-black tracking-widest uppercase text-[10px] text-slate-400">
-                                    Monthly allocation:
-                                  </span>
-                                  {allocationsLoading && !aw ? (
-                                    <span className="text-slate-400">
-                                      Loading…
-                                    </span>
-                                  ) : !aw ? (
-                                    <span className="text-rose-500">
-                                      Allocation unavailable
-                                    </span>
-                                  ) : (
-                                    <>
-                                      <span className="tabular-nums">
-                                        <strong className="text-slate-700">
-                                          {allocated}%
-                                        </strong>{" "}
-                                        planned
-                                      </span>
-                                      <span className="text-slate-300">·</span>
-                                      <span className="tabular-nums">
-                                        <strong className="text-emerald-700">
-                                          {remaining}%
-                                        </strong>{" "}
-                                        remaining
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </ObjectiveCard>
-                  ))}
-                </div>
-              )}
-
-              {!loading && cards.length === 0 && (
-                <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/30 px-8 py-20 text-center flex flex-col items-center">
-                  <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-xl shadow-black/[0.03] border border-slate-100">
-                    <MdFlag className="text-4xl text-slate-300" />
+              <div className="pt-4 border-t border-slate-100">
+                <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-sm">
+                        <MdFlag size={24} />
+                      </div>
+                      My Objectives
+                    </h3>
+                    <p className="text-slate-400 text-sm mt-1 font-medium ml-13 hidden sm:block">
+                      Track and manage your quarterly strategic goals and key
+                      results.
+                    </p>
                   </div>
-                  <h3 className="text-xl font-black text-slate-900 mb-2 tracking-tight">
-                    No Active Objectives
-                  </h3>
-                  <p className="text-slate-400 text-sm max-w-sm mb-8 font-medium">
-                    Your execution dashboard is empty. Adopt an assigned Key
-                    Result to start planning your progress.
-                  </p>
-                </div>
-              )}
-            </>
-          )}
+                  <div className="flex items-center gap-3">
+                    {cards.some((c) =>
+                      ["draft", "rejected"].includes(c.status),
+                    ) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={MdSend}
+                        loading={quarterlySubmitLoading}
+                        onClick={async () => {
+                          setQuarterlySubmitLoading(true);
+                          try {
+                            const cycleRes = await makeCall({
+                              method: "GET",
+                              route: apiRoutes.okr.currentCycle,
+                              isSecureRoute: true,
+                            });
+                            const cycle = okrUnwrap(cycleRes) as {
+                              id?: number;
+                            } | null;
+                            const cid =
+                              cycle?.id != null ? Number(cycle.id) : null;
+                            if (!cid) {
+                              ToastService.error("No active cycle found.");
+                              return;
+                            }
 
-          {activeTab === "overview" && currentCycleId && (
-            <EmployeeOverviewTab cycleId={currentCycleId} />
+                            const result = await makeCall({
+                              method: "POST",
+                              route: apiRoutes.okr.submitPlan,
+                              body: {
+                                cycle_id: cid,
+                                type: "QUARTERLY_PLANNING",
+                              },
+                              isSecureRoute: true,
+                            });
+
+                            const data = okrUnwrap(result) as any;
+                            const reviewerName = data?.reviewer_name;
+
+                            ToastService.success(
+                              `Quarterly plan submitted successfully.${reviewerName ? ` Sent to ${reviewerName} for review.` : ""}`,
+                            );
+                            loadObjectives();
+                          } catch (e) {
+                            ToastService.error(okrErrorMessage(e));
+                          } finally {
+                            setQuarterlySubmitLoading(false);
+                          }
+                        }}
+                      >
+                        Submit for Review
+                      </Button>
+                    )}
+                    {cards.some((c) => c.status === "approved") && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon={MdPublish}
+                        loading={quarterlyPublishLoading}
+                        onClick={async () => {
+                          setQuarterlyPublishLoading(true);
+                          try {
+                            const approvedIds = cards
+                              .filter((c) => c.status === "approved")
+                              .map((c) => Number(c.id));
+
+                            await makeCall({
+                              method: "PATCH",
+                              route: apiRoutes.okr.employeeBulkPublish,
+                              isSecureRoute: true,
+                              body: { objective_ids: approvedIds, kr_ids: [] },
+                            });
+                            ToastService.success(
+                              "Approved objectives published successfully.",
+                            );
+                            loadObjectives();
+                          } catch (e) {
+                            ToastService.error("Failed to publish objectives.");
+                          } finally {
+                            setQuarterlyPublishLoading(false);
+                          }
+                        }}
+                      >
+                        Publish Approved
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {quarterlyBannerMeta &&
+                  (quarterlyBannerMeta.isSubmitted ||
+                    quarterlyBannerMeta.feedbackItems.length > 0) && (
+                    <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                      <PlanStatusBanner
+                        plan_status={quarterlyBannerMeta.bannerStatus}
+                        feedbackItems={quarterlyBannerMeta.feedbackItems}
+                        hideStatusBanner={
+                          quarterlyBannerMeta.bannerStatus === "PUBLISHED"
+                        }
+                      />
+                    </div>
+                  )}
+
+                {loading ? (
+                  <div className="flex flex-col gap-6">
+                    <LoadingSkeleton variant="card" count={3} />
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-6">
+                    {cards.map((c) => (
+                      <ObjectiveCard
+                        key={c.id}
+                        id={`EO-${c.id}`}
+                        title={c.title}
+                        status={c.status}
+                        progress={c.progress}
+                        indirectProgress={c.indirectProgress}
+                        feedbackNote={c.feedbackNote}
+                        reviewerName={c.reviewerName}
+                        krCount={c.keyResults?.length}
+                        expandable={c.keyResults && c.keyResults.length > 0}
+                        onClick={() => goDetail(c.id)}
+                        headerContext={
+                          <div className="flex flex-col gap-1.5 mt-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
+                                Parent Key Result:
+                              </span>
+                              {c.parentKr ? (
+                                <span className="text-xs font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 line-clamp-1">
+                                  {c.parentKr}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-300 italic">
+                                  Standalone
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        }
+                        actions={
+                          <div className="flex flex-wrap items-center gap-2 justify-end flex-1">
+                            <Button
+                              variant="subtle"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goDetail(c.id);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                            <Button
+                              variant="white"
+                              size="sm"
+                              className="text-emerald-700 bg-emerald-50 border-emerald-100"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(
+                                  routeConstants.okrEmployeeObjectiveDetail.replace(
+                                    ":objectiveId",
+                                    String(c.id),
+                                  ) + "?createKR=true",
+                                );
+                              }}
+                            >
+                              + Add Key Result
+                            </Button>
+                          </div>
+                        }
+                      >
+                        {c.keyResults && c.keyResults.length > 0 && (
+                          <div className="flex flex-col gap-4 mt-2">
+                            {c.keyResults.map((kr: any, idx: number) => {
+                              const krTgt = Number(
+                                kr.target_value ?? kr.targetValue ?? 0,
+                              );
+                              const krCur = Number(
+                                kr.current_value ??
+                                  kr.currentValue ??
+                                  kr.final_value ??
+                                  0,
+                              );
+                              const directRaw =
+                                kr.final_score ??
+                                kr.progress_percent ??
+                                kr.progress_pct ??
+                                kr.progress;
+                              const krPct =
+                                directRaw != null
+                                  ? Number(directRaw)
+                                  : krTgt > 0
+                                    ? Number(((krCur / krTgt) * 100).toFixed(2))
+                                    : 0;
+                              const krIndirectPct = Number(
+                                kr.indirect_score ??
+                                  kr.indirect_score_percent ??
+                                  0,
+                              );
+                              const aw = krAllocations[String(kr.id)];
+                              const allocated = aw?.allocated_pct ?? 0;
+                              const remaining = aw?.remaining_pct ?? 0;
+                              return (
+                                <div
+                                  key={kr.id}
+                                  className="flex flex-col gap-2"
+                                >
+                                  <KeyResultListItem
+                                    title={kr.title}
+                                    index={idx}
+                                    progress={krPct}
+                                    indirectProgress={krIndirectPct}
+                                    status={kr.status_code || "draft"}
+                                    targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
+                                    metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
+                                    actions={
+                                      kr.status_code === "published" && (
+                                        <Button
+                                          variant="white"
+                                          size="sm"
+                                          icon={MdEditDocument}
+                                          onClick={() => {
+                                            setPostPublishEditingType(
+                                              "EMPLOYEE_KR",
+                                            );
+                                            setPostPublishEditingKr(kr);
+                                          }}
+                                          className="h-7! px-3! text-[10px]! font-black uppercase tracking-widest text-primary border border-primary/20 hover:bg-primary/5 hover:border-primary/40 shadow-sm transition-all duration-300"
+                                        >
+                                          Edit Published
+                                        </Button>
+                                      )
+                                    }
+                                  />
+                                  <div className="ml-1 text-[11px] text-slate-500 flex items-center gap-3">
+                                    <span className="font-black tracking-widest uppercase text-[10px] text-slate-400">
+                                      Monthly allocation:
+                                    </span>
+                                    {allocationsLoading && !aw ? (
+                                      <span className="text-slate-400">
+                                        Loading…
+                                      </span>
+                                    ) : !aw ? (
+                                      <span className="text-rose-500">
+                                        Allocation unavailable
+                                      </span>
+                                    ) : (
+                                      <>
+                                        <span className="tabular-nums">
+                                          <strong className="text-slate-700">
+                                            {allocated}%
+                                          </strong>{" "}
+                                          planned
+                                        </span>
+                                        <span className="text-slate-300">
+                                          ·
+                                        </span>
+                                        <span className="tabular-nums">
+                                          <strong className="text-emerald-700">
+                                            {remaining}%
+                                          </strong>{" "}
+                                          remaining
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </ObjectiveCard>
+                    ))}
+                  </div>
+                )}
+
+                {!loading && cards.length === 0 && (
+                  <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/30 px-8 py-20 text-center flex flex-col items-center">
+                    <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-xl shadow-black/3 border border-slate-100">
+                      <MdFlag className="text-4xl text-slate-300" />
+                    </div>
+                    <h3 className="text-xl font-black text-slate-900 mb-2 tracking-tight">
+                      No Active Objectives
+                    </h3>
+                    <p className="text-slate-400 text-sm max-w-sm mb-8 font-medium">
+                      Your execution dashboard is empty. Adopt an assigned Key
+                      Result to start planning your progress.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {activeTab === "monthly" && (
             <MonthlyPlanTab
               krs={allKrs}
               cycleId={currentCycleId}
+              cycleStartDate={currentCycle?.start_date ?? null}
+              cycleEndDate={currentCycle?.end_date ?? null}
               krAllocations={krAllocations}
               initialExpandMonth={monthlyExpandMonth}
               focusItemId={focusItemId ?? undefined}
               refreshNonce={monthlyRefreshNonce}
               allowAdd={cadenceRules.allow_monthly}
               userRoleLevel={userRoleLevel}
+              levelConfig={levelConfig}
               onAllocationsChanged={() => {
                 void loadAllocations();
                 setWeeklyRefreshNonce((n) => n + 1);
@@ -1212,18 +1396,26 @@ export default function MyExecutionDashboardPage() {
                 setPostPublishEditingType("EMPLOYEE_MONTH_PLAN");
                 setPostPublishEditingKr(p);
               }}
+              allowUpdateProgress={
+                cadenceRules.allow_monthly &&
+                !cadenceRules.allow_weekly &&
+                !cadenceRules.allow_daily
+              }
             />
           )}
 
           {activeTab === "weekly" && (
             <WeeklyPlanTab
-              krIds={allKrs.map((kr) => kr.id)}
+              krIds={krIds}
               weeksInMonth={weeksInCurrentMonth}
               initialExpandWeek={weeklyExpandWeek}
               refreshNonce={weeklyRefreshNonce}
               allowAdd={cadenceRules.allow_weekly}
               cycleId={currentCycleId}
+              cycleStartDate={currentCycle?.start_date ?? null}
+              cycleEndDate={currentCycle?.end_date ?? null}
               userRoleLevel={userRoleLevel}
+              levelConfig={levelConfig}
               onAllocationsChanged={() => {
                 void loadAllocations();
                 setMonthlyRefreshNonce((n) => n + 1);
@@ -1232,14 +1424,25 @@ export default function MyExecutionDashboardPage() {
                 setPostPublishEditingType("WEEKLY_PLAN");
                 setPostPublishEditingKr(p);
               }}
+              allowUpdateProgress={
+                cadenceRules.allow_weekly && !cadenceRules.allow_daily
+              }
             />
           )}
 
           {activeTab === "daily" && (
             <DailyPlanTab
-              krIds={allKrs.map((kr) => kr.id)}
+              krIds={krIds}
               refreshNonce={dailyRefreshNonce}
               allowAdd={cadenceRules.allow_daily}
+              cycleStartDate={currentCycle?.start_date ?? null}
+              cycleEndDate={currentCycle?.end_date ?? null}
+              onProgressUpdated={() => {
+                // Bump weekly and monthly nonces so those tabs
+                // reload data reflecting the new rollup values
+                setWeeklyRefreshNonce((n) => n + 1);
+                setMonthlyRefreshNonce((n) => n + 1);
+              }}
             />
           )}
         </ExecutionShell>
@@ -1251,6 +1454,9 @@ export default function MyExecutionDashboardPage() {
             id: akr.contributor_id,
             title: akr.title,
             description: akr.description,
+            requiredTarget: akr.required_target,
+            weightPercent: akr.weight_percent,
+            unitOfMeasure: akr.unit_of_measure,
           }))}
           selectedId={setupContributorId}
           onSelectId={handleSelectAdoptOption}
@@ -1268,7 +1474,9 @@ export default function MyExecutionDashboardPage() {
           isOpen={!!postPublishEditingKr}
           entity={postPublishEditingKr}
           entityType={postPublishEditingType}
-          companyId={user?.company_id || Number(localStorage.getItem("companyId") || 1)}
+          companyId={
+            user?.company_id || Number(localStorage.getItem("companyId") || 1)
+          }
           cycleId={currentCycleId || 0}
           onClose={() => setPostPublishEditingKr(null)}
           onSuccess={() => {

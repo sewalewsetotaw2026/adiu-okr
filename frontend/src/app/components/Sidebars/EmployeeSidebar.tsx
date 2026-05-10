@@ -83,7 +83,10 @@ export default function EmployeeSidebar() {
           }
           const submissions =
             await okrExecutionApi.fetchManagerSubmissions(cycleId);
-          setPendingReviewCount(submissions.length);
+          const pendingSubmissions = submissions.filter(
+            (s) => s.status === "pending_approval",
+          );
+          setPendingReviewCount(pendingSubmissions.length);
 
           // Task 4 - Team Health Summary
           const health = await okrExecutionApi.fetchTeamHealthSummary();

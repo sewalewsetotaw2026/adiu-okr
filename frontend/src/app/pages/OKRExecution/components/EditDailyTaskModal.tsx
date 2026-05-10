@@ -1,14 +1,18 @@
 import { useState, useEffect } from "react";
 import { MdClose, MdSave } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
+import Toggle from "../../../components/Core/ui/Toggle";
 import FormSelect from "../../../components/Core/ui/FormSelect";
 import FormInput from "../../../components/Core/ui/FormInput";
-import { 
-  DayOfWeek, 
+import {
+  DayOfWeek,
   DailyPlan,
   MetricDefinition,
 } from "../../../../types/okr.types";
-import { updateDailyPlan, fetchMetricDefinitions } from "../../../services/okr-execution.api";
+import {
+  updateDailyPlan,
+  fetchMetricDefinitions,
+} from "../../../services/okr-execution.api";
 import ToastService from "../../../../utils/ToastService";
 import BulletTextarea from "../../../components/common/BulletTextarea";
 
@@ -65,21 +69,32 @@ export default function EditDailyTaskModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetchMetricDefinitions().then((m) => {
-      if (!cancelled) setMetrics(m);
-    }).catch(() => {
-      // ignore
-    });
-    return () => { cancelled = true; };
+    fetchMetricDefinitions()
+      .then((m) => {
+        if (!cancelled) setMetrics(m);
+      })
+      .catch(() => {
+        // ignore
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   if (!open) return null;
 
   // Determine if value fields should be hidden
-  const selectedMetric = metrics.find((m) => m.id === formData.metric_definition_id);
+  const selectedMetric = metrics.find(
+    (m) => m.id === formData.metric_definition_id,
+  );
   const isBinary = selectedMetric?.allows_binary_completion ?? false;
-  const isNonNumeric = selectedMetric?.category === "MILESTONE" || selectedMetric?.category === "RATING" || selectedMetric?.category === "CUSTOM";
+  const isNonNumeric =
+    selectedMetric?.category === "MILESTONE" ||
+    selectedMetric?.category === "RATING" ||
+    selectedMetric?.category === "CUSTOM";
   const hideValueFields = isBinary || isNonNumeric;
+  const showContributeToScore = !selectedMetric?.value_based_progress;
+  const showContributeToValue = !selectedMetric?.is_financial;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,17 +124,19 @@ export default function EditDailyTaskModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-      <div 
-        className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300"
-      >
+    <div className="fixed inset-0 z-60 flex justify-end bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         {/* Header */}
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div>
-            <h3 className="text-xl font-bold text-slate-800">Edit Daily Task</h3>
-            <p className="text-sm text-slate-500">Parent: {plan._weeklyPlanTitle || "Weekly Plan"}</p>
+            <h3 className="text-xl font-bold text-slate-800">
+              Edit Daily Task
+            </h3>
+            <p className="text-sm text-slate-500">
+              Parent: {plan._weeklyPlanTitle || "Weekly Plan"}
+            </p>
           </div>
-          <button 
+          <button
             onClick={onClose}
             className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-slate-600 transition-all shadow-sm"
           >
@@ -128,7 +145,10 @@ export default function EditDailyTaskModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto p-8 space-y-6"
+        >
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
               Parent Weekly Plan
@@ -142,7 +162,12 @@ export default function EditDailyTaskModal({
             label="Completion Day"
             required
             value={formData.completion_day}
-            onChange={(e: any) => setFormData({ ...formData, completion_day: e.target.value as DayOfWeek })}
+            onChange={(e: any) =>
+              setFormData({
+                ...formData,
+                completion_day: e.target.value as DayOfWeek,
+              })
+            }
             options={DAYS}
           />
 
@@ -168,12 +193,20 @@ export default function EditDailyTaskModal({
             required
             placeholder="What needs to be done?"
             value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, title: e.target.value })
+            }
           />
 
           {hideValueFields ? (
             <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              <span className="font-medium">Note:</span> {selectedMetric?.category === "MILESTONE" ? "Milestone" : isBinary ? "Binary" : "Non-numeric"} metrics don't require target/start values.
+              <span className="font-medium">Note:</span>{" "}
+              {selectedMetric?.category === "MILESTONE"
+                ? "Milestone"
+                : isBinary
+                  ? "Binary"
+                  : "Non-numeric"}{" "}
+              metrics don't require target/start values.
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
@@ -183,13 +216,23 @@ export default function EditDailyTaskModal({
                 required={!hideValueFields}
                 min={1}
                 value={formData.target_value}
-                onChange={(e) => setFormData({ ...formData, target_value: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    target_value: parseFloat(e.target.value) || 0,
+                  })
+                }
               />
               <FormInput
                 label="Start Value"
                 type="number"
                 value={formData.start_value}
-                onChange={(e) => setFormData({ ...formData, start_value: parseFloat(e.target.value) || 0 })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    start_value: parseFloat(e.target.value) || 0,
+                  })
+                }
               />
             </div>
           )}
@@ -201,45 +244,50 @@ export default function EditDailyTaskModal({
             <BulletTextarea
               value={formData.notes}
               onValueChange={(val) => setFormData({ ...formData, notes: val })}
-              className="w-full px-4 py-3 text-sm border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-[100px]"
+              className="w-full px-4 py-3 text-sm border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary min-h-25"
               placeholder="Add any additional context or notes..."
             />
           </div>
 
           <div className="space-y-4 pt-4 border-t border-slate-50">
-            {!selectedMetric?.value_based_progress && (
-              <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-slate-100/50 transition-colors cursor-pointer" onClick={() => setFormData(f => ({...f, contribute_to_score: !f.contribute_to_score}))}>
-                <div>
-                  <p className="text-sm font-bold text-slate-700">Contribute to Score</p>
-                  <p className="text-[10px] text-slate-500">Task completion affects overall KR score</p>
-                </div>
-                <div className={`w-10 h-5 rounded-full relative transition-colors ${formData.contribute_to_score ? 'bg-primary' : 'bg-slate-300'}`}>
-                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${formData.contribute_to_score ? 'right-1' : 'left-1'}`} />
-                </div>
-              </div>
+            {showContributeToScore && (
+              <Toggle
+                label="Contribute to Score"
+                description="Task completion affects overall Key Result score"
+                checked={formData.contribute_to_score || false}
+                onChange={(val: boolean) =>
+                  setFormData((f) => ({ ...f, contribute_to_score: val }))
+                }
+              />
             )}
 
-            <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 hover:bg-slate-100/50 transition-colors cursor-pointer" onClick={() => setFormData(f => ({...f, contribute_to_value: !f.contribute_to_value}))}>
-              <div>
-                <p className="text-sm font-bold text-slate-700">Contribute to Value</p>
-                <p className="text-[10px] text-slate-500">Update progress affects the KR current value</p>
-              </div>
-              <div className={`w-10 h-5 rounded-full relative transition-colors ${formData.contribute_to_value ? 'bg-primary' : 'bg-slate-300'}`}>
-                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${formData.contribute_to_value ? 'right-1' : 'left-1'}`} />
-              </div>
-            </div>
+            {showContributeToValue && (
+              <Toggle
+                label="Contribute to Value"
+                description="Update progress affects the KR current value"
+                checked={formData.contribute_to_value || false}
+                onChange={(val: boolean) =>
+                  setFormData((f) => ({ ...f, contribute_to_value: val }))
+                }
+              />
+            )}
           </div>
         </form>
 
         {/* Footer */}
         <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex gap-3">
-          <Button variant="outline" fullWidth onClick={onClose} disabled={loading}>
+          <Button
+            variant="outline"
+            fullWidth
+            onClick={onClose}
+            disabled={loading}
+          >
             Cancel
           </Button>
-          <Button 
-            variant="primary" 
-            fullWidth 
-            icon={MdSave} 
+          <Button
+            variant="primary"
+            fullWidth
+            icon={MdSave}
             loading={loading}
             onClick={handleSubmit}
           >

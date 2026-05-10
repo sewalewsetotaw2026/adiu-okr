@@ -41,6 +41,7 @@ export interface ParentMonthlySummary {
   current_value: number;
   progress_pct: number;
   month_number: 1 | 2 | 3;
+  parent_kr_title?: string;
 }
 
 export interface MonthlyPlan {
@@ -70,6 +71,7 @@ export interface MonthlyPlan {
   reviewer_name?: string;
   feedback_note?: string;
   rejection_reason?: string;
+  rejection_note?: string;
   reviewer_note?: string;
   metric_definition_id?: number;
   metricDefinition?: MetricDefinition;
@@ -101,6 +103,7 @@ export interface WeeklyPlan {
   reviewer_name?: string;
   feedback_note?: string;
   rejection_reason?: string;
+  rejection_note?: string;
   reviewer_note?: string;
   metric_definition_id?: number;
   metricDefinition?: MetricDefinition;
@@ -126,6 +129,7 @@ export interface DailyPlan {
   metric_definition_id?: number;
   metricDefinition?: MetricDefinition;
   notes?: string;
+  weeklyPlan?: WeeklyPlan;
 }
 
 export interface AvailableWeight {
@@ -165,6 +169,7 @@ export interface MetricDefinition {
   allows_binary_completion?: boolean;
   requires_target_value?: boolean;
   value_based_progress?: boolean;
+  is_financial?: boolean;
   supports_value_rollup?: boolean;
   supports_weighted_score?: boolean;
 }

@@ -12,18 +12,23 @@ import { routeConstants } from "../../../../../utils/constants";
 import { MdChevronRight, MdSearch, MdFilterList, MdWarningAmber } from "react-icons/md";
 import Button from "../../../../components/Core/ui/Button";
 import ObjectiveCard from "../../../../components/common/ObjectiveCard";
+import KeyResultListItem from "../../../../components/common/KeyResultListItem";
 import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
+import { formatOkrNumber } from "../../../../utils/okrNumber";
 
 type GalleryObjective = {
   id: number;
   title: string;
   description: string;
   status: string;
+  progress: number;
   keyResults: Array<{
     id: number;
     title: string;
     target: string | null;
     unit: string | null;
+    status: string;
+    progress: number;
     metricName?: string | null;
     metricCategory?: string | null;
     isFinancial?: boolean | null;
@@ -73,6 +78,7 @@ export default function CompanyOKRGalleryPage() {
           title: String(o.title ?? "Objective"),
           description: String(o.description ?? ""),
           status: String(o.status ?? o.status_code ?? "draft").toLowerCase(),
+          progress: Number(o.progress ?? o.final_score ?? o.progress_percent ?? 0),
           keyResults: okrAsArray<any>(o.keyResults ?? []).map((k) => ({
             id: Number(k.id),
             title: String(k.title ?? "KR"),
@@ -81,6 +87,8 @@ export default function CompanyOKRGalleryPage() {
             metricName: k.metricName ?? null,
             metricCategory: k.metricCategory ?? null,
             isFinancial: Boolean(k.isFinancial),
+            progress: Number(k.progress ?? k.final_score ?? k.progress_percent ?? 0),
+            status: String(k.status ?? k.status_code ?? "draft").toLowerCase(),
             departmentObjectives: okrAsArray<any>(k.departmentObjectives ?? []).map(
               (d) => ({
                 id: Number(d.id),
@@ -206,33 +214,28 @@ export default function CompanyOKRGalleryPage() {
                   id={`CO-${o.id}`}
                   title={o.title}
                   status={o.status}
-                  progress={0} // Gallery might need explicit progress if API adds it
-                  krsCount={o.keyResults.length}
+                  progress={o.progress}
+                  krCount={o.keyResults.length}
                   expandable={o.keyResults.length > 0}
                   headerContext={o.description ? <p className="line-clamp-2">{o.description}</p> : undefined}
                 >
-                  <div className="space-y-3 pt-2">
-                    {o.keyResults.map((k) => (
-                      <div
+                  <div className="flex flex-col gap-4 mt-2">
+                    {o.keyResults.map((k, idx) => (
+                      <KeyResultListItem
                         key={k.id}
-                        className="group p-4 rounded-xl bg-white border border-slate-100 hover:border-primary/20 hover:shadow-sm transition-all"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex-1">
-                            <p className="text-sm font-bold text-slate-800 group-hover:text-primary transition-colors">
-                              {k.title}
-                            </p>
-                            <div className="flex items-center gap-3 mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider font-space">
-                              <span>Target: {k.target ?? "—"} {k.unit ?? ""}</span>
-                              <span className="text-slate-200">|</span>
-                              <span>{k.departmentObjectives.length} Linked Departments</span>
-                            </div>
-                          </div>
-                          {k.isFinancial && (
-                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 text-[9px] font-black uppercase tracking-tighter">Financial</span>
-                          )}
-                        </div>
-                      </div>
+                        title={k.title}
+                        index={idx}
+                        progress={k.progress}
+                        status={k.status}
+                        targetString={`${formatOkrNumber(Number(k.progress * (Number(k.target) || 0) / 100))} / ${formatOkrNumber(Number(k.target ?? 0))}${k.unit ? (k.unit === "%" ? "%" : ` ${k.unit}`) : ""}`}
+                        metricTypeString={k.isFinancial ? "Financial" : undefined}
+                        subtitle={
+                          <span className="flex items-center gap-2">
+                            <span className="w-1 h-1 rounded-full bg-slate-300" />
+                            {k.departmentObjectives.length} Linked Departments
+                          </span>
+                        }
+                      />
                     ))}
                   </div>
                 </ObjectiveCard>

@@ -1,6 +1,7 @@
 import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
 import BulletTextarea from "../../../../components/common/BulletTextarea";
+import Toggle from "../../../../components/Core/ui/Toggle";
 
 type Props = {
   isOpen: boolean;
@@ -16,7 +17,7 @@ type Props = {
   completionDay: string;
   onChangeCompletionDay: (v: string) => void;
 
-  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean }>;
+  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean; is_financial?: boolean }>;
   onSubmit: () => void;
   isEdit?: boolean;
   submitting?: boolean;
@@ -61,6 +62,15 @@ export default function DailyPlanModal({
       onClose={onClose}
       title={isEdit ? "Edit Daily Plan" : "New Daily Plan"}
       maxWidthClass="max-w-xl"
+      footer={
+        <ApprovalFooter
+          onCancel={onClose}
+          onConfirm={onSubmit}
+          confirmText={isEdit ? "Save Changes" : "Create Daily Plans"}
+          confirmLoading={submitting}
+          confirmDisabled={submitting || !title.trim() || ((selectedTaskIds?.length ?? 0) === 0 && !isEdit)}
+        />
+      }
     >
       <div className="space-y-4">
         <div>
@@ -165,39 +175,32 @@ export default function DailyPlanModal({
                             )}
                           </div>
                         )}
-                        {isSelected && (
-                          <div className="mt-3 grid grid-cols-2 gap-4 pt-3 border-t border-gray-50">
+                          <div className="mt-3 flex flex-col gap-3 pt-3 border-t border-gray-50">
                             {(() => {
                               const selectedMetric = metrics.find(m => m.id === Number(values.metricId));
-                              if (selectedMetric?.value_based_progress) return null;
                               return (
-                                <label className="flex items-center gap-2 cursor-pointer group">
-                                  <input
-                                    type="checkbox"
-                                    checked={values.contributesToScore ?? true}
-                                    onChange={(e) => onChangeKrValue(t.id, "contributesToScore", e.target.checked)}
-                                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
-                                  />
-                                  <span className="text-xs font-semibold text-k-dark-grey group-hover:text-primary transition-colors">
-                                    Contributes to Score Rollup
-                                  </span>
-                                </label>
+                                <>
+                                  {!selectedMetric?.value_based_progress && (
+                                    <Toggle
+                                      label="Contribute to Score Rollup"
+                                      description="Task completion affects overall Key Result score"
+                                      checked={values.contributesToScore ?? true}
+                                      onChange={(val: boolean) => onChangeKrValue(t.id, "contributesToScore", val)}
+                                    />
+                                  )}
+
+                                  {!selectedMetric?.is_financial && (
+                                    <Toggle
+                                      label="Contribute to Value Rollup"
+                                      description="Update progress affects the KR current value"
+                                      checked={values.contributesToValue ?? true}
+                                      onChange={(val: boolean) => onChangeKrValue(t.id, "contributesToValue", val)}
+                                    />
+                                  )}
+                                </>
                               );
                             })()}
-
-                            <label className="flex items-center gap-2 cursor-pointer group">
-                              <input
-                                type="checkbox"
-                                checked={values.contributesToValue ?? true}
-                                onChange={(e) => onChangeKrValue(t.id, "contributesToValue", e.target.checked)}
-                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
-                              />
-                              <span className="text-xs font-semibold text-k-dark-grey group-hover:text-primary transition-colors">
-                                Contributes to Value Rollup
-                              </span>
-                            </label>
                           </div>
-                        )}
                       </div>
                     );
                   })}
@@ -238,13 +241,6 @@ export default function DailyPlanModal({
           </select>
         </div>
       </div>
-      <ApprovalFooter
-        onCancel={onClose}
-        onConfirm={onSubmit}
-        confirmText={isEdit ? "Save Changes" : "Create Daily Plans"}
-        confirmLoading={submitting}
-        confirmDisabled={submitting || !title.trim() || ((selectedTaskIds?.length ?? 0) === 0 && !isEdit)}
-      />
     </ModalLayout>
   );
 }

@@ -1,4 +1,3 @@
-import React, { useMemo } from "react";
 import {
   MdTrendingUp,
   MdWarning,
@@ -7,8 +6,11 @@ import {
   MdAssignment,
   MdTimeline,
   MdCalendarMonth,
-  MdOutlineDateRange,
 } from "react-icons/md";
+import {
+  formatOkrCount,
+  formatOkrNumber,
+} from "../../../../../utils/okrNumber";
 
 type InsightMetrics = {
   totalObjectives: number;
@@ -25,7 +27,6 @@ type InsightMetrics = {
 type DepartmentInsightsDashboardProps = {
   departmentName: string;
   metrics: InsightMetrics;
-  loading?: boolean;
 };
 
 /**
@@ -37,8 +38,16 @@ type DepartmentInsightsDashboardProps = {
 export default function DepartmentInsightsDashboard({
   departmentName,
   metrics,
-  loading = false,
 }: DepartmentInsightsDashboardProps) {
+  const healthStatus =
+    metrics.atRiskCount + metrics.onTrackCount === 0
+      ? "No Data"
+      : metrics.atRiskCount > metrics.onTrackCount
+        ? "Off Track"
+        : metrics.atRiskCount > 0
+          ? "At Risk"
+          : "On Track";
+
   const progressColor =
     metrics.averageProgress >= 75
       ? "text-green-600"
@@ -75,6 +84,17 @@ export default function DepartmentInsightsDashboard({
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-black text-slate-900 tracking-tight capitalize">
+            {departmentName} Insights
+          </h2>
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Real-time performance and planning health
+          </p>
+        </div>
+      </div>
+
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Objectives */}
@@ -85,7 +105,7 @@ export default function DepartmentInsightsDashboard({
                 Objectives
               </div>
               <div className="text-3xl font-black text-slate-900">
-                {metrics.totalObjectives}
+                {formatOkrCount(metrics.totalObjectives)}
               </div>
             </div>
             <div className="p-3 bg-blue-50 rounded-lg">
@@ -105,7 +125,7 @@ export default function DepartmentInsightsDashboard({
                 Key Results
               </div>
               <div className="text-3xl font-black text-slate-900">
-                {metrics.totalKRs}
+                {formatOkrCount(metrics.totalKRs)}
               </div>
             </div>
             <div className="p-3 bg-purple-50 rounded-lg">
@@ -125,7 +145,7 @@ export default function DepartmentInsightsDashboard({
                 Team Members
               </div>
               <div className="text-3xl font-black text-slate-900">
-                {metrics.totalEmployees}
+                {formatOkrCount(metrics.totalEmployees)}
               </div>
             </div>
             <div className="p-3 bg-indigo-50 rounded-lg">
@@ -147,15 +167,67 @@ export default function DepartmentInsightsDashboard({
                 Average Progress
               </div>
               <div className={`text-3xl font-black ${progressColor}`}>
-                {metrics.averageProgress}%
+                {formatOkrNumber(metrics.averageProgress)}%
               </div>
             </div>
-            <div className="p-3 bg-white/50 rounded-lg">
-              <MdTrendingUp className={`text-2xl ${progressColor}`} />
+            <div className="flex flex-col items-end gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                  healthStatus === "On Track"
+                    ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                    : "bg-rose-50 text-rose-600 border-rose-100"
+                }`}
+              >
+                {healthStatus}
+              </span>
+              <div className="p-3 bg-white/50 rounded-lg">
+                <MdTrendingUp className={`text-2xl ${progressColor}`} />
+              </div>
             </div>
           </div>
           <div className="text-xs text-slate-600 font-medium">
-            Weighted across Key Results
+            Health follows current Key Result status
+          </div>
+        </div>
+        {/* KR Confidence Breakdown (4th Card) */}
+        <div className="rounded-xl bg-linear-to-br from-slate-50 to-white border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1">
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                Confidence Score
+              </div>
+              <div className="text-3xl font-black text-slate-900">
+                {metrics.totalKRs > 0
+                  ? Math.round((metrics.onTrackCount / metrics.totalKRs) * 100)
+                  : 0}
+                %
+              </div>
+            </div>
+            <div className="p-3 bg-primary-50 rounded-lg">
+              <MdCheckCircle className="text-2xl text-primary-600" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-600 font-medium">Health Status</span>
+              <span
+                className={`font-black ${healthStatus === "On Track" ? "text-emerald-600" : healthStatus === "At Risk" ? "text-amber-600" : healthStatus === "Off Track" ? "text-rose-600" : "text-slate-500"}`}
+              >
+                {healthStatus}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-600 font-medium">On Track</span>
+              <span className="font-black text-emerald-600">
+                {metrics.onTrackCount}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-600 font-medium">At Risk</span>
+              <span className="font-black text-amber-600">
+                {metrics.atRiskCount}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -252,38 +324,6 @@ export default function DepartmentInsightsDashboard({
           </div>
         </div>
       </div>
-
-      {/* Notes */}
-      {/* <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-        <div className="text-xs font-black text-slate-600 uppercase tracking-wider mb-2">
-          Key Insights
-        </div>
-        <ul className="space-y-2 text-sm text-slate-700">
-          <li className="flex gap-2">
-            <span className="text-primary font-black">→</span>
-            <span>
-              {metrics.missingSetsCount > 0
-                ? `${metrics.missingSetsCount} team members haven't completed their planning sets yet`
-                : "All team members have completed their planning"}
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="text-primary font-black">→</span>
-            <span>
-              {metrics.atRiskCount > 0
-                ? `${metrics.atRiskCount} objectives are at risk and may need intervention`
-                : "All objectives are on track"}
-            </span>
-          </li>
-          <li className="flex gap-2">
-            <span className="text-primary font-black">→</span>
-            <span>
-              Department average progress is {metrics.averageProgress}% across
-              all key results
-            </span>
-          </li>
-        </ul>
-      </div> */}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { Handle, Position } from "reactflow";
-import { MdBusiness, MdPerson } from "react-icons/md";
+import { MdBusiness } from "react-icons/md";
 
 // Interface for Node Data
 interface OrgNodeData {

@@ -2,9 +2,16 @@ import { useEffect, useState } from "react";
 import { FiX } from "react-icons/fi";
 import { MdCheck } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
-import { updateMonthlyPlan, fetchMetricDefinitions } from "../../../services/okr-execution.api";
+import Toggle from "../../../components/Core/ui/Toggle";
+import {
+  updateMonthlyPlan,
+  fetchMetricDefinitions,
+} from "../../../services/okr-execution.api";
 import BulletTextarea from "../../../components/common/BulletTextarea";
-import type { MonthlyPlan, MetricDefinition } from "../../../../types/okr.types";
+import type {
+  MonthlyPlan,
+  MetricDefinition,
+} from "../../../../types/okr.types";
 
 const TITLE_MAX = 150;
 
@@ -55,7 +62,9 @@ export default function EditMonthlyPlanModal({
 
   if (!isOpen || !plan) return null;
 
-  const parentKrTarget = Number(plan.parent_key_result?.target_value ?? Infinity);
+  const parentKrTarget = Number(
+    plan.parent_key_result?.target_value ?? Infinity,
+  );
   const parentUnit = plan.parent_key_result?.unit ?? "";
 
   const onSave = async () => {
@@ -79,7 +88,9 @@ export default function EditMonthlyPlanModal({
       const updated = await updateMonthlyPlan(plan.id, {
         title: title.trim(),
         description: description.trim() || undefined,
-        metric_definition_id: metricDefinitionId ? Number(metricDefinitionId) : undefined,
+        metric_definition_id: metricDefinitionId
+          ? Number(metricDefinitionId)
+          : undefined,
         start_value: startValue !== "" ? Number(startValue) : undefined,
         target_value: targetValue !== "" ? Number(targetValue) : undefined,
         contribute_to_score: contributeToScore,
@@ -160,8 +171,14 @@ export default function EditMonthlyPlanModal({
           </div>
 
           {(() => {
-            const selectedMetric = metrics.find((m) => m.id === metricDefinitionId);
-            const hideValues = selectedMetric?.category === 'MILESTONE' || selectedMetric?.category === 'RATING' || selectedMetric?.category === 'CUSTOM' || !!selectedMetric?.allows_binary_completion;
+            const selectedMetric = metrics.find(
+              (m) => m.id === metricDefinitionId,
+            );
+            const hideValues =
+              selectedMetric?.category === "MILESTONE" ||
+              selectedMetric?.category === "RATING" ||
+              selectedMetric?.category === "CUSTOM" ||
+              !!selectedMetric?.allows_binary_completion;
             return (
               <>
                 <div className="grid grid-cols-2 gap-4">
@@ -178,10 +195,13 @@ export default function EditMonthlyPlanModal({
                       }
                       className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                     >
-                      <option value="">Auto-inherit from KR</option>
+                      <option value="">Auto-inherit from Key Result</option>
                       {metrics.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name}{(m.unit_of_measure || m.unit) ? ` (${m.unit_of_measure || m.unit})` : ""}
+                          {m.name}
+                          {m.unit_of_measure || m.unit
+                            ? ` (${m.unit_of_measure || m.unit})`
+                            : ""}
                         </option>
                       ))}
                     </select>
@@ -203,7 +223,9 @@ export default function EditMonthlyPlanModal({
                         }`}
                       />
                       {fieldErrors.startValue && (
-                        <div className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.startValue}</div>
+                        <div className="text-[11px] text-rose-600 mt-1 font-medium">
+                          {fieldErrors.startValue}
+                        </div>
                       )}
                     </div>
                   )}
@@ -223,46 +245,46 @@ export default function EditMonthlyPlanModal({
                         className={`w-full bg-white border rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 ${
                           fieldErrors.targetValue
                             ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100"
-                            : targetValue !== "" && Number(targetValue) > parentKrTarget
+                            : targetValue !== "" &&
+                                Number(targetValue) > parentKrTarget
                               ? "border-amber-300 focus:border-amber-400 focus:ring-amber-100"
                               : "border-slate-200 focus:border-primary focus:ring-primary/20"
                         }`}
                       />
                       {fieldErrors.targetValue ? (
-                        <div className="text-[11px] text-rose-600 mt-1 font-medium">{fieldErrors.targetValue}</div>
-                      ) : targetValue !== "" && Number(targetValue) > parentKrTarget ? (
+                        <div className="text-[11px] text-rose-600 mt-1 font-medium">
+                          {fieldErrors.targetValue}
+                        </div>
+                      ) : targetValue !== "" &&
+                        Number(targetValue) > parentKrTarget ? (
                         <div className="text-[11px] text-amber-600 mt-1 font-medium flex items-center gap-1">
                           <span>⚠</span>
-                          <span>Exceeds KR target ({parentKrTarget}{parentUnit ? ` ${parentUnit}` : ""}). Will be blocked on save.</span>
+                          <span>
+                            Exceeds Key Result target ({parentKrTarget}
+                            {parentUnit ? ` ${parentUnit}` : ""}). Will be
+                            blocked on save.
+                          </span>
                         </div>
                       ) : null}
                     </div>
 
                     <div className="flex flex-col gap-3 pt-6">
                       {!selectedMetric?.value_based_progress && (
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={contributeToScore}
-                            onChange={(e) => setContributeToScore(e.target.checked)}
-                            className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300"
-                          />
-                          <span className="text-xs font-medium text-slate-700 group-hover:text-slate-900">
-                            Contribute to Score
-                          </span>
-                        </label>
-                      )}
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          checked={contributeToValue}
-                          onChange={(e) => setContributeToValue(e.target.checked)}
-                          className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300"
+                        <Toggle
+                          label="Contribute to Score"
+                          description="Task completion affects overall Key Result score"
+                          checked={contributeToScore}
+                          onChange={(val: boolean) => setContributeToScore(val)}
                         />
-                        <span className="text-xs font-medium text-slate-700 group-hover:text-slate-900">
-                          Contribute to Value
-                        </span>
-                      </label>
+                      )}
+                      {!selectedMetric?.is_financial && (
+                        <Toggle
+                          label="Contribute to Value"
+                          description="Update progress affects the KR current value"
+                          checked={contributeToValue}
+                          onChange={(val: boolean) => setContributeToValue(val)}
+                        />
+                      )}
                     </div>
                   </div>
                 )}
@@ -270,29 +292,21 @@ export default function EditMonthlyPlanModal({
                 {hideValues && (
                   <div className="flex flex-col gap-3 py-2">
                     {!selectedMetric?.value_based_progress && (
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          checked={contributeToScore}
-                          onChange={(e) => setContributeToScore(e.target.checked)}
-                          className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300"
-                        />
-                        <span className="text-xs font-medium text-slate-700 group-hover:text-slate-900">
-                          Contribute to Score
-                        </span>
-                      </label>
-                    )}
-                    <label className="flex items-center gap-3 cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={contributeToValue}
-                        onChange={(e) => setContributeToValue(e.target.checked)}
-                        className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300"
+                      <Toggle
+                        label="Contribute to Score"
+                        description="Task completion affects overall Key Result score"
+                        checked={contributeToScore}
+                        onChange={(val: boolean) => setContributeToScore(val)}
                       />
-                      <span className="text-xs font-medium text-slate-700 group-hover:text-slate-900">
-                        Contribute to Value
-                      </span>
-                    </label>
+                    )}
+                    {!selectedMetric?.is_financial && (
+                      <Toggle
+                        label="Contribute to Value"
+                        description="Update progress affects the KR current value"
+                        checked={contributeToValue}
+                        onChange={(val: boolean) => setContributeToValue(val)}
+                      />
+                    )}
                   </div>
                 )}
               </>

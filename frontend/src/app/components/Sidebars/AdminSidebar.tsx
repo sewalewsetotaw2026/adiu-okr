@@ -20,6 +20,8 @@ import {
   MdArchive,
   MdPerson,
   MdPublishedWithChanges,
+  MdFactCheck,
+  MdCheckCircle,
 } from "react-icons/md";
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -44,12 +46,54 @@ export default function AdminSidebar() {
   const isManager = useSelector(selectIsManager);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isOkrExpanded, setIsOkrExpanded] = useState(
-    location.pathname.startsWith("/admin/okr") || location.pathname.startsWith("/manager/okr"),
+    location.pathname.startsWith("/admin/okr") ||
+      location.pathname.startsWith("/manager/okr"),
   );
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   useEffect(() => {
     dispatch(managerActions.checkIsManager());
   }, [dispatch, managerActions]);
+
+  useEffect(() => {
+    if (isManager) {
+      const fetchCounts = async () => {
+        try {
+          const cycleRes = await makeCall({
+            method: "GET",
+            route: apiRoutes.okr.currentCycle,
+            isSecureRoute: true,
+          });
+          const cycleId = Number(
+            cycleRes?.data?.data?.id ?? cycleRes?.data?.id,
+          );
+          if (!cycleId) {
+            setPendingReviewCount(0);
+            return;
+          }
+          const submissions =
+            await okrExecutionApi.fetchManagerSubmissions(cycleId);
+          const pendingSubmissions = submissions.filter(
+            (s) => s.status === "pending_approval",
+          );
+          setPendingReviewCount(pendingSubmissions.length);
+        } catch (e) {
+          console.error("Failed to fetch pending review counts", e);
+        }
+      };
+
+      void fetchCounts();
+
+      // Task 3 - Badge Revalidation on Focus
+      window.addEventListener("focus", fetchCounts);
+
+      const interval = setInterval(fetchCounts, 60000); // Refresh every minute
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener("focus", fetchCounts);
+      };
+    }
+  }, [isManager]);
 
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(path + "/");
@@ -148,8 +192,13 @@ export default function AdminSidebar() {
       exact: true,
     },
     {
+      to: routeConstants.okrCeoStrategicDashboard,
+      label: "CEO Dashboard",
+      icon: MdInsights,
+    },
+    {
       to: routeConstants.okrCycles,
-      label: "Company Cycle",
+      label: "Cycle Management",
       icon: MdCalendarToday,
     },
     {
@@ -158,19 +207,25 @@ export default function AdminSidebar() {
       icon: MdTrackChanges,
     },
     {
+      to: routeConstants.okrDepartmentApprovalQueue,
+      label: "Approvals",
+      icon: MdFactCheck,
+      badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
+    },
+    {
+      to: routeConstants.okrPlanningCompliance,
+      label: "Planning Compliance",
+      icon: MdCheckCircle,
+    },
+    {
       to: routeConstants.okrDepartmentPlanning,
       label: "Department OKR",
       icon: MdGroup,
     },
     {
-      to: routeConstants.okrDepartmentApprovalQueue,
-      label: "Approvals",
-      icon: MdPublishedWithChanges,
-    },
-    {
-      to: routeConstants.okrCeoStrategicDashboard,
-      label: "CEO Dashboard",
-      icon: MdInsights,
+      to: routeConstants.okrConfiguration,
+      label: "Configuration",
+      icon: MdSettings,
     },
     {
       to: routeConstants.okrDepartmentComparison,
@@ -182,22 +237,12 @@ export default function AdminSidebar() {
       label: "Gallery",
       icon: MdCollectionsBookmark,
     },
-    {
-      to: routeConstants.okrConfiguration,
-      label: "Configuration",
-      icon: MdSettings,
-    },
     // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
     {
       to: routeConstants.okrArchiveManagement,
       label: "Archive",
       icon: MdArchive,
     },
-      {
-        to: routeConstants.okrPlanningCompliance,
-        label: "Planning Compliance",
-        icon: MdPublishedWithChanges,
-      },
   ];
   const normalNavItems = filteredNavItems.filter(
     (item) => !item.path.startsWith("/admin/okr"),
@@ -226,7 +271,10 @@ export default function AdminSidebar() {
   ];
 
   useEffect(() => {
-    if (location.pathname.startsWith("/admin/okr") || location.pathname.startsWith("/manager/okr")) {
+    if (
+      location.pathname.startsWith("/admin/okr") ||
+      location.pathname.startsWith("/manager/okr")
+    ) {
       setIsOkrExpanded(true);
     }
   }, [location.pathname]);
@@ -342,6 +390,11 @@ export default function AdminSidebar() {
                             >
                               <LinkIcon className="text-sm shrink-0" />
                               {link.label}
+                              {link.badge !== undefined && link.badge && (
+                                <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                                  {link.badge}
+                                </span>
+                              )}
                             </Link>
                           );
                         })}
@@ -372,7 +425,23 @@ export default function AdminSidebar() {
                 {(isOpen || isMobileOpen) && (
                   <span className="whitespace-nowrap tracking-wide text-sm">
                     {item.label}
+                    {item.badge !== undefined && (
+                      <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
                   </span>
+                )}
+                {!isOpen && !isMobileOpen && (
+                  <div className="absolute left-full ml-4 px-3 py-1.5 bg-gray-800 text-white text-xs font-medium rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-xl">
+                    {item.label}
+                    {item.badge !== undefined && (
+                      <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
+                    <div className="absolute top-1/2 -left-1 -mt-1 border-4 border-transparent border-r-gray-800" />
+                  </div>
                 )}
 
                 {!isOpen && !isMobileOpen && (

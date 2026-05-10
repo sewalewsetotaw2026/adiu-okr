@@ -2,6 +2,7 @@ import ModalLayout from "../../../Admin/OKR/components/ModalLayout";
 import ApprovalFooter from "../../../Admin/OKR/components/ApprovalFooter";
 import Button from "../../../../components/Core/ui/Button";
 import { MdAdd, MdClose } from "react-icons/md";
+import Toggle from "../../../../components/Core/ui/Toggle";
 import BulletTextarea from "../../../../components/common/BulletTextarea";
 
 type MonthlyPlanItem = {
@@ -40,7 +41,15 @@ type Props = {
     krTitle?: string;
   }>;
   requireAlignment?: boolean;
-  metrics: Array<{ id: number; name: string; unit?: string; unit_of_measure?: string; allows_binary_completion?: boolean; value_based_progress?: boolean }>;
+  metrics: Array<{
+    id: number;
+    name: string;
+    unit?: string;
+    unit_of_measure?: string;
+    allows_binary_completion?: boolean;
+    value_based_progress?: boolean;
+    is_financial?: boolean;
+  }>;
   onSubmit: () => void;
   isEdit: boolean;
   submitting?: boolean;
@@ -74,6 +83,15 @@ export default function MonthlyPlanModal({
       onClose={onClose}
       title={isEdit ? "Edit Monthly Plan" : "New Monthly Plan"}
       maxWidthClass="max-w-xl"
+      footer={
+        <ApprovalFooter
+          onCancel={onClose}
+          onConfirm={onSubmit}
+          confirmText={isEdit ? "Save Changes" : "Create Plan"}
+          confirmLoading={submitting}
+          confirmDisabled={submitting}
+        />
+      }
     >
       <div className="space-y-4">
         <div className="grid grid-cols-4 gap-4 items-end">
@@ -163,7 +181,7 @@ export default function MonthlyPlanModal({
                           }
                           className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-colors cursor-pointer focus:border-primary focus:ring-2 focus:ring-primary/10"
                         >
-                          <option value="">Select KR…</option>
+                          <option value="">Select Key Result…</option>
                           {krOptions.map((o) => (
                             <option key={o.id} value={o.id}>
                               {o.title}
@@ -172,7 +190,7 @@ export default function MonthlyPlanModal({
                         </select>
                         {kr && (
                           <span className="mt-1 block text-[10px] text-gray-400 italic">
-                            Total KR Target:{" "}
+                            Total Key Result Target:{" "}
                             <span className="font-semibold text-primary">
                               {kr.targetValue}
                             </span>
@@ -255,14 +273,15 @@ export default function MonthlyPlanModal({
                             {metrics.map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.name}
-                                {(m.unit_of_measure || m.unit)
+                                {m.unit_of_measure || m.unit
                                   ? ` (${m.unit_of_measure || m.unit})`
                                   : ""}
                               </option>
                             ))}
                           </select>
                         </div>
-                        {!metrics.find((m) => m.id === item.metricId)?.allows_binary_completion && (
+                        {!metrics.find((m) => m.id === item.metricId)
+                          ?.allows_binary_completion && (
                           <div className="flex gap-2">
                             <div className="flex-1">
                               <label className="mb-1 block text-[10px] font-bold text-gray-400 tracking-wider">
@@ -307,38 +326,38 @@ export default function MonthlyPlanModal({
                           </div>
                         )}
                       </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 mt-4 pt-3 border-t border-gray-50">
+
+                      <div className="flex flex-col gap-3 mt-4 pt-3 border-t border-gray-50">
                         {(() => {
-                          const selectedMetric = metrics.find(m => m.id === Number(item.metricId));
-                          if (selectedMetric?.value_based_progress) return null;
+                          const selectedMetric = metrics.find(
+                            (m) => m.id === Number(item.metricId),
+                          );
                           return (
-                            <label className="flex items-center gap-2 cursor-pointer group">
-                              <input
-                                type="checkbox"
-                                checked={item.contributesToScore ?? true}
-                                onChange={(e) =>
-                                  onChangeItem(item.id, "contributesToScore", e.target.checked)
-                                }
-                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 transition-colors"
-                              />
-                              <span className="text-[11px] font-semibold text-gray-600 group-hover:text-primary transition-colors">
-                                Contribute to Score
-                              </span>
-                            </label>
+                            <>
+                              {!selectedMetric?.value_based_progress && (
+                                <Toggle
+                                  label="Contribute to Score"
+                                  description="Plan item completion affects overall score"
+                                  checked={item.contributesToScore ?? true}
+                                  onChange={(val: boolean) =>
+                                    onChangeItem(item.id, "contributesToScore", val)
+                                  }
+                                />
+                              )}
+
+                              {!selectedMetric?.is_financial && (
+                                <Toggle
+                                  label="Contribute to Value"
+                                  description="Update progress affects the KR current value"
+                                  checked={item.contributesToValue ?? true}
+                                  onChange={(val: boolean) =>
+                                    onChangeItem(item.id, "contributesToValue", val)
+                                  }
+                                />
+                              )}
+                            </>
                           );
                         })()}
-                        <label className="flex items-center gap-2 text-[10px] font-bold text-gray-500 tracking-wider cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={item.contributesToValue ?? true}
-                            onChange={(e) =>
-                              onChangeItem(item.id, "contributesToValue", e.target.checked)
-                            }
-                            className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
-                          />
-                          Contributes to Value
-                        </label>
                       </div>
                     </div>
                   </div>
@@ -357,13 +376,6 @@ export default function MonthlyPlanModal({
           </Button>
         </div>
       </div>
-      <ApprovalFooter
-        onCancel={onClose}
-        onConfirm={onSubmit}
-        confirmText={isEdit ? "Save Changes" : "Create Plan"}
-        confirmLoading={submitting}
-        confirmDisabled={submitting}
-      />
     </ModalLayout>
   );
 }

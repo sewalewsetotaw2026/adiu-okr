@@ -31,7 +31,6 @@ export default function ProgressUpdateModal({
   currentValue,
   onChangeCurrentValue,
   targetValue,
-  onChangeTargetValue,
   isCompleted,
   onChangeIsCompleted,
   note,
@@ -63,6 +62,13 @@ export default function ProgressUpdateModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Submit Progress Update"
+      footer={
+        <ApprovalFooter
+          onCancel={onClose}
+          onConfirm={onSubmit}
+          confirmText="Submit Update"
+        />
+      }
     >
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -206,11 +212,6 @@ export default function ProgressUpdateModal({
         </div>
 
       </div>
-      <ApprovalFooter
-        onCancel={onClose}
-        onConfirm={onSubmit}
-        confirmText="Submit Update"
-      />
     </ModalLayout>
   );
 }

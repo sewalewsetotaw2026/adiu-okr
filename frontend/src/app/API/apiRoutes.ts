@@ -378,8 +378,7 @@ const apiRoutes = {
       `${BASE_URL}/okr/monthly-plans/${id}`,
     weeklyPlanById: (id: number | string) =>
       `${BASE_URL}/okr/weekly-plans/${id}`,
-    dailyPlanById: (id: number | string) =>
-      `${BASE_URL}/okr/daily-plans/${id}`,
+    dailyPlanById: (id: number | string) => `${BASE_URL}/okr/daily-plans/${id}`,
     dailyPlanStatus: (id: number | string) =>
       `${BASE_URL}/okr/daily-plans/${id}/status`,
 
@@ -438,6 +437,7 @@ const apiRoutes = {
     rejectSubmission: (id: number | string) =>
       `${BASE_URL}/okr/approvals/${id}/reject`,
     submissionFeedback: `${BASE_URL}/okr/approvals/comment`,
+    submissionFeedbackBatch: `${BASE_URL}/okr/approvals/comments/batch`,
     entityComments: `${BASE_URL}/okr/approvals/comments`,
     managerSubmissions: `${BASE_URL}/okr/approvals/manager/submissions`,
     adminSubmissions: `${BASE_URL}/okr/approvals/admin/submissions`,

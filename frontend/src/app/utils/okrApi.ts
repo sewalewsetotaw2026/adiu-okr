@@ -32,7 +32,12 @@ export function okrErrorMessage(error: unknown): string {
     error?: string;
     errors?: unknown;
     response?: {
-      data?: { message?: string; error?: string; errors?: unknown };
+      data?: {
+        message?: string;
+        error?: string;
+        errors?: unknown;
+        code?: string;
+      };
     };
   };
   if (typeof asBody?.message === "string") return asBody.message;
@@ -49,6 +54,23 @@ export function okrErrorMessage(error: unknown): string {
     const first = d.errors[0] as { msg?: string; message?: string };
     const m = first?.msg ?? first?.message;
     if (typeof m === "string") return m;
+  }
+  // Special-case: backend metric category mismatch messages are verbose and
+  // better presented as a short, user-friendly message. Detect common
+  // pattern and return a clearer string.
+  try {
+    const raw = String(d?.message ?? d?.error ?? "");
+    const m = raw.match(
+      /Cannot roll up child category '?(\w+)'? directly into parent category '?(\w+)'?/i,
+    );
+    if (m && m.length >= 3) {
+      const child = m[1];
+      const parent = m[2];
+      const code = (d as any)?.code ?? (asBody as any)?.code ?? undefined;
+      return `Error ${code ?? "undefined"}: Metric category mismatch. Cannot roll up child category '${child}' directly into parent category '${parent}'.`;
+    }
+  } catch (e) {
+    // fall through to generic handling
   }
   if (typeof (error as { message?: string })?.message === "string")
     return (error as { message: string }).message;

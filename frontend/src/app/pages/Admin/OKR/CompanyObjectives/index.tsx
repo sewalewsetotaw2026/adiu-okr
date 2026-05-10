@@ -8,6 +8,7 @@ import ObjectiveCard from "../../../../components/common/ObjectiveCard";
 import KeyResultListItem from "../../../../components/common/KeyResultListItem";
 import ModalLayout from "../components/ModalLayout";
 import ApprovalFooter from "../components/ApprovalFooter";
+import { formatOkrNumber } from "../../../../utils/okrNumber";
 
 import {
   MdTrackChanges,
@@ -24,6 +25,7 @@ import { Status } from "../components/StatusBadge";
 
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
+import { okrErrorMessage } from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 
 /* ================= TYPES ================= */
@@ -46,6 +48,7 @@ export default function CompanyObjectives() {
   const [selectedCycle, setSelectedCycle] = useState("Loading...");
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [loading, setLoading] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [currentCycleId, setCurrentCycleId] = useState<number | null>(null);
   const [configMenu, setConfigMenu] = useState<any>(null);
@@ -138,9 +141,14 @@ export default function CompanyObjectives() {
 
         const cycle = cycleRes?.data?.data || cycleRes?.data || cycleRes;
 
-        if (!cycle?.id) return;
-        setCurrentCycleId(cycle.id);
-        setSelectedCycle(cycle.title || cycle.name || "Active Cycle");
+        if (!cycle?.id) {
+          // No active cycle — show explicit guidance instead of leaving "Loading..."
+          setCurrentCycleId(null);
+          setSelectedCycle("Open or create an active cycle");
+        } else {
+          setCurrentCycleId(cycle.id);
+          setSelectedCycle(cycle.title || cycle.name || "Active Cycle");
+        }
 
         const configRes = await makeCall({
           method: "GET",
@@ -203,11 +211,7 @@ export default function CompanyObjectives() {
       );
     } catch (err: any) {
       console.error("SUBMIT ERROR", err);
-      ToastService.error(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Failed to save objective",
-      );
+      ToastService.error(okrErrorMessage(err) || "Failed to save objective");
     } finally {
       setSubmitting(false);
     }
@@ -251,7 +255,7 @@ export default function CompanyObjectives() {
 
   const handlePublish = async () => {
     if (!currentCycleId) return;
-
+    setPublishLoading(true);
     try {
       // Ensure KRs are published before bulk objective publish
       const draftObjectives = objectives.filter(
@@ -278,11 +282,9 @@ export default function CompanyObjectives() {
       ToastService.success("Company planning published for this cycle.");
     } catch (err: any) {
       console.error("PUBLISH ERROR", err);
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to publish planning.";
-      ToastService.error(msg);
+      ToastService.error(okrErrorMessage(err) || "Failed to publish planning.");
+    } finally {
+      setPublishLoading(false);
     }
   };
 
@@ -305,15 +307,17 @@ export default function CompanyObjectives() {
       ToastService.success("Objective published.");
     } catch (err: any) {
       console.error("PUBLISH SINGLE OBJECTIVE ERROR", err);
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to publish objective.";
-      ToastService.error(msg);
+      ToastService.error(
+        okrErrorMessage(err) || "Failed to publish objective.",
+      );
     }
   };
 
   const openCreateModal = () => {
+    if (!currentCycleId) {
+      ToastService.error("Open or create an active cycle");
+      return;
+    }
     setEditingObjective(null);
     setForm({ title: "", description: "" });
     setIsModalOpen(true);
@@ -366,6 +370,7 @@ export default function CompanyObjectives() {
                     size="sm"
                     icon={MdPublish}
                     onClick={handlePublish}
+                    loading={publishLoading}
                     className="tracking-widest font-space text-[10px] font-black"
                   >
                     Publish Planning
@@ -689,7 +694,7 @@ export default function CompanyObjectives() {
                     >
                       {obj.keyResults?.length > 0 && (
                         <div className="flex flex-col gap-4 mt-2">
-                          {obj.keyResults.map((kr: any) => {
+                          {obj.keyResults.map((kr: any, index: number) => {
                             const krDirectRaw =
                               kr.final_score ??
                               kr.progress_percent ??
@@ -715,9 +720,10 @@ export default function CompanyObjectives() {
                               <KeyResultListItem
                                 key={kr.id}
                                 title={kr.title}
+                                index={index}
                                 progress={krPct}
                                 status={kr.status_code || "draft"}
-                                targetString={`${kr.unit_of_measure === "ETB" ? "ETB " : ""}${krCur} / ${krTgt}${kr.unit_of_measure === "%" ? "%" : ""}`}
+                                targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
                                 metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
                               />
                             );

@@ -76,6 +76,7 @@ const normalizeMonthlyPlan = (plan: any): MonthlyPlan => ({
   current_value: toNumber(plan.current_value),
   progress_pct: toNumber(plan.progress_pct),
   indirect_score: toNumber(plan.indirect_score),
+  feedback_note: plan.feedback_note ?? plan.rejection_note,
   parent_key_result: plan.parent_key_result ?? plan.employeeKr,
 });
 
@@ -93,15 +94,33 @@ const normalizeWeeklyPlan = (plan: any): WeeklyPlan => ({
   current_value: toNumber(plan.current_value),
   progress_pct: toNumber(plan.progress_pct),
   indirect_score: toNumber(plan.indirect_score),
-  parent_monthly_plan: plan.parent_monthly_plan ?? plan.monthPlan,
+  feedback_note: plan.feedback_note ?? plan.rejection_note,
+  parent_monthly_plan: plan.parent_monthly_plan
+    ? plan.parent_monthly_plan
+    : plan.monthPlan
+      ? {
+          ...plan.monthPlan,
+          id: String(plan.monthPlan.id),
+          parent_kr_title: plan.monthPlan.employeeKr?.title,
+        }
+      : undefined,
 });
 
 const normalizeAvailableWeight = (data: any): AvailableWeight => ({
   allocated_pct: toNumber(data?.allocated_pct ?? data?.allocatedPct),
   remaining_pct: toNumber(data?.remaining_pct ?? data?.remainingPct),
-  parent_target_value: data?.parent_target_value != null ? toNumber(data.parent_target_value) : undefined,
-  allocated_target_value: data?.allocated_target_value != null ? toNumber(data.allocated_target_value) : undefined,
-  remaining_target_value: data?.remaining_target_value != null ? toNumber(data.remaining_target_value) : undefined,
+  parent_target_value:
+    data?.parent_target_value != null
+      ? toNumber(data.parent_target_value)
+      : undefined,
+  allocated_target_value:
+    data?.allocated_target_value != null
+      ? toNumber(data.allocated_target_value)
+      : undefined,
+  remaining_target_value:
+    data?.remaining_target_value != null
+      ? toNumber(data.remaining_target_value)
+      : undefined,
   months: Array.isArray(data?.months)
     ? data.months.map((month: any) => ({
         month_number: Number(month.month_number) as 1 | 2 | 3,
@@ -125,7 +144,7 @@ export async function fetchMonthlyPlans(krId: string): Promise<MonthlyPlan[]> {
       method: "GET",
     }),
   );
-  const plans = Array.isArray(data) ? data : data?.plans ?? [];
+  const plans = Array.isArray(data) ? data : (data?.plans ?? []);
   return plans.map(normalizeMonthlyPlan);
 }
 
@@ -144,12 +163,13 @@ export async function fetchMonthlyAvailableWeight(
 export async function fetchManagerMonthlyPlans(
   monthNumber: number,
   cycleId: string,
+  krId?: string,
 ): Promise<MonthlyPlan[]> {
   const data = await unwrap<any>(
     makeCall({
       route: `${OKR}/manager/monthly-plans`,
       method: "GET",
-      query: { monthNumber, cycleId },
+      query: { monthNumber, cycleId, krId },
     }),
   );
   return (Array.isArray(data) ? data : []).map(normalizeMonthlyPlan);
@@ -171,14 +191,16 @@ export async function createMonthlyPlan(
 
 export async function updateMonthlyPlan(
   id: string,
-  dto: { 
-    title?: string; 
+  dto: {
+    title?: string;
     description?: string;
     metric_definition_id?: number;
     start_value?: number;
     target_value?: number;
+    current_value?: number;
     contribute_to_score?: boolean;
     contribute_to_value?: boolean;
+    notes?: string;
   },
 ): Promise<MonthlyPlan> {
   const plan = await unwrap<any>(
@@ -201,11 +223,18 @@ export async function deleteMonthlyPlan(id: string): Promise<void> {
 export async function submitMonthlyPeriod(
   monthNumber: number,
   cycleId: string,
+  planIds?: Array<string | number>,
 ): Promise<void> {
   await makeCall({
     route: `${OKR}/monthly-plans/submit-period`,
     method: "POST",
-    body: { month_number: monthNumber, cycle_id: cycleId },
+    body: {
+      month_number: monthNumber,
+      cycle_id: cycleId,
+      plan_ids: planIds
+        ?.map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    },
   });
 }
 
@@ -238,14 +267,16 @@ export async function publishMonthlyPeriod(
 
 // ── WEEKLY ──────────────────────────────────────────────────────────────
 
-export async function fetchWeeklyPlans(monthlyId: string): Promise<WeeklyPlan[]> {
+export async function fetchWeeklyPlans(
+  monthlyId: string,
+): Promise<WeeklyPlan[]> {
   const data = await unwrap<any>(
     makeCall({
       route: `${OKR}/monthly-plans/${monthlyId}/weekly-plans`,
       method: "GET",
     }),
   );
-  const plans = Array.isArray(data) ? data : data?.plans ?? [];
+  const plans = Array.isArray(data) ? data : (data?.plans ?? []);
   return plans.map(normalizeWeeklyPlan);
 }
 
@@ -261,9 +292,18 @@ export async function fetchWeeklyAvailableWeight(
   return {
     allocated_pct: toNumber(data?.allocated_pct ?? data?.allocatedPct),
     remaining_pct: toNumber(data?.remaining_pct ?? data?.remainingPct),
-    parent_target_value: data?.parent_target_value != null ? toNumber(data.parent_target_value) : undefined,
-    allocated_target_value: data?.allocated_target_value != null ? toNumber(data.allocated_target_value) : undefined,
-    remaining_target_value: data?.remaining_target_value != null ? toNumber(data.remaining_target_value) : undefined,
+    parent_target_value:
+      data?.parent_target_value != null
+        ? toNumber(data.parent_target_value)
+        : undefined,
+    allocated_target_value:
+      data?.allocated_target_value != null
+        ? toNumber(data.allocated_target_value)
+        : undefined,
+    remaining_target_value:
+      data?.remaining_target_value != null
+        ? toNumber(data.remaining_target_value)
+        : undefined,
     weeks: Array.isArray(data?.weeks)
       ? data.weeks.map((w: any) => ({
           week_number: Number(w.week_number),
@@ -305,13 +345,15 @@ export async function createWeeklyPlan(
 
 export async function updateWeeklyPlan(
   id: string,
-  dto: { 
+  dto: {
     title?: string;
     metric_definition_id?: number;
     start_value?: number;
     target_value?: number;
+    current_value?: number;
     contribute_to_score?: boolean;
     contribute_to_value?: boolean;
+    notes?: string;
   },
 ): Promise<WeeklyPlan> {
   const plan = await unwrap<any>(
@@ -334,11 +376,18 @@ export async function deleteWeeklyPlan(id: string): Promise<void> {
 export async function submitWeeklyPeriod(
   weekNumber: number,
   monthlyPlanId: string,
+  planIds?: Array<string | number>,
 ): Promise<void> {
   await makeCall({
     route: `${OKR}/weekly-plans/submit-period`,
     method: "POST",
-    body: { week_number: weekNumber, monthly_plan_id: monthlyPlanId },
+    body: {
+      week_number: weekNumber,
+      monthly_plan_id: monthlyPlanId,
+      plan_ids: planIds
+        ?.map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    },
   });
 }
 
@@ -436,7 +485,6 @@ export async function deleteDailyPlan(id: string): Promise<void> {
     method: "DELETE",
   });
 }
-
 
 // ── METRICS ─────────────────────────────────────────────────────────────
 
@@ -555,7 +603,9 @@ const okrExecutionApi = {
   rejectSubmission,
   postSubmissionComment,
   fetchMetricDefinitions,
-  fetchTeamHealthSummary: async (): Promise<{ hasUnsubmittedPlans: boolean }> => {
+  fetchTeamHealthSummary: async (): Promise<{
+    hasUnsubmittedPlans: boolean;
+  }> => {
     return unwrap<{ hasUnsubmittedPlans: boolean }>(
       makeCall({
         route: `${BASE_URL}/okr/manager/team-health-summary`,

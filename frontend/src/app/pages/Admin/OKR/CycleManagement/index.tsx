@@ -25,6 +25,7 @@ import { okrErrorMessage, okrUnwrap } from "../../../../utils/okrApi";
 import { useDispatch, useSelector } from "react-redux";
 import { selectCycles, selectCycleLoading } from "./slice/selectors";
 import { useCycleSlice } from "./slice";
+import { getAutoCycleEndDate } from "../../../OKRExecution/utils/calendarDates";
 
 /* ================= TYPES ================= */
 
@@ -87,6 +88,7 @@ export default function CycleManagement() {
     startDate: "",
     endDate: "",
   });
+  const [endDateTouched, setEndDateTouched] = useState(false);
 
   const [error, setError] = useState("");
 
@@ -124,6 +126,7 @@ export default function CycleManagement() {
     setShowModal(false);
     setEditingCycle(null);
     setForm({ name: "", startDate: "", endDate: "" });
+    setEndDateTouched(false);
     setError("");
   };
 
@@ -197,6 +200,7 @@ export default function CycleManagement() {
   const openCreate = () => {
     setEditingCycle(null);
     setForm({ name: "", startDate: "", endDate: "" });
+    setEndDateTouched(false);
     setError("");
     setShowModal(true);
   };
@@ -215,18 +219,18 @@ export default function CycleManagement() {
       startDate: cycle.startDate,
       endDate: cycle.endDate,
     });
+    setEndDateTouched(false);
     setError("");
     setShowModal(true);
   };
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      <div className="min-h-screen bg-linear-to-b from-slate-50 to-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
           <PageHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-4">
-                
                 <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
                   <MdCalendarToday className="text-3xl text-white" />
                 </div>
@@ -346,7 +350,7 @@ export default function CycleManagement() {
               ) : (
                 <div className="rounded-2xl bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-100 overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-sm text-left">
+                    <table className="w-full min-w-180 text-sm text-left">
                       <thead>
                         <tr className="border-b border-slate-100 bg-slate-50/50">
                           <th className="px-6 py-4 font-black uppercase tracking-widest text-[10px] text-slate-400 font-space">
@@ -377,16 +381,16 @@ export default function CycleManagement() {
                               }`}
                             >
                               <td className="px-6 py-4">
-                                  <span className="font-black text-slate-900 uppercase tracking-tight">
-                                    {cycle.name}
-                                  </span>
+                                <span className="font-black text-slate-900 uppercase tracking-tight">
+                                  {cycle.name}
+                                </span>
                               </td>
                               <td className="px-6 py-4">
                                 <div className="flex items-center gap-2">
                                   <div className="px-2 py-1 rounded bg-slate-100 text-[10px] font-black text-slate-600 font-space">
                                     {formatDateDisplay(cycle.startDate)}
                                   </div>
-                                  <div className="w-4 h-[1px] bg-slate-200" />
+                                  <div className="w-4 h-px bg-slate-200" />
                                   <div className="px-2 py-1 rounded bg-slate-100 text-[10px] font-black text-slate-600 font-space">
                                     {formatDateDisplay(cycle.endDate)}
                                   </div>
@@ -406,31 +410,31 @@ export default function CycleManagement() {
                                     icon={MdEdit}
                                   />
 
-                                    <>
-                                      {cycle.status === "open" ? (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => closeCycle(cycle)}
-                                          disabled={isBusy}
-                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-red-100 transition-all disabled:opacity-20 h-auto"
-                                          icon={MdStopCircle}
-                                        >
-                                          Close
-                                        </Button>
-                                      ) : (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => openCycle(cycle)}
-                                          disabled={openDisabled}
-                                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-emerald-100 transition-all disabled:opacity-20 h-auto"
-                                          icon={MdPlayCircleOutline}
-                                        >
-                                          Open
-                                        </Button>
-                                      )}
-                                    </>
+                                  <>
+                                    {cycle.status === "open" ? (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => closeCycle(cycle)}
+                                        disabled={isBusy}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-red-100 transition-all disabled:opacity-20 h-auto"
+                                        icon={MdStopCircle}
+                                      >
+                                        Close
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => openCycle(cycle)}
+                                        disabled={openDisabled}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase tracking-widest font-space hover:bg-emerald-100 transition-all disabled:opacity-20 h-auto"
+                                        icon={MdPlayCircleOutline}
+                                      >
+                                        Open
+                                      </Button>
+                                    )}
+                                  </>
                                 </div>
                               </td>
                             </tr>
@@ -484,7 +488,15 @@ export default function CycleManagement() {
                 value={form.startDate}
                 onChange={(e) => {
                   setError("");
-                  setForm({ ...form, startDate: e.target.value });
+                  const startDate = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    startDate,
+                    endDate:
+                      !endDateTouched || !prev.endDate
+                        ? getAutoCycleEndDate(startDate)
+                        : prev.endDate,
+                  }));
                 }}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/25"
               />
@@ -498,6 +510,7 @@ export default function CycleManagement() {
                 value={form.endDate}
                 onChange={(e) => {
                   setError("");
+                  setEndDateTouched(true);
                   setForm({ ...form, endDate: e.target.value });
                 }}
                 className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/25"

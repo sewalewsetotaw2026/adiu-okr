@@ -56,42 +56,35 @@ type Submission = {
   }>;
 };
 
-function FeedbackInlineInput({
+type PendingFeedback = {
+  entity_type: string;
+  entity_id: number;
+  comment: string;
+};
+
+function FeedbackBatchInput({
   entityType,
   entityId,
-  onSubmitted,
+  onAdd,
+  hasPending,
 }: {
   entityType: string;
   entityId: number;
-  onSubmitted: () => void;
+  onAdd: (feedback: PendingFeedback) => void;
+  hasPending: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
 
-  const send = async () => {
+  const handleAdd = () => {
     if (!text.trim()) return;
-    setSending(true);
-    try {
-      await makeCall({
-        method: "POST",
-        route: apiRoutes.okr.submissionFeedback,
-        body: {
-          entity_type: entityType,
-          entity_id: entityId,
-          comment: text.trim(),
-        },
-        isSecureRoute: true,
-      });
-      ToastService.success("Feedback sent. Entire plan reverted to draft.");
-      setText("");
-      setOpen(false);
-      onSubmitted();
-    } catch (e) {
-      ToastService.error(okrErrorMessage(e));
-    } finally {
-      setSending(false);
-    }
+    onAdd({
+      entity_type: entityType,
+      entity_id: entityId,
+      comment: text.trim(),
+    });
+    setText("");
+    setOpen(false);
   };
 
   if (!open) {
@@ -101,9 +94,13 @@ function FeedbackInlineInput({
         size="sm"
         onClick={() => setOpen(true)}
         icon={MdComment}
-        className="text-[10px] font-bold text-amber-600 hover:text-amber-700 uppercase tracking-widest font-space transition-colors p-0 h-auto"
+        className={`text-[10px] font-bold uppercase tracking-widest font-space transition-colors p-0 h-auto ${
+          hasPending
+            ? "text-red-600 hover:text-red-700"
+            : "text-amber-600 hover:text-amber-700"
+        }`}
       >
-        Feedback
+        {hasPending ? "Pending" : "Feedback"}
       </Button>
     );
   }
@@ -116,15 +113,14 @@ function FeedbackInlineInput({
         onChange={(e) => setText(e.target.value)}
         placeholder="Add feedback..."
         className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary/30 outline-none transition-all"
-        onKeyDown={(e) => e.key === "Enter" && send()}
-        disabled={sending}
+        onKeyDown={(e) => e.key === "Enter" && handleAdd()}
         autoFocus
       />
       <Button
         variant="primary"
         size="sm"
-        onClick={send}
-        disabled={sending || !text.trim()}
+        onClick={handleAdd}
+        disabled={!text.trim()}
         icon={MdSend}
         className="p-1.5 rounded-lg"
       />
@@ -154,6 +150,10 @@ function SubmissionReviewCard({
   onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [pendingFeedbacks, setPendingFeedbacks] = useState<PendingFeedback[]>(
+    [],
+  );
+  const [submitting, setSubmitting] = useState(false);
 
   const typeLabel =
     submission.type === "QUARTERLY_PLANNING"
@@ -208,6 +208,44 @@ function SubmissionReviewCard({
       (p) => (p.plan_status || p.status_code) === "DRAFT",
     );
 
+  const addFeedback = (feedback: PendingFeedback) => {
+    setPendingFeedbacks([...pendingFeedbacks, feedback]);
+  };
+
+  const removeFeedback = (index: number) => {
+    setPendingFeedbacks(pendingFeedbacks.filter((_, i) => i !== index));
+  };
+
+  const sendAllFeedbacks = async () => {
+    if (pendingFeedbacks.length === 0) return;
+    setSubmitting(true);
+    try {
+      await makeCall({
+        method: "POST",
+        route: apiRoutes.okr.submissionFeedbackBatch,
+        body: {
+          feedbacks: pendingFeedbacks,
+        },
+        isSecureRoute: true,
+      });
+      ToastService.success(
+        `${pendingFeedbacks.length} feedback(s) sent. Plan reverted to draft.`,
+      );
+      setPendingFeedbacks([]);
+      onRefresh();
+    } catch (e) {
+      ToastService.error(okrErrorMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const getItemFeedbackCount = (entityType: string, entityId: number) => {
+    return pendingFeedbacks.filter(
+      (f) => f.entity_type === entityType && f.entity_id === entityId,
+    ).length;
+  };
+
   return (
     <div className="rounded-2xl border border-slate-100 bg-white shadow-lg shadow-slate-200/30 overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-slate-200/40">
       <div
@@ -220,7 +258,9 @@ function SubmissionReviewCard({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-bold text-slate-900">{submission.submitter_name}</h3>
+              <h3 className="font-bold text-slate-900">
+                {submission.submitter_name}
+              </h3>
               <OkrStatusBadge
                 tone={typeTone as any}
                 size="xs"
@@ -237,9 +277,15 @@ function SubmissionReviewCard({
               </OkrStatusBadge>
             </div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-space mt-1">
-              {/* {submission.item_count} items · Submitted {formatDate(submission.created_at)} */}
               {hasDraftItems && (
-                <span className="ml-2 text-amber-500">· Has pending feedback</span>
+                <span className="ml-2 text-amber-500">
+                  · Has pending feedback
+                </span>
+              )}
+              {pendingFeedbacks.length > 0 && (
+                <span className="ml-2 text-red-500 font-black">
+                  · {pendingFeedbacks.length} pending feedback(s)
+                </span>
               )}
             </p>
           </div>
@@ -255,6 +301,7 @@ function SubmissionReviewCard({
                   onReject(submission.id);
                 }}
                 className="text-red-500 hover:text-red-600 hover:bg-red-50 uppercase tracking-widest font-space text-[10px] font-black"
+                disabled={submitting}
               >
                 Reject All
               </Button>
@@ -267,8 +314,10 @@ function SubmissionReviewCard({
                   onApprove(submission.id);
                 }}
                 className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border-emerald-100 uppercase tracking-widest font-space text-[10px] font-black"
-                disabled={hasDraftItems}
-                title={hasDraftItems ? "Resolve all feedback before approving" : ""}
+                disabled={hasDraftItems || submitting}
+                title={
+                  hasDraftItems ? "Resolve all feedback before approving" : ""
+                }
               >
                 Approve All
               </Button>
@@ -309,25 +358,36 @@ function SubmissionReviewCard({
                       {obj.status_code.replace(/_/g, " ")}
                     </OkrStatusBadge>
                   </div>
-                  <p className="font-semibold text-slate-800 mt-1.5">{obj.title}</p>
+                  <p className="font-semibold text-slate-800 mt-1.5">
+                    {obj.title}
+                  </p>
                 </div>
                 {isPending && (
-                  <FeedbackInlineInput
+                  <FeedbackBatchInput
                     entityType="EMPLOYEE_OBJECTIVE"
                     entityId={obj.id}
-                    onSubmitted={onRefresh}
+                    onAdd={addFeedback}
+                    hasPending={
+                      getItemFeedbackCount("EMPLOYEE_OBJECTIVE", obj.id) > 0
+                    }
                   />
                 )}
               </div>
 
               {obj.keyResults.length > 0 && (
                 <div className="mt-3 ml-4 space-y-2 border-l-2 border-primary/10 pl-4">
-                  {obj.keyResults.map((kr) => (
-                    <div key={`kr-${kr.id}`} className="flex items-start justify-between py-2">
+                  {obj.keyResults.map((kr, index) => (
+                    <div
+                      key={`kr-${kr.id}`}
+                      className="flex items-start justify-between py-2 gap-3"
+                    >
+                      <div className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 text-[10px] font-black text-primary">
+                        {index + 1}
+                      </div>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-[9px] font-black text-blue-500/60 uppercase tracking-widest font-space bg-blue-50 px-2 py-0.5 rounded">
-                            KR
+                            Key Result
                           </span>
                           <OkrStatusBadge
                             tone={
@@ -348,18 +408,24 @@ function SubmissionReviewCard({
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-slate-700 mt-1">{kr.title}</p>
+                        <p className="text-sm text-slate-700 mt-1">
+                          {kr.title}
+                        </p>
                         {kr.metricDefinition && (
                           <p className="text-[10px] text-slate-400 font-space mt-0.5">
-                            Metric: {kr.metricDefinition.name} ({kr.metricDefinition.unit_of_measure})
+                            Metric: {kr.metricDefinition.name} (
+                            {kr.metricDefinition.unit_of_measure})
                           </p>
                         )}
                       </div>
                       {isPending && (
-                        <FeedbackInlineInput
+                        <FeedbackBatchInput
                           entityType="EMPLOYEE_KR"
                           entityId={kr.id}
-                          onSubmitted={onRefresh}
+                          onAdd={addFeedback}
+                          hasPending={
+                            getItemFeedbackCount("EMPLOYEE_KR", kr.id) > 0
+                          }
                         />
                       )}
                     </div>
@@ -386,7 +452,9 @@ function SubmissionReviewCard({
                         <span className="text-[9px] font-black text-amber-600/60 uppercase tracking-widest font-space bg-amber-100 px-2 py-0.5 rounded">
                           Month {p.month_number ?? "?"}
                         </span>
-                        <span className="text-sm text-slate-700">{p.title}</span>
+                        <span className="text-sm text-slate-700">
+                          {p.title}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <OkrStatusBadge
@@ -397,10 +465,16 @@ function SubmissionReviewCard({
                           {String(monthStatus).replace(/_/g, " ")}
                         </OkrStatusBadge>
                         {isPending && (
-                          <FeedbackInlineInput
+                          <FeedbackBatchInput
                             entityType="EMPLOYEE_MONTH_PLAN"
                             entityId={p.id}
-                            onSubmitted={onRefresh}
+                            onAdd={addFeedback}
+                            hasPending={
+                              getItemFeedbackCount(
+                                "EMPLOYEE_MONTH_PLAN",
+                                p.id,
+                              ) > 0
+                            }
                           />
                         )}
                       </div>
@@ -428,7 +502,9 @@ function SubmissionReviewCard({
                         <span className="text-[9px] font-black text-blue-600/60 uppercase tracking-widest font-space bg-blue-100 px-2 py-0.5 rounded">
                           Week {p.week_number ?? "?"}
                         </span>
-                        <span className="text-sm text-slate-700">{p.title}</span>
+                        <span className="text-sm text-slate-700">
+                          {p.title}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <OkrStatusBadge
@@ -439,10 +515,13 @@ function SubmissionReviewCard({
                           {String(weekStatus).replace(/_/g, " ")}
                         </OkrStatusBadge>
                         {isPending && (
-                          <FeedbackInlineInput
+                          <FeedbackBatchInput
                             entityType="WEEKLY_PLAN"
                             entityId={p.id}
-                            onSubmitted={onRefresh}
+                            onAdd={addFeedback}
+                            hasPending={
+                              getItemFeedbackCount("WEEKLY_PLAN", p.id) > 0
+                            }
                           />
                         )}
                       </div>
@@ -450,6 +529,49 @@ function SubmissionReviewCard({
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Pending Feedbacks Summary */}
+          {pendingFeedbacks.length > 0 && (
+            <div className="mt-6 pt-4 border-t-2 border-amber-200 bg-amber-50/50 rounded-xl p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-bold text-slate-800 mb-2">
+                    Pending Feedbacks ({pendingFeedbacks.length})
+                  </p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {pendingFeedbacks.map((fb, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-2 text-[13px] text-slate-700"
+                      >
+                        <span className="text-amber-600 font-black">·</span>
+                        <span className="flex-1 line-clamp-2">
+                          {fb.comment}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeFeedback(idx)}
+                          icon={MdClose}
+                          className="p-0.5 text-slate-400 hover:text-slate-600 flex-shrink-0"
+                          title="Remove this feedback"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Button
+                  variant="primary"
+                  className="rounded-xl whitespace-nowrap font-bold shadow-lg shadow-primary/20"
+                  onClick={sendAllFeedbacks}
+                  disabled={submitting}
+                  icon={MdSend}
+                >
+                  {submitting ? "Sending..." : "Send Feedbacks"}
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -469,11 +591,17 @@ export default function SubmissionApprovalQueue({
     "all" | "pending_approval" | "approved" | "rejected"
   >("all");
   const [planType, setPlanType] = useState<
-    "all" | "QUARTERLY_PLANNING" | "DEPARTMENT_OBJECTIVE" | "MONTHLY_PLAN" | "WEEKLY_PLAN"
+    | "all"
+    | "QUARTERLY_PLANNING"
+    | "DEPARTMENT_OBJECTIVE"
+    | "MONTHLY_PLAN"
+    | "WEEKLY_PLAN"
   >("all");
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null);
+  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(
+    null,
+  );
   const [action, setAction] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -532,7 +660,10 @@ export default function SubmissionApprovalQueue({
     (s) => s.status === "pending_approval",
   ).length;
 
-  const openModal = (submissionId: number, nextAction: "approve" | "reject") => {
+  const openModal = (
+    submissionId: number,
+    nextAction: "approve" | "reject",
+  ) => {
     setActiveSubmissionId(submissionId);
     setAction(nextAction);
     setComment("");
@@ -561,7 +692,9 @@ export default function SubmissionApprovalQueue({
           body: { reason: comment.trim() },
           isSecureRoute: true,
         });
-        ToastService.success("Submission rejected. All items reverted to draft.");
+        ToastService.success(
+          "Submission rejected. All items reverted to draft.",
+        );
       }
       setModalOpen(false);
       await load();
@@ -598,143 +731,148 @@ export default function SubmissionApprovalQueue({
       ) : (
         <>
           <div className="bg-white/60 backdrop-blur-xl border border-slate-100 rounded-3xl p-6 shadow-sm space-y-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-xl">
-              <MdFactCheck className="text-primary text-lg" />
-            </div>
-            <div>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
-                Pending Approvals
-              </p>
-              <p className="text-sm font-semibold text-slate-800">
-                {pendingCount} submission{pendingCount === 1 ? "" : "s"} waiting review
-              </p>
-            </div>
-          </div>
-          <RefreshButton onClick={load} loading={loading} />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 px-1">
-              <div className="p-1.5 bg-primary/10 rounded-lg">
-                <MdFilterList className="text-primary text-sm" />
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-xl">
+                  <MdFactCheck className="text-primary text-lg" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
+                    Pending Approvals
+                  </p>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {pendingCount} submission{pendingCount === 1 ? "" : "s"}{" "}
+                    waiting review
+                  </p>
+                </div>
               </div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
-                Submission Status
-              </span>
+              <RefreshButton onClick={load} loading={loading} />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {(
-                [
-                  ["all", "All"],
-                  ["pending_approval", "Pending"],
-                  ["approved", "Approved"],
-                  ["rejected", "Rejected"],
-                ] as const
-              ).map(([id, label]) => (
-                <Button
-                  key={id}
-                  variant={filter === id ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setFilter(id)}
-                  className={`rounded-xl px-4 py-2 text-[10px] font-black tracking-widest font-space transition-all duration-300 ${
-                    filter === id
-                      ? "shadow-lg shadow-primary/20 scale-105"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-                  }`}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          </div>
 
-          <div className="space-y-3 pt-6 md:pt-0 md:pl-6">
-            <div className="flex items-center gap-2 px-1">
-              <div className="p-1.5 bg-blue-100 rounded-lg">
-                <MdFactCheck className="text-blue-600 text-sm" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="p-1.5 bg-primary/10 rounded-lg">
+                    <MdFilterList className="text-primary text-sm" />
+                  </div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
+                    Submission Status
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["pending_approval", "Pending"],
+                      ["approved", "Approved"],
+                      ["rejected", "Rejected"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <Button
+                      key={id}
+                      variant={filter === id ? "primary" : "ghost"}
+                      size="sm"
+                      onClick={() => setFilter(id)}
+                      className={`rounded-xl px-4 py-2 text-[10px] font-black tracking-widest font-space transition-all duration-300 ${
+                        filter === id
+                          ? "shadow-lg shadow-primary/20 scale-105"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                      }`}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
               </div>
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
-                Plan Category
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {(
-                [
-                  ["all", "All Plans"],
-                  ["QUARTERLY_PLANNING", "Quarterly"],
-                  ["DEPARTMENT_OBJECTIVE", "Department"],
-                  ["MONTHLY_PLAN", "Monthly"],
-                  ["WEEKLY_PLAN", "Weekly"],
-                ] as const
-              ).map(([id, label]) => (
-                <Button
-                  key={id}
-                  variant={planType === id ? "primary" : "ghost"}
-                  size="sm"
-                  onClick={() => setPlanType(id)}
-                  className={`rounded-xl px-4 py-2 text-[10px] font-black tracking-widest font-space transition-all duration-300 ${
-                    planType === id
-                      ? "shadow-lg shadow-primary/20 scale-105"
-                      : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-                  }`}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="space-y-4 mt-6">
-        {loading ? (
-          <div className="p-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40">
-            <div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
-              Loading submissions...
-            </p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40">
-            <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
-              <MdFactCheck className="text-3xl text-gray-300" />
+              <div className="space-y-3 pt-6 md:pt-0 md:pl-6">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                    <MdFactCheck className="text-blue-600 text-sm" />
+                  </div>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] font-space">
+                    Plan Category
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(
+                    [
+                      ["all", "All Plans"],
+                      ["QUARTERLY_PLANNING", "Quarterly"],
+                      ["DEPARTMENT_OBJECTIVE", "Department"],
+                      ["MONTHLY_PLAN", "Monthly"],
+                      ["WEEKLY_PLAN", "Weekly"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <Button
+                      key={id}
+                      variant={planType === id ? "primary" : "ghost"}
+                      size="sm"
+                      onClick={() => setPlanType(id)}
+                      className={`rounded-xl px-4 py-2 text-[10px] font-black tracking-widest font-space transition-all duration-300 ${
+                        planType === id
+                          ? "shadow-lg shadow-primary/20 scale-105"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                      }`}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <p className="text-gray-900 font-medium">All caught up!</p>
-            <p className="text-gray-500 text-xs">No submissions to review right now.</p>
           </div>
-        ) : (
-          filtered.map((sub) => (
-            <SubmissionReviewCard
-              key={sub.id}
-              submission={sub}
-              onApprove={(id) => openModal(id, "approve")}
-              onReject={(id) => openModal(id, "reject")}
-              onRefresh={load}
-            />
-          ))
-        )}
-      </div>
 
-      <ApprovalActionModal
-        isOpen={modalOpen}
-        onClose={() => !submitting && setModalOpen(false)}
-        itemSummary={
-          activeSubmissionId
-            ? `Submission #${activeSubmissionId} — ${
-                action === "approve" ? "Approve entire plan" : "Reject entire plan"
-              }`
-            : ""
-        }
-        action={action}
-        comment={comment}
-        onChangeComment={setComment}
-        onConfirm={confirm}
-        loading={submitting}
-      />
-      </>
+          <div className="space-y-4 mt-6">
+            {loading ? (
+              <div className="p-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40">
+                <div className="h-8 w-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
+                  Loading submissions...
+                </p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="p-12 flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40">
+                <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center">
+                  <MdFactCheck className="text-3xl text-gray-300" />
+                </div>
+                <p className="text-gray-900 font-medium">All caught up!</p>
+                <p className="text-gray-500 text-xs">
+                  No submissions to review right now.
+                </p>
+              </div>
+            ) : (
+              filtered.map((sub) => (
+                <SubmissionReviewCard
+                  key={sub.id}
+                  submission={sub}
+                  onApprove={(id) => openModal(id, "approve")}
+                  onReject={(id) => openModal(id, "reject")}
+                  onRefresh={load}
+                />
+              ))
+            )}
+          </div>
+
+          <ApprovalActionModal
+            isOpen={modalOpen}
+            onClose={() => !submitting && setModalOpen(false)}
+            itemSummary={
+              activeSubmissionId
+                ? `Submission #${activeSubmissionId} — ${
+                    action === "approve"
+                      ? "Approve entire plan"
+                      : "Reject entire plan"
+                  }`
+                : ""
+            }
+            action={action}
+            comment={comment}
+            onChangeComment={setComment}
+            onConfirm={confirm}
+            loading={submitting}
+          />
+        </>
       )}
     </>
   );
