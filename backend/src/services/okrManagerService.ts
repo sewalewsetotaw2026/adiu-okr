@@ -1430,6 +1430,28 @@ export async function getPlanningInsights(params: {
     };
   }
 
+  const cycle = await prisma.okrCycle.findUnique({
+    where: { id: params.cycleId },
+    select: { start_date: true, end_date: true },
+  });
+
+  let progressWhere: any = {};
+  if (cycle) {
+    if (params.monthNumber) {
+      const start = new Date(cycle.start_date);
+      start.setMonth(start.getMonth() + (Number(params.monthNumber) - 1));
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+      progressWhere = { created_at: { gte: start, lt: end } };
+    } else if (params.weekNumber) {
+      const start = new Date(cycle.start_date);
+      start.setDate(start.getDate() + (Number(params.weekNumber) - 1) * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      progressWhere = { created_at: { gte: start, lt: end } };
+    }
+  }
+
   const objectives = (await prisma.employeeObjective.findMany({
     where: {
       company_id: params.companyId,
@@ -1440,7 +1462,10 @@ export async function getPlanningInsights(params: {
       keyResults: {
         include: {
           _count: {
-            select: planCountSelect,
+            select: {
+              ...planCountSelect,
+              progressUpdates: { where: progressWhere },
+            },
           },
           monthlyPlans: {
             where: params.monthNumber
@@ -1481,6 +1506,7 @@ export async function getPlanningInsights(params: {
             },
           },
           progressUpdates: {
+            where: progressWhere,
             select: { created_at: true },
             orderBy: { created_at: "desc" },
             take: 1,

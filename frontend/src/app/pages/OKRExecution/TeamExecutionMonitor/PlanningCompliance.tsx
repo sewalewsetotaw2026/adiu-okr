@@ -371,7 +371,7 @@ export default function PlanningCompliancePage() {
       1,
       Math.floor(
         (cycleEndDate.getTime() - cycleStartDate.getTime()) /
-          (1000 * 60 * 60 * 24),
+        (1000 * 60 * 60 * 24),
       ) + 1,
     );
     const weeks = Math.ceil(diffDays / 7) || 1;
@@ -399,26 +399,41 @@ export default function PlanningCompliancePage() {
     return months.length > 0 ? months : [1];
   }, [cycleStartDate, cycleEndDate]);
 
-  const weekOptions = useMemo(
-    () =>
-      validWeeks.map((weekNumber) => {
-        const weekRange = cycle?.start_date
-          ? getCycleWeekRange(cycle.start_date, weekNumber)
-          : null;
+  const weekOptions = useMemo(() => {
+    if (!cycle?.start_date || !validWeeks) return [];
+
+    const start = parseLocalDate(cycle.start_date);
+    if (!start) return [];
+
+    // Calculate month boundaries
+    const monthStart = new Date(start);
+    monthStart.setMonth(monthStart.getMonth() + (selectedMonth - 1));
+    const monthEnd = new Date(monthStart);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+    return validWeeks
+      .map((weekNumber) => {
+        const weekRange = getCycleWeekRange(cycle.start_date, weekNumber);
+        if (!weekRange) return null;
+
+        // A week belongs to this month if its start date is within the month
+        const isChildOfSelectedMonth =
+          weekRange.start >= monthStart && weekRange.start < monthEnd;
+
+        if (!isChildOfSelectedMonth) return null;
+
         const weekEnd =
-          weekRange && cycleEndDate && weekRange.end > cycleEndDate
+          cycleEndDate && weekRange.end > cycleEndDate
             ? cycleEndDate
-            : weekRange?.end;
+            : weekRange.end;
+
         return {
           value: weekNumber,
-          label:
-            weekRange && weekEnd
-              ? `Week ${weekNumber} (${formatMonthDay(weekRange.start)} — ${formatMonthDay(weekEnd)})`
-              : `Week ${weekNumber}`,
+          label: `Week ${weekNumber} (${formatMonthDay(weekRange.start)} — ${formatMonthDay(weekEnd)})`,
         };
-      }),
-    [cycle?.start_date, cycleEndDate, validWeeks],
-  );
+      })
+      .filter((item): item is { value: number; label: string } => Boolean(item));
+  }, [cycle?.start_date, cycleEndDate, validWeeks, selectedMonth]);
 
   const dayOptions = useMemo<CycleDayOption[]>(() => {
     if (!cycle?.start_date) {
@@ -910,7 +925,7 @@ export default function PlanningCompliancePage() {
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end">
         <div className="flex-1 min-w-45">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
-            Employee
+            Employee Search
           </label>
           <div className="relative">
             <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -930,8 +945,8 @@ export default function PlanningCompliancePage() {
           <div className="relative">
             <MdBusiness className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <select
-              value={reportingDept}
-              onChange={(e) => setReportingDept(e.target.value)}
+              value={selectedDept}
+              onChange={(e) => setSelectedDept(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
               {departments.map((dept) => (
@@ -942,6 +957,7 @@ export default function PlanningCompliancePage() {
             </select>
           </div>
         </div>
+
         <div className="flex-1 min-w-37.5">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
             Reporting Cadence
@@ -949,20 +965,88 @@ export default function PlanningCompliancePage() {
           <div className="relative">
             <MdFilterList className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <select
-              value={reportingSource}
-              onChange={(e) => setReportingSource(e.target.value)}
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value as any)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
-              {/* <option value="All">All Sources</option> */}
               <option value="Quarterly">Quarterly</option>
               <option value="Monthly">Monthly</option>
               <option value="Weekly">Weekly</option>
               <option value="Daily">Daily</option>
-              {/* <option value="Key Result">Key Result</option>
-              <option value="Rollup">Rollup</option> */}
             </select>
           </div>
         </div>
+
+        {/* Hierarchical Sub-selectors */}
+        {selectedPeriod !== "Quarterly" && (
+          <div className="flex-1 min-w-30 animate-in fade-in slide-in-from-left-2">
+            <label className="text-xs font-bold text-gray-400 mb-1.5 block">
+              Select Month
+            </label>
+            <div className="relative">
+              <MdCalendarMonth className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+              >
+                {validMonths.map((m) => (
+                  <option key={m} value={m}>
+                    Month {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {(selectedPeriod === "Weekly" || selectedPeriod === "Daily") && (
+          <div className="flex-1 min-w-30 animate-in fade-in slide-in-from-left-2">
+            <label className="text-xs font-bold text-gray-400 mb-1.5 block">
+              Select Week
+            </label>
+            <div className="relative">
+              <MdViewWeek className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <select
+                value={selectedWeek}
+                onChange={(e) => setSelectedWeek(Number(e.target.value))}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+              >
+                {weekOptions.length === 0 ? (
+                  <option value="">No weeks</option>
+                ) : (
+                  weekOptions.map((week) => (
+                    <option key={week.value} value={week.value}>
+                      {week.label}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {selectedPeriod === "Daily" && (
+          <div className="flex-1 min-w-30 animate-in fade-in slide-in-from-left-2">
+            <label className="text-xs font-bold text-gray-400 mb-1.5 block">
+              Select Day
+            </label>
+            <div className="relative">
+              <MdAccessTime className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <select
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+              >
+                {dayOptions.map((day) => (
+                  <option key={day.value} value={day.value}>
+                    {day.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 min-w-45">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
@@ -983,11 +1067,14 @@ export default function PlanningCompliancePage() {
         </div>
 
         <button
-          onClick={resetReportingFilters}
+          onClick={() => {
+            setReportingSearch("");
+            setReportingStatus("All");
+          }}
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 transition-all text-sm self-end mb-0.5 cursor-pointer"
         >
           <MdRefresh className="text-lg" />
-          Reset
+          Clear
         </button>
       </div>
 
@@ -1130,8 +1217,8 @@ export default function PlanningCompliancePage() {
           <div className="relative">
             <MdBusiness className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <select
-              value={summaryDept}
-              onChange={(e) => setSummaryDept(e.target.value)}
+              value={selectedDept}
+              onChange={(e) => setSelectedDept(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
               {departments.map((dept) => (
@@ -1228,7 +1315,7 @@ export default function PlanningCompliancePage() {
           </div>
         )}
 
-        {/* <div className="flex-1 min-w-37.5">
+        <div className="flex-1 min-w-37.5">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
             Status
           </label>
@@ -1248,7 +1335,7 @@ export default function PlanningCompliancePage() {
               <option value="Blocked">Blocked</option>
             </select>
           </div>
-        </div> */}
+        </div>
 
         <button
           onClick={resetSummaryFilters}
@@ -1415,33 +1502,30 @@ export default function PlanningCompliancePage() {
           <div className="flex gap-4 mb-8">
             <button
               onClick={() => setActiveMainTab("planning")}
-              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${
-                activeMainTab === "planning"
+              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${activeMainTab === "planning"
                   ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
                   : "bg-white text-gray-500 border-gray-100 hover:border-primary/30 hover:bg-primary/5"
-              }`}
+                }`}
             >
               <MdOutlinePlaylistAddCheck className="text-2xl" />
               Planning
             </button>
             <button
               onClick={() => setActiveMainTab("reporting")}
-              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${
-                activeMainTab === "reporting"
+              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${activeMainTab === "reporting"
                   ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
                   : "bg-white text-gray-500 border-gray-100 hover:border-primary/30 hover:bg-primary/5"
-              }`}
+                }`}
             >
               <MdBarChart className="text-2xl" />
               Reporting
             </button>
             <button
               onClick={() => setActiveMainTab("progress")}
-              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${
-                activeMainTab === "progress"
+              className={`flex-1 py-4 px-6 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 border-2 ${activeMainTab === "progress"
                   ? "bg-primary text-white border-primary shadow-lg shadow-primary/20"
                   : "bg-white text-gray-500 border-gray-100 hover:border-primary/30 hover:bg-primary/5"
-              }`}
+                }`}
             >
               <MdTimeline className="text-2xl" />
               Progress Summary
