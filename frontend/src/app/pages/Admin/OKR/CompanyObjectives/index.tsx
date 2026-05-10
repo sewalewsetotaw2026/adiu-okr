@@ -538,7 +538,7 @@ export default function CompanyObjectives() {
                     Create your first company objective, then add key results
                     and assign owning departments from the detail view.
                   </p>
-                  <Button
+                  {/* <Button
                     variant="primary"
                     size="sm"
                     icon={MdAdd}
@@ -567,7 +567,7 @@ export default function CompanyObjectives() {
                       )
                       ? "Limit Reached"
                       : "Create Objective"}
-                  </Button>
+                  </Button> */}
                 </div>
               ) : filteredObjectives.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gray-200 bg-white/80 px-8 py-16 text-center">
