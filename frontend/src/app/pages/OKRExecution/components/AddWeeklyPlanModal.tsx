@@ -60,12 +60,12 @@ interface SubtaskForm {
   alignedManagerPlanId: string | number | "";
 }
 
-function makeSubtask(): SubtaskForm {
+function makeSubtask(defaultWeight?: string | number): SubtaskForm {
   return {
     id: Math.random().toString(36).slice(2),
     weekNumber: "",
     title: "",
-    weight: "",
+    weight: defaultWeight != null ? String(defaultWeight) : "",
     metricDefinitionId: "",
     startValue: "0",
     targetValue: "",
@@ -235,6 +235,8 @@ export default function AddWeeklyPlanModal({
 
   const handleSelectPlan = (id: string) => {
     setSelectedMonthlyId(id);
+    const remaining = allocations[id]?.remaining_pct ?? 100;
+    setSubtasks([makeSubtask(remaining)]);
     setStep(2);
   };
 
@@ -332,7 +334,7 @@ export default function AddWeeklyPlanModal({
       const next = prev === "compact" ? "full" : "compact";
       try {
         localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -420,7 +422,12 @@ export default function AddWeeklyPlanModal({
               allocatedPct={allocatedPct}
               subtasks={subtasks}
               onUpdateSubtask={updateSubtask}
-              onAddSubtask={() => setSubtasks((p) => [...p, makeSubtask()])}
+              onAddSubtask={() =>
+                setSubtasks((p) => [
+                  ...p,
+                  makeSubtask(Math.max(0, remainingPct - totalSubtaskWeight)),
+                ])
+              }
               onRemoveSubtask={(id) =>
                 setSubtasks((p) => p.filter((s) => s.id !== id))
               }
@@ -457,7 +464,10 @@ export default function AddWeeklyPlanModal({
                     subtasks={subtasks}
                     onUpdateSubtask={updateSubtask}
                     onAddSubtask={() =>
-                      setSubtasks((p) => [...p, makeSubtask()])
+                      setSubtasks((p) => [
+                        ...p,
+                        makeSubtask(Math.max(0, remainingPct - totalSubtaskWeight)),
+                      ])
                     }
                     onRemoveSubtask={(id) =>
                       setSubtasks((p) => p.filter((s) => s.id !== id))
@@ -754,8 +764,8 @@ function ConfigurePanel({
             managerWeeklyPlans={
               st.weekNumber
                 ? managerWeeklyPlans.filter(
-                    (mp) => mp.week_number === st.weekNumber,
-                  )
+                  (mp) => mp.week_number === st.weekNumber,
+                )
                 : []
             }
             loadingManagerWeekly={loadingManagerWeekly}

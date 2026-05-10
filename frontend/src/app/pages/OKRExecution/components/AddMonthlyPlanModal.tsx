@@ -72,15 +72,13 @@ interface SubtaskForm {
   contributeToScore: boolean;
   contributeToValue: boolean;
   alignedManagerPlanId: string | number | "";
-}
-
-function makeSubtask(): SubtaskForm {
+}function makeSubtask(defaultWeight?: string | number): SubtaskForm {
   return {
     id: Math.random().toString(36).slice(2),
     monthNumber: "",
     title: "",
     description: "",
-    weight: "",
+    weight: defaultWeight != null ? String(defaultWeight) : "",
     metricDefinitionId: "",
     startValue: "0",
     targetValue: "",
@@ -173,13 +171,17 @@ export default function AddMonthlyPlanModal({
     if (!isOpen) return;
     setStep(1);
     setSelectedKrId(preselectedKrId ?? null);
-    const first = makeSubtask();
+    
+    // Initial subtask setup
+    const initialRemaining = preselectedKrId ? krWeights[preselectedKrId]?.remaining_pct : 100;
+    const first = makeSubtask(initialRemaining ?? 100);
     if (preselectedMonth) first.monthNumber = preselectedMonth;
     setSubtasks([first]);
+    
     setError(null);
     setFieldErrors({});
     setSubmitting(false);
-  }, [isOpen, preselectedKrId, preselectedMonth]);
+  }, [isOpen, preselectedKrId, preselectedMonth, krWeights]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -239,6 +241,8 @@ export default function AddMonthlyPlanModal({
 
   const handleSelectKr = (id: string) => {
     setSelectedKrId(id);
+    const remaining = krWeights[id]?.remaining_pct ?? 100;
+    setSubtasks([makeSubtask(remaining)]);
     setStep(2);
   };
 
@@ -337,7 +341,7 @@ export default function AddMonthlyPlanModal({
       const next = prev === "compact" ? "full" : "compact";
       try {
         localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -426,7 +430,12 @@ export default function AddMonthlyPlanModal({
               allocatedPct={allocatedPct}
               subtasks={subtasks}
               onUpdateSubtask={updateSubtask}
-              onAddSubtask={() => setSubtasks((p) => [...p, makeSubtask()])}
+              onAddSubtask={() =>
+                setSubtasks((p) => [
+                  ...p,
+                  makeSubtask(Math.max(0, remainingPct - totalSubtaskWeight)),
+                ])
+              }
               onRemoveSubtask={(id) =>
                 setSubtasks((p) => p.filter((s) => s.id !== id))
               }
@@ -461,7 +470,12 @@ export default function AddMonthlyPlanModal({
                   allocatedPct={allocatedPct}
                   subtasks={subtasks}
                   onUpdateSubtask={updateSubtask}
-                  onAddSubtask={() => setSubtasks((p) => [...p, makeSubtask()])}
+                  onAddSubtask={() =>
+                    setSubtasks((p) => [
+                      ...p,
+                      makeSubtask(Math.max(0, remainingPct - totalSubtaskWeight)),
+                    ])
+                  }
                   onRemoveSubtask={(id) =>
                     setSubtasks((p) => p.filter((s) => s.id !== id))
                   }
