@@ -8,6 +8,7 @@ import { publishCompanyObjectiveSet } from "./okrPublishOrchestrator";
 import { getOrCreateFallbackMetric } from "./okrMetricService";
 import { resolveConfigValue } from "./okrConfigResolverService";
 import { validateSafePublish } from "./okrValidationService";
+import { recalculateRollUp } from "./okrRollupService";
 
 export async function resolveDepartmentHeadEmployeeIds(
   companyId: number,
@@ -393,6 +394,7 @@ interface CreateKRInput {
   metricDefinitionId: number;
   unitOfMeasure?: string;
   targetValue?: number;
+  startValue?: number;
   currentValue?: number;
   weightPercent?: number;
   contributesToScore?: boolean;
@@ -527,6 +529,7 @@ export async function createKeyResult(input: CreateKRInput) {
         metric_definition_id: metricId,
         unit_of_measure: input.unitOfMeasure,
         target_value: input.targetValue,
+        start_value: input.startValue ?? 0,
         weight_percent: input.weightPercent,
         contributes_to_objective_score: input.contributesToScore ?? true,
         contributes_to_objective_value: input.contributesToValue ?? true,
@@ -644,6 +647,7 @@ export async function updateKeyResult(
         metric_definition_id: input.metricDefinitionId,
         unit_of_measure: input.unitOfMeasure,
         target_value: input.targetValue,
+        start_value: input.startValue,
         weight_percent: input.weightPercent,
         contributes_to_objective_score: input.contributesToScore,
         contributes_to_objective_value: input.contributesToValue,
@@ -809,6 +813,11 @@ export async function updateKeyResult(
     actorId: kr.created_by,
     action: "kr_updated",
     description: `Company KR "${result.title}" updated.${input.assignUserIds ? ` User assignments synced.` : ""}`,
+  });
+
+  // Trigger rollup to recompute score if target/baseline changed
+  await recalculateRollUp("company_key_result", id).catch((err: any) => {
+    console.error(`[AutoRollup] Failed for company_kr ${id}:`, err.message);
   });
 
   return result;

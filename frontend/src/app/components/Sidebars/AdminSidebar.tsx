@@ -214,7 +214,7 @@ export default function AdminSidebar() {
     },
     {
       to: routeConstants.okrPlanningCompliance,
-      label: "Planning Compliance",
+      label: "Compliance",
       icon: MdCheckCircle,
     },
     {

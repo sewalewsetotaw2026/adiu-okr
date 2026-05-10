@@ -288,6 +288,7 @@ model CompanyKeyResult {
   metric_definition_id           Int
   unit_of_measure                String?               @db.VarChar(30)
   target_value                   Decimal?              @db.Decimal(18, 4)
+  start_value                    Decimal?              @default(0) @db.Decimal(18, 4)
   weight_percent                 Decimal?              @db.Decimal(7, 2)
   contributes_to_objective_score Boolean               @default(true)
   contributes_to_objective_value Boolean               @default(true)
@@ -422,6 +423,7 @@ model EmployeeKeyResult {
   metric_definition_id           Int
   unit_of_measure                String?             @db.VarChar(30)
   target_value                   Decimal?            @db.Decimal(18, 4)
+  start_value                    Decimal?            @default(0) @db.Decimal(18, 4)
   weight_percent                 Decimal?            @db.Decimal(7, 2)
   contributes_to_objective_score Boolean             @default(true)
   contributes_to_objective_value Boolean             @default(true)

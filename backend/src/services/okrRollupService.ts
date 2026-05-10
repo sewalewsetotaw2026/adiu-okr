@@ -15,7 +15,10 @@ import {
  * instead of weighted score aggregation.
  */
 function isValueBasedProgressMetric(metricDefinition: any): boolean {
-  return metricDefinition?.value_based_progress === true;
+  return (
+    metricDefinition?.value_based_progress === true ||
+    metricDefinition?.is_financial === true
+  );
 }
 
 function clampPercent(value: Decimal) {
@@ -399,8 +402,14 @@ async function _rollupEmployeeObjectiveInternal(
     let totalValue = new Decimal(0);
     let allMandatoryComplete = true;
 
+    let totalStart = new Decimal(0);
+    let totalTarget = new Decimal(0);
+
     for (const kr of updatedKRs) {
       totalValue = totalValue.add(kr.final_value ?? new Decimal(0));
+      totalStart = totalStart.add(toDecimal((kr as any).start_value) ?? new Decimal(0));
+      totalTarget = totalTarget.add(toDecimal(kr.target_value) ?? new Decimal(0));
+
       if (
         kr.is_mandatory_for_completion &&
         (!kr.final_score || kr.final_score.lt(100))
@@ -410,16 +419,11 @@ async function _rollupEmployeeObjectiveInternal(
     }
 
     // Use the objective's own target_value if available, otherwise sum KR targets
-    const objTargetValue =
-      toDecimal((objective as any).target_value) ??
-      updatedKRs.reduce(
-        (sum: Decimal, kr: any) =>
-          sum.add(toDecimal(kr.target_value) ?? new Decimal(0)),
-        new Decimal(0),
-      );
+    const objTargetValue = toDecimal((objective as any).target_value) ?? totalTarget;
+    const objStartValue = toDecimal((objective as any).start_value) ?? totalStart;
 
-    const finalScore = objTargetValue.gt(0)
-      ? clampPercent(totalValue.div(objTargetValue).mul(100))
+    const finalScore = objTargetValue.sub(objStartValue).gt(0)
+      ? clampPercent(totalValue.sub(objStartValue).div(objTargetValue.sub(objStartValue)).mul(100))
       : new Decimal(0);
 
     await tx.employeeObjective.update({
@@ -750,8 +754,9 @@ export async function rollupEmployeeKR(
   // For KRs, this means the final_score should be (totalValue / targetValue) * 100.
   if (isValueBased) {
     const target = toDecimal(empKr.target_value) ?? new Decimal(0);
-    finalScore = target.gt(0)
-      ? clampPercent(sourceValue.div(target).mul(100))
+    const start = toDecimal((empKr as any).start_value) ?? new Decimal(0);
+    finalScore = target.sub(start).gt(0)
+      ? clampPercent(sourceValue.sub(start).div(target.sub(start)).mul(100))
       : new Decimal(0);
   }
 
@@ -931,8 +936,9 @@ export async function rollupDepartmentKR(
 
   if (isValueBased) {
     const target = toDecimal(deptKr.target_value) ?? new Decimal(0);
-    finalScore = target.gt(0)
-      ? clampPercent(sourceValue.div(target).mul(100))
+    const start = toDecimal((deptKr as any).start_value) ?? new Decimal(0);
+    finalScore = target.sub(start).gt(0)
+      ? clampPercent(sourceValue.sub(start).div(target.sub(start)).mul(100))
       : new Decimal(0);
   }
 
@@ -983,11 +989,67 @@ export async function rollupDepartmentObjective(
     await rollupDepartmentKR(kr.id, tx);
   }
 
-  // Re-fetch
+  // Re-fetch after score update
   const updatedKRs = await tx.employeeKeyResult.findMany({
     where: { employee_objective_id: deptObjectiveId },
     include: { metricDefinition: true },
   });
+
+  // ── VALUE-BASED PROGRESS FOR OBJECTIVE ──
+  const valueBasedKRs = updatedKRs.filter((kr: any) =>
+    isValueBasedProgressMetric(kr.metricDefinition),
+  );
+  const allKRsValueBased =
+    updatedKRs.length > 0 && valueBasedKRs.length === updatedKRs.length;
+
+  if (allKRsValueBased) {
+    let totalValue = new Decimal(0);
+    let totalStart = new Decimal(0);
+    let totalTarget = new Decimal(0);
+
+    for (const kr of updatedKRs) {
+      totalValue = totalValue.add(kr.final_value ?? new Decimal(0));
+      totalStart = totalStart.add(toDecimal((kr as any).start_value) ?? new Decimal(0));
+      totalTarget = totalTarget.add(toDecimal(kr.target_value) ?? new Decimal(0));
+    }
+
+    // Use objective's own baseline if available, otherwise sum KRs
+    const objTargetValue = toDecimal((objective as any).target_value) ?? totalTarget;
+    const objStartValue = toDecimal((objective as any).start_value) ?? totalStart;
+
+    const finalScore = objTargetValue.sub(objStartValue).gt(0)
+      ? clampPercent(totalValue.sub(objStartValue).div(objTargetValue.sub(objStartValue)).mul(100))
+      : new Decimal(0);
+
+    await tx.employeeObjective.update({
+      where: { id: deptObjectiveId },
+      data: {
+        final_score: finalScore,
+        final_value: totalValue,
+        indirect_score: new Decimal(0),
+        indirect_value: new Decimal(0),
+      },
+    });
+
+    if (!skipUpward) {
+      const obj = await tx.employeeObjective.findUnique({
+        where: { id: deptObjectiveId },
+        select: { chosen_parent_kr_id: true },
+      });
+      if (obj?.chosen_parent_kr_id) {
+        await rollupCompanyKR(obj.chosen_parent_kr_id, tx);
+      }
+    }
+
+    return {
+      deptObjectiveId,
+      finalScore,
+      finalValue: totalValue,
+      indirectScore: new Decimal(0),
+      indirectValue: new Decimal(0),
+    };
+  }
+  // ── END VALUE-BASED PROGRESS FOR OBJECTIVE ──
 
   let totalWeight = new Decimal(0);
   let weightedScoreSum = new Decimal(0);
@@ -1136,7 +1198,11 @@ export async function rollupDepartmentObjective(
 export async function rollupCompanyKR(companyKrId: number, tx: any = prisma) {
   const companyKr = await tx.companyKeyResult.findUnique({
     where: { id: companyKrId },
-    include: { metricDefinition: true },
+    include: {
+      metricDefinition: true,
+      departments: { select: { id: true } },
+      contributors: { select: { id: true } },
+    },
   });
   if (!companyKr) throw new Error("Company KR not found.");
   const metric = companyKr.metricDefinition;
@@ -1163,9 +1229,17 @@ export async function rollupCompanyKR(companyKrId: number, tx: any = prisma) {
       const allCompleted = scores.every((s: Decimal) => s.gte(100));
       avgScore = allCompleted ? new Decimal(100) : new Decimal(0);
     } else {
-      avgScore = scores
-        .reduce((sum: Decimal, s: Decimal) => sum.add(s), new Decimal(0))
-        .div(scores.length);
+      const sum = scores.reduce(
+        (acc: Decimal, s: Decimal) => acc.add(s),
+        new Decimal(0),
+      );
+      // Average across all assigned departments/contributors, not just those who have reporting objectives
+      const assignedCount = Math.max(
+        1,
+        companyKr.departments.length,
+        companyKr.contributors.length,
+      );
+      avgScore = sum.div(assignedCount);
     }
   }
   const totalValue = refreshedDeptObjs.reduce(
@@ -1185,10 +1259,21 @@ export async function rollupCompanyKR(companyKrId: number, tx: any = prisma) {
     new Decimal(0),
   );
 
+  const isValueBased = isValueBasedProgressMetric(metric);
+
+  let finalScore = avgScore;
+  if (isValueBased) {
+    const target = toDecimal(companyKr.target_value) ?? new Decimal(0);
+    const start = toDecimal((companyKr as any).start_value) ?? new Decimal(0);
+    finalScore = target.sub(start).gt(0)
+      ? clampPercent(totalValue.sub(start).div(target.sub(start)).mul(100))
+      : new Decimal(0);
+  }
+
   await tx.companyKeyResult.update({
     where: { id: companyKrId },
     data: {
-      final_score: avgScore,
+      final_score: finalScore,
       final_value: totalValue,
       indirect_score: avgIndirectScore,
       indirect_value: totalIndirectValue,
@@ -1238,6 +1323,51 @@ export async function rollupCompanyObjective(
     where: { objective_id: companyObjectiveId },
     include: { metricDefinition: true },
   });
+
+  // ── VALUE-BASED PROGRESS FOR OBJECTIVE ──
+  const valueBasedKRs = updatedKRs.filter((kr: any) =>
+    isValueBasedProgressMetric(kr.metricDefinition),
+  );
+  const allKRsValueBased =
+    updatedKRs.length > 0 && valueBasedKRs.length === updatedKRs.length;
+
+  if (allKRsValueBased) {
+    let totalValue = new Decimal(0);
+    let totalStart = new Decimal(0);
+    let totalTarget = new Decimal(0);
+
+    for (const kr of updatedKRs) {
+      totalValue = totalValue.add(kr.final_value ?? new Decimal(0));
+      totalStart = totalStart.add(toDecimal((kr as any).start_value) ?? new Decimal(0));
+      totalTarget = totalTarget.add(toDecimal(kr.target_value) ?? new Decimal(0));
+    }
+
+    const objTargetValue = toDecimal((objective as any).target_value) ?? totalTarget;
+    const objStartValue = toDecimal((objective as any).start_value) ?? totalStart;
+
+    const finalScore = objTargetValue.sub(objStartValue).gt(0)
+      ? clampPercent(totalValue.sub(objStartValue).div(objTargetValue.sub(objStartValue)).mul(100))
+      : new Decimal(0);
+
+    await tx.companyObjective.update({
+      where: { id: companyObjectiveId },
+      data: {
+        final_score: finalScore,
+        final_value: totalValue,
+        indirect_score: new Decimal(0),
+        indirect_value: new Decimal(0),
+      },
+    });
+
+    return {
+      companyObjectiveId,
+      finalScore,
+      finalValue: totalValue,
+      indirectScore: new Decimal(0),
+      indirectValue: new Decimal(0),
+    };
+  }
+  // ── END VALUE-BASED PROGRESS FOR OBJECTIVE ──
 
   let totalWeight = new Decimal(0);
   let weightedScoreSum = new Decimal(0);

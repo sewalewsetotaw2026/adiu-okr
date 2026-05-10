@@ -53,6 +53,7 @@ export default function KRModal({
     description: "",
     weight: "",
     targetValue: "",
+    startValue: "",
     unitOfMeasure: "",
     metricDefinitionId: "",
     assignedIds: [] as any[],
@@ -112,6 +113,7 @@ export default function KRModal({
           description: editingKR.description || "",
           weight: String(editingKR.weight_percent ?? editingKR.weight ?? ""),
           targetValue: String(editingKR.target_value ?? editingKR.targetValue ?? ""),
+          startValue: String(editingKR.start_value ?? editingKR.startValue ?? ""),
           unitOfMeasure: editingKR.unit_of_measure ?? editingKR.unitOfMeasure ?? "",
           metricDefinitionId: String(editingKR.metric_definition_id ?? editingKR.metricDefinitionId ?? ""),
           assignedIds,
@@ -127,6 +129,7 @@ export default function KRModal({
           description: "",
           weight: "",
           targetValue: "",
+          startValue: "",
           unitOfMeasure: "",
           metricDefinitionId: "",
           assignedIds: [],
@@ -270,6 +273,7 @@ export default function KRModal({
         description: form.description,
         weight_percent: Number(form.weight) || 0,
         target_value: isBinaryMetric ? null : Number(form.targetValue) || 0,
+        start_value: isBinaryMetric ? null : Number(form.startValue) || 0,
         unit_of_measure: form.unitOfMeasure,
         metric_definition_id: Number(form.metricDefinitionId) || null,
         contributes_to_score: form.contributesToScore,
@@ -514,6 +518,21 @@ export default function KRModal({
                     placeholder="0.00"
                     value={form.targetValue}
                     onChange={(e) => setForm({ ...form, targetValue: e.target.value })}
+                  />
+                </div>
+              )}
+
+              {!isBinaryMetric && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Baseline (Start Value)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm focus:border-primary focus:ring-0 transition-all"
+                    placeholder="0.00"
+                    value={form.startValue}
+                    onChange={(e) => setForm({ ...form, startValue: e.target.value })}
                   />
                 </div>
               )}

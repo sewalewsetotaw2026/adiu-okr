@@ -189,7 +189,7 @@ export default function EmployeeSidebar() {
 
     {
       path: routeConstants.okrPlanningCompliance,
-      label: "Planning compliance",
+      label: "Compliance",
       icon: MdCheckCircle,
       visible: true,
     },

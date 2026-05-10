@@ -808,6 +808,7 @@ interface CreateEmployeeKRInput {
   metricDefinitionId: number;
   unitOfMeasure?: string;
   targetValue?: number;
+  startValue?: number;
   weightPercent?: number;
   contributesToScore?: boolean;
   contributesToValue?: boolean;
@@ -925,6 +926,7 @@ export async function createEmployeeKR(input: CreateEmployeeKRInput) {
       metric_definition_id: metricId,
       unit_of_measure: input.unitOfMeasure,
       target_value: input.targetValue,
+      start_value: input.startValue ?? 0,
       weight_percent: input.weightPercent,
       contributes_to_objective_score: input.contributesToScore ?? true,
       contributes_to_objective_value: input.contributesToValue ?? true,
@@ -1057,7 +1059,7 @@ export async function updateEmployeeKR(
     }
   }
 
-  return prisma.employeeKeyResult.update({
+  const updated = await prisma.employeeKeyResult.update({
     where: { id },
     data: {
       title: input.title,
@@ -1065,6 +1067,7 @@ export async function updateEmployeeKR(
       metric_definition_id: input.metricDefinitionId,
       unit_of_measure: input.unitOfMeasure,
       target_value: input.targetValue,
+      start_value: input.startValue,
       weight_percent: input.weightPercent,
       contributes_to_objective_score: input.contributesToScore,
       contributes_to_objective_value: input.contributesToValue,
@@ -1072,6 +1075,9 @@ export async function updateEmployeeKR(
     },
     include: { metricDefinition: true },
   });
+
+  await tryRollupChain("employee_key_result", id, "KR updated");
+  return updated;
 }
 
 export async function deleteEmployeeKR(
@@ -1956,3 +1962,4 @@ export async function bulkSubmitEmployee(
     submittedKeyResults,
   };
 }
+
