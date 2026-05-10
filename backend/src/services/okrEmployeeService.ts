@@ -404,6 +404,24 @@ export async function listAssignedKRsForEmployee(
     }
   }
 
+  // 2. Filter out self-owned KRs (where the user is already the owner of the objective containing the KR)
+  // to prevent "adoption loops" where a user adopts their own Key Result.
+  if (!includeAdopted) {
+    const originalCount = assignments.length;
+    assignments = assignments.filter((a) => {
+      if (a.employeeKr?.employeeObjective?.user_id) {
+        const ownerId = String(a.employeeKr.employeeObjective.user_id);
+        if (idVariants.includes(ownerId)) return false;
+      }
+      return true;
+    });
+    if (assignments.length < originalCount) {
+      console.log(
+        `[DEBUG listAssignedKRs] Filtered out ${originalCount - assignments.length} self-owned KRs.`,
+      );
+    }
+  }
+
   console.log(
     `[DEBUG listAssignedKRs] Found ${assignments.length} total (inc dept) assignments:`,
     assignments.map((a) => ({
@@ -570,18 +588,18 @@ export async function adoptAssignedKR(
         ? { id: input.contributorId }
         : {}),
       ...((!input.contributorId || input.contributorId <= 0) &&
-      input.companyKrId
+        input.companyKrId
         ? {
-            company_kr_id: input.companyKrId,
-            user_id: input.assignmentUserId,
-          }
+          company_kr_id: input.companyKrId,
+          user_id: input.assignmentUserId,
+        }
         : {}),
       ...((!input.contributorId || input.contributorId <= 0) &&
-      input.employeeKrId
+        input.employeeKrId
         ? {
-            employee_kr_id: input.employeeKrId,
-            user_id: input.assignmentUserId,
-          }
+          employee_kr_id: input.employeeKrId,
+          user_id: input.assignmentUserId,
+        }
         : {}),
     },
     include: {
@@ -1524,7 +1542,7 @@ export async function submitProgressUpdate(input: SubmitProgressInput) {
           data: {
             current_value:
               measurement.currentValue !== null &&
-              measurement.currentValue !== undefined
+                measurement.currentValue !== undefined
                 ? String(measurement.currentValue)
                 : weeklyPlan.current_value,
             progress_pct: measurement.finalScore ?? weeklyPlan.progress_pct,
@@ -1938,4 +1956,3 @@ export async function bulkSubmitEmployee(
     submittedKeyResults,
   };
 }
-
