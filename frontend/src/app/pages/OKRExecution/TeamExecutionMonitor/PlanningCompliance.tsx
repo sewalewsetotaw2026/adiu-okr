@@ -1228,7 +1228,7 @@ export default function PlanningCompliancePage() {
           </div>
         )}
 
-        <div className="flex-1 min-w-37.5">
+        {/* <div className="flex-1 min-w-37.5">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
             Status
           </label>
@@ -1248,7 +1248,7 @@ export default function PlanningCompliancePage() {
               <option value="Blocked">Blocked</option>
             </select>
           </div>
-        </div>
+        </div> */}
 
         <button
           onClick={resetSummaryFilters}
