@@ -81,10 +81,10 @@ export default function KeyResultListItem({
   const displayIndex = index !== undefined ? index + 1 : null;
 
   return (
-    <div className="group relative bg-white p-5 pt-12 rounded-2xl border border-slate-200 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
+    <div className="group relative bg-white p-5 pt-14 rounded-2xl border border-slate-200 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
       {displayIndex !== null && (
-        <div className="absolute top-4 left-4 z-10 w-8 h-8 rounded-full bg-primary text-white text-xs font-black flex items-center justify-center shadow-lg shadow-primary/20 ring-4 ring-white">
-          {displayIndex}
+        <div className="absolute top-4 left-4 z-10 px-3 h-7 rounded-full bg-primary text-white text-[9px] font-black flex items-center justify-center shadow-lg shadow-primary/20 ring-4 ring-white uppercase tracking-widest font-space whitespace-nowrap">
+          Key Result {displayIndex}
         </div>
       )}
       <div className="flex flex-col lg:flex-row gap-6">

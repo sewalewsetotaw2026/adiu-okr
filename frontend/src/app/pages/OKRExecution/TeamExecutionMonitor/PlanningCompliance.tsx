@@ -944,7 +944,7 @@ export default function PlanningCompliancePage() {
         </div>
         <div className="flex-1 min-w-37.5">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
-            Planning Cadence
+            Reporting Cadence
           </label>
           <div className="relative">
             <MdFilterList className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -953,13 +953,13 @@ export default function PlanningCompliancePage() {
               onChange={(e) => setReportingSource(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
-              <option value="All">All Sources</option>
+              {/* <option value="All">All Sources</option> */}
               <option value="Quarterly">Quarterly</option>
               <option value="Monthly">Monthly</option>
               <option value="Weekly">Weekly</option>
               <option value="Daily">Daily</option>
-              <option value="Key Result">Key Result</option>
-              <option value="Rollup">Rollup</option>
+              {/* <option value="Key Result">Key Result</option>
+              <option value="Rollup">Rollup</option> */}
             </select>
           </div>
         </div>
@@ -1145,7 +1145,7 @@ export default function PlanningCompliancePage() {
 
         <div className="flex-1 min-w-37.5">
           <label className="text-xs font-bold text-gray-400 mb-1.5 block">
-            Planning Cadence
+            Reporting Cadence
           </label>
           <div className="relative">
             <MdAccessTime className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />

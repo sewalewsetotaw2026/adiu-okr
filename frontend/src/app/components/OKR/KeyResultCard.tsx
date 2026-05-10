@@ -53,12 +53,12 @@ export default function KeyResultCard({
       <div className="absolute left-0 top-0 h-full w-2 bg-slate-50 group-hover:bg-gradient-to-b group-hover:from-primary group-hover:to-primary-600 transition-all duration-500" />
 
       {index !== undefined && (
-        <div className="absolute top-4 left-4 z-10 w-8 h-8 rounded-full bg-primary text-white text-xs font-black flex items-center justify-center shadow-lg shadow-primary/20 ring-4 ring-white">
-          {index + 1}
+        <div className="absolute top-4 left-4 z-10 px-3 h-8 rounded-full bg-primary text-white text-[10px] font-black flex items-center justify-center shadow-lg shadow-primary/20 ring-4 ring-white uppercase tracking-widest font-space whitespace-nowrap">
+          Key Result {index + 1}
         </div>
       )}
 
-      <div className="pl-14 pr-8 py-7">
+      <div className="pl-32 pr-8 py-7">
         {/* Header Row */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
           <div className="min-w-0 flex-1 space-y-3">
