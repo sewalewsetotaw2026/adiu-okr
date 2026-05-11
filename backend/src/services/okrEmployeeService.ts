@@ -406,21 +406,21 @@ export async function listAssignedKRsForEmployee(
 
   // 2. Filter out self-owned KRs (where the user is already the owner of the objective containing the KR)
   // to prevent "adoption loops" where a user adopts their own Key Result.
-  // if (!includeAdopted) {
-  //   const originalCount = assignments.length;
-  //   assignments = assignments.filter((a) => {
-  //     if (a.employeeKr?.employeeObjective?.user_id) {
-  //       const ownerId = String(a.employeeKr.employeeObjective.user_id);
-  //       if (idVariants.includes(ownerId)) return false;
-  //     }
-  //     return true;
-  //   });
-  //   if (assignments.length < originalCount) {
-  //     console.log(
-  //       `[DEBUG listAssignedKRs] Filtered out ${originalCount - assignments.length} self-owned KRs.`,
-  //     );
-  //   }
-  // }
+  if (!includeAdopted) {
+    const originalCount = assignments.length;
+    assignments = assignments.filter((a) => {
+      if (a.employeeKr?.employeeObjective?.user_id) {
+        const ownerId = String(a.employeeKr.employeeObjective.user_id);
+        if (idVariants.includes(ownerId)) return false;
+      }
+      return true;
+    });
+    if (assignments.length < originalCount) {
+      console.log(
+        `[DEBUG listAssignedKRs] Filtered out ${originalCount - assignments.length} self-owned KRs.`,
+      );
+    }
+  }
 
   console.log(
     `[DEBUG listAssignedKRs] Found ${assignments.length} total (inc dept) assignments:`,
