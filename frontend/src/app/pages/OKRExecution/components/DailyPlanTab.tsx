@@ -128,9 +128,18 @@ export default function DailyPlanTab({
     if (!cycleStartDate) return;
     const start = parseLocalDate(cycleStartDate);
     if (!start) return;
+
+    // Align to Monday of first week for consistent week numbering
+    const day = start.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const mondayOfFirstWeek = new Date(start);
+    mondayOfFirstWeek.setDate(start.getDate() + diffToMonday);
+
     const now = new Date();
-    const diff = now.getTime() - start.getTime();
-    const weekNum = Math.ceil(diff / (7 * 24 * 60 * 60 * 1000));
+    // Use the difference from MondayOfFirstWeek to determine which week we are in
+    const diff = now.getTime() - mondayOfFirstWeek.getTime();
+    const weekNum = Math.floor(diff / (7 * 24 * 60 * 60 * 1000)) + 1;
+
     // Limit to 13 weeks for a quarter
     setSelectedWeek(Math.min(13, Math.max(1, weekNum)));
   }, [cycleStartDate]);
@@ -461,9 +470,7 @@ export default function DailyPlanTab({
           const fallbackTodayDay =
             DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1] ??
             "MONDAY";
-          const isToday = plannedDate
-            ? formatDateInput(plannedDate) === todayKey
-            : day === fallbackTodayDay;
+          const isToday = (plannedDate && formatDateInput(plannedDate) === todayKey) || day === fallbackTodayDay;
 
           return (
             <div

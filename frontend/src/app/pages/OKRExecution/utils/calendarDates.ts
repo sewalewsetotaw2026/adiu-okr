@@ -47,7 +47,14 @@ export const getCycleWeekRange = (
 ) => {
   const start = parseLocalDate(cycleStartDate);
   if (!start) return null;
-  const rangeStart = new Date(start);
+
+  // Align to the Monday of the week containing cycleStartDate
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const mondayOfFirstWeek = new Date(start);
+  mondayOfFirstWeek.setDate(start.getDate() + diffToMonday);
+
+  const rangeStart = new Date(mondayOfFirstWeek);
   rangeStart.setDate(rangeStart.getDate() + (Math.max(1, weekNumber) - 1) * 7);
   const rangeEnd = new Date(rangeStart);
   rangeEnd.setDate(rangeEnd.getDate() + 6);
@@ -61,7 +68,14 @@ export const getPlannedDailyDate = (
 ) => {
   const start = parseLocalDate(cycleStartDate);
   if (!start) return null;
-  const rangeStart = new Date(start);
+
+  // Align to the Monday of the week containing cycleStartDate
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const mondayOfFirstWeek = new Date(start);
+  mondayOfFirstWeek.setDate(start.getDate() + diffToMonday);
+
+  const rangeStart = new Date(mondayOfFirstWeek);
   rangeStart.setDate(rangeStart.getDate() + (Math.max(1, weekNumber) - 1) * 7);
   const offset = DAY_OFFSETS[completionDay] ?? 0;
   const planned = new Date(rangeStart);
