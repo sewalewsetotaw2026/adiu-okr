@@ -117,6 +117,8 @@ export default function PlanningCompliancePage() {
   const [reportingPage, setReportingPage] = useState(1);
   const [summaryPage, setSummaryPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+  // Initialization based on current date
+  const [hasInitialized, setHasInitialized] = useState(false);
 
   useEffect(() => {
     setPlanningPage(1);
@@ -324,28 +326,6 @@ export default function PlanningCompliancePage() {
     () => formatConciseDateRange(cycle?.start_date, cycle?.end_date),
     [cycle?.start_date, cycle?.end_date],
   );
-
-  useEffect(() => {
-    if (!cycleStartDate || !cycleEndDate) return;
-
-    const today = parseLocalDate(formatDateInput(new Date()));
-    if (!today) return;
-
-    const dayMs = 24 * 60 * 60 * 1000;
-    const diffDays = Math.floor(
-      (today.getTime() - cycleStartDate.getTime()) / dayMs,
-    );
-
-    if (diffDays < 0 || today > cycleEndDate) {
-      setSelectedWeek(1);
-      setSelectedDay("MONDAY");
-      return;
-    }
-
-    setSelectedWeek(Math.max(1, Math.floor(diffDays / 7) + 1));
-    setSelectedDay(DAY_VALUES[Math.max(0, diffDays % 7)] ?? "MONDAY");
-  }, [cycleStartDate, cycleEndDate]);
-
   // Extract unique departments from all data sources
   const departments = useMemo(() => {
     const allData = [
@@ -398,6 +378,52 @@ export default function PlanningCompliancePage() {
 
     return months.length > 0 ? months : [1];
   }, [cycleStartDate, cycleEndDate]);
+
+  useEffect(() => {
+    if (
+      !cycleStartDate ||
+      !cycleEndDate ||
+      hasInitialized ||
+      validMonths.length === 0
+    )
+      return;
+
+    const today = parseLocalDate(formatDateInput(new Date()));
+    if (!today) return;
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const diffDays = Math.floor(
+      (today.getTime() - cycleStartDate.getTime()) / dayMs,
+    );
+
+    if (diffDays < 0) {
+      setSelectedMonth(1);
+      setSelectedWeek(1);
+      setSelectedDay("MONDAY");
+    } else if (today > cycleEndDate) {
+      // Stay at the end of the cycle
+      setSelectedMonth(validMonths.length);
+      setSelectedWeek(validWeeks.length);
+      setSelectedDay("MONDAY");
+    } else {
+      // Calculate relative month
+      let monthDiff = (today.getFullYear() - cycleStartDate.getFullYear()) * 12;
+      monthDiff -= cycleStartDate.getMonth();
+      monthDiff += today.getMonth();
+      const currentMonth = monthDiff + 1;
+
+      // Calculate relative week
+      const currentWeek = Math.floor(diffDays / 7) + 1;
+
+      // Day of week
+      const currentDay = DAY_VALUES[Math.max(0, diffDays % 7)] ?? "MONDAY";
+
+      setSelectedMonth(Math.min(Math.max(1, currentMonth), validMonths.length));
+      setSelectedWeek(Math.min(Math.max(1, currentWeek), validWeeks.length));
+      setSelectedDay(currentDay);
+    }
+    setHasInitialized(true);
+  }, [cycleStartDate, cycleEndDate, validMonths, validWeeks, hasInitialized]);
 
   const weekOptions = useMemo(() => {
     if (!cycle?.start_date || !validWeeks) return [];
