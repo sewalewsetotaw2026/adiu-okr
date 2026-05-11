@@ -50,11 +50,11 @@ export default function DailyTaskCard({
         Math.max(0, ((localCurrentValue - plan.start_value) / range) * 100),
       );
 
-  const statusConfig: Record<DailyStatus, { label: string; color: string }> = {
-    PENDING: { label: "Pending", color: "bg-slate-100 text-slate-600" },
-    IN_PROGRESS: { label: "In Progress", color: "bg-blue-100 text-blue-600" },
-    COMPLETED: { label: "Completed", color: "bg-green-100 text-green-600" },
-    SKIPPED: { label: "Skipped", color: "bg-slate-200 text-slate-500" },
+  const statusConfig: Record<DailyStatus, { label: string; color: string; dot: string }> = {
+    PENDING: { label: "Pending", color: "bg-slate-50 text-slate-500 border-slate-200", dot: "bg-slate-400" },
+    IN_PROGRESS: { label: "In Progress", color: "bg-blue-50 text-blue-600 border-blue-100", dot: "bg-blue-500" },
+    COMPLETED: { label: "Completed", color: "bg-green-50 text-green-600 border-green-100", dot: "bg-green-500" },
+    SKIPPED: { label: "Skipped", color: "bg-slate-100 text-slate-400 border-slate-200", dot: "bg-slate-300" },
   };
 
   const isCompleted = plan.status === "COMPLETED";
@@ -68,192 +68,178 @@ export default function DailyTaskCard({
   return (
     <div
       id={`focus-${plan.id}`}
-      className={`bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex flex-col overflow-hidden ${isExpanded ? "ring-1 ring-primary/10" : ""}`}
+      className={`group relative bg-white rounded-3xl border transition-all duration-500 flex flex-col overflow-hidden hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] ${
+        isExpanded ? "ring-2 ring-primary/20 border-primary/20" : "border-slate-100 shadow-sm"
+      }`}
     >
+      {/* Glow Effect on Hover */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
       {/* Card Header */}
-      <div className="flex items-start justify-between gap-3 p-4 pb-3">
-        <button
-          type="button"
-          onClick={() => setIsExpanded((prev) => !prev)}
-          className="flex-1 text-left min-w-0"
-        >
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
+      <div className="relative p-6 pb-4">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex flex-wrap gap-2">
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${statusConfig[plan.status].color}`}
+              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5 ${statusConfig[plan.status].color}`}
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig[plan.status].dot}`} />
               {statusConfig[plan.status].label}
             </span>
             {weeklyNumber != null && (
-              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wide">
-                Target Week {weeklyNumber}
-              </span>
-            )}
-            {monthlyNumber != null && (
-              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-wide">
-                Target Month {monthlyNumber}
+              <span className="px-3 py-1 rounded-full bg-slate-50 text-slate-500 text-[10px] font-black uppercase tracking-widest border border-slate-100">
+                Week {weeklyNumber}
               </span>
             )}
           </div>
+
+          <ActionMenu
+            actions={
+              [
+                {
+                  label: "Mark as Skipped",
+                  icon: <MdBlock />,
+                  value: "skip",
+                  onClick: () => onStatusChange(plan.id, "SKIPPED"),
+                  hidden: isDone,
+                },
+                {
+                  label: "Edit Task",
+                  icon: <MdEdit />,
+                  value: "edit",
+                  onClick: () => onEdit(plan),
+                },
+                {
+                  label: "Delete Task",
+                  icon: <MdDelete />,
+                  value: "delete",
+                  onClick: () => onDelete(plan),
+                  variant: "danger",
+                },
+              ].filter((a) => !a.hidden) as any
+            }
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="text-left w-full group/title"
+        >
           <h4
-            className={`text-sm font-bold text-slate-800 mb-1 line-clamp-2 ${isSkipped ? "line-through text-slate-400" : ""}`}
+            className={`text-lg font-black text-slate-800 mb-1 leading-tight tracking-tight group-hover/title:text-primary transition-colors ${isSkipped ? "line-through text-slate-400" : ""}`}
           >
             {plan.title}
           </h4>
-          <p className="text-[10px] text-slate-400 font-medium">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
             {(plan as any)._weeklyPlanTitle || "Weekly Plan"}
           </p>
-          {(plan as any)._plannedDate && (
-            <p className="mt-1 text-[10px] font-semibold text-primary/80">
-              {String((plan as any)._plannedDate)}
-            </p>
-          )}
         </button>
-
-        <ActionMenu
-          actions={
-            [
-              {
-                label: "Mark as Skipped",
-                icon: <MdBlock />,
-                value: "skip",
-                onClick: () => onStatusChange(plan.id, "SKIPPED"),
-                hidden: isDone,
-              },
-              {
-                label: "Edit Task",
-                icon: <MdEdit />,
-                value: "edit",
-                onClick: () => onEdit(plan),
-              },
-              {
-                label: "Delete Task",
-                icon: <MdDelete />,
-                value: "delete",
-                onClick: () => onDelete(plan),
-                variant: "danger",
-              },
-            ].filter((a) => !a.hidden) as any
-          }
-        />
       </div>
 
       {/* Card Body */}
-      <div
-        className={`${isExpanded ? "p-4 pt-0" : "px-4 pb-4 pt-0"} flex-1 flex flex-col gap-3`}
-      >
+      <div className="relative px-6 pb-6 space-y-5">
         {isMilestone ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => !isCompleted && onStatusChange(plan.id, "COMPLETED")}
-              className={`flex flex-col items-center justify-center rounded-xl py-2.5 border-2 transition-all ${isCompleted
-                ? "bg-green-50 border-green-200 text-green-700"
-                : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+              className={`flex flex-col items-center justify-center rounded-2xl py-4 border-2 transition-all duration-300 ${isCompleted
+                ? "bg-green-50 border-green-200 text-green-700 shadow-lg shadow-green-500/10"
+                : "bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-50"
                 }`}
               disabled={isSkipped || isCompleted}
             >
-              <span className="text-[10px] font-black uppercase tracking-wider">
-                Achieved
-              </span>
-              {isCompleted && <MdCheck className="text-xs mt-0.5" />}
+              <span className="text-[10px] font-black uppercase tracking-widest">Achieved</span>
+              {isCompleted && <MdCheck className="text-lg mt-1" />}
             </button>
             <button
               type="button"
               onClick={() => isCompleted && onStatusChange(plan.id, "PENDING")}
-              className={`flex flex-col items-center justify-center rounded-xl py-2.5 border-2 transition-all ${!isCompleted && !isSkipped
+              className={`flex flex-col items-center justify-center rounded-2xl py-4 border-2 transition-all duration-300 ${!isCompleted && !isSkipped
                 ? "bg-slate-50 border-slate-200 text-slate-600"
-                : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
+                : "bg-white border-slate-100 text-slate-400 hover:border-slate-200 hover:bg-slate-50"
                 }`}
               disabled={isSkipped || (!isCompleted && plan.status === "PENDING")}
             >
-              <span className="text-[10px] font-black uppercase tracking-wider">
-                Not Achieved
-              </span>
+              <span className="text-[10px] font-black uppercase tracking-widest">Incomplete</span>
               {!isCompleted && !isSkipped && (
-                <div className="w-1 h-1 rounded-full bg-slate-400 mt-1" />
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-2" />
               )}
             </button>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 text-[10px] font-bold">
-              <div className="rounded-xl bg-slate-50 px-3 py-2">
-                <span className="text-slate-400 block uppercase tracking-tighter">
-                  Target
-                </span>
-                <span className="text-slate-700 tabular-nums">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl bg-slate-50/50 p-4 border border-slate-100/50">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.1em] block mb-1">Target</span>
+                <span className="text-lg font-black text-slate-700 tabular-nums">
                   {formatOkrNumber(plan.target_value)}
                   {plan.metricDefinition?.unit_of_measure && (
-                    <span className="text-[10px] ml-0.5 text-slate-400 font-bold uppercase">
-                      {plan.metricDefinition.unit_of_measure === "%"
-                        ? "%"
-                        : ` ${plan.metricDefinition.unit_of_measure}`}
+                    <span className="text-xs ml-1 text-slate-400 uppercase font-black">
+                      {plan.metricDefinition.unit_of_measure}
                     </span>
                   )}
                 </span>
               </div>
-              <div className="rounded-xl bg-primary/5 px-3 py-2 text-right">
-                <span className="text-slate-400 block uppercase tracking-tighter">
-                  Current
-                </span>
-                <span className="text-primary tabular-nums">
+              <div className="rounded-2xl bg-primary/5 p-4 border border-primary/10 text-right">
+                <span className="text-[9px] font-black text-primary/50 uppercase tracking-[0.1em] block mb-1">Current</span>
+                <span className="text-lg font-black text-primary tabular-nums">
                   {formatOkrNumber(localCurrentValue)}
                   {plan.metricDefinition?.unit_of_measure && (
-                    <span className="text-[10px] ml-0.5 text-primary/60 font-bold uppercase">
-                      {plan.metricDefinition.unit_of_measure === "%"
-                        ? "%"
-                        : ` ${plan.metricDefinition.unit_of_measure}`}
+                    <span className="text-xs ml-1 text-primary/40 uppercase font-black">
+                      {plan.metricDefinition.unit_of_measure}
                     </span>
                   )}
                 </span>
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <span>Progress</span>
+                <span className="text-primary">{formatOkrNumber(progressPct)}%</span>
+              </div>
+              <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
                 <div
-                  className={`h-full transition-all duration-500 ${isCompleted ? "bg-green-500" : "bg-primary"}`}
+                  className={`h-full transition-all duration-1000 ease-out ${
+                    isCompleted 
+                      ? "bg-gradient-to-r from-green-400 to-green-600" 
+                      : "bg-gradient-to-r from-primary/80 to-primary"
+                  }`}
                   style={{ width: `${progressPct}%` }}
                 />
               </div>
-              <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400">
-                <span className="tabular-nums">
-                  {formatOkrNumber(progressPct)}%
-                </span>
-                {plan.notes ? (
-                  <span className="truncate max-w-[70%] italic">
-                    {plan.notes}
-                  </span>
-                ) : (
-                  <span />
-                )}
-              </div>
+              {plan.notes && (
+                <p className="text-[11px] font-medium text-slate-500 italic truncate pt-1">
+                  &ldquo;{plan.notes}&rdquo;
+                </p>
+              )}
             </div>
           </>
         )}
 
-        <div className="pt-0 space-y-2 border-t border-slate-50">
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              fullWidth
-              onClick={() => onOpenProgressModal(plan)}
-              disabled={isDone}
-            >
-              Update Progress
-            </Button>
+        <div className="pt-4 flex items-center gap-2 border-t border-slate-50">
+          <Button
+            variant="primary"
+            size="sm"
+            fullWidth
+            onClick={(e) => { e.stopPropagation(); onOpenProgressModal(plan); }}
+            disabled={isDone}
+            className="rounded-xl font-black uppercase tracking-tight text-[10px] h-10! shadow-lg shadow-primary/20 px-2!"
+          >
+            Update Progress
+          </Button>
 
-            <Button
-              variant={isCompleted ? "ghost" : "secondary"}
-              size="sm"
-              fullWidth
-              onClick={() => !isDone && setConfirmComplete(true)}
-              disabled={isDone}
-            >
-              {isCompleted ? "Done" : "Complete"}
-            </Button>
-          </div>
+          <Button
+            variant={isCompleted ? "ghost" : "secondary"}
+            size="sm"
+            fullWidth
+            onClick={(e) => { e.stopPropagation(); !isDone && setConfirmComplete(true); }}
+            disabled={isDone}
+            className={`rounded-xl font-black uppercase tracking-tight text-[10px] h-10! px-2! ${isCompleted ? "text-green-600" : ""}`}
+          >
+            {isCompleted ? "Done" : "Complete"}
+          </Button>
         </div>
       </div>
 
@@ -267,7 +253,7 @@ export default function DailyTaskCard({
           setConfirmComplete(false);
         }}
         title="Mark task as complete?"
-        message={`"${plan.title}" will be marked as completed. This cannot be undone.`}
+        message={`"${plan.title}" will be marked as completed.`}
         confirmText="Complete"
         cancelText="Not yet"
         type="info"

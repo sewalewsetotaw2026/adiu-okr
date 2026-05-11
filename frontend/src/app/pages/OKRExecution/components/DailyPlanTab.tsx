@@ -188,6 +188,8 @@ export default function DailyPlanTab({
                   dp.completion_day,
                 )
               : null;
+            
+            const isToday = plannedDate?.toDateString() === new Date().toDateString();
 
             return {
               ...dp,
@@ -197,7 +199,8 @@ export default function DailyPlanTab({
               _plannedDate: plannedDate
                 ? formatReadableDate(plannedDate.toISOString())
                 : undefined,
-            };
+              _isToday: isToday,
+            } as any;
           });
           allDailies.push(...(enriched as any));
         }),
@@ -450,13 +453,16 @@ export default function DailyPlanTab({
         </div>
       </div>
 
-      {/* Responsive Day Grid — 1 col mobile, 2 col md, 3 col lg (Sunday on Row 3) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      {/* Modern Day Sections — One day per row, tasks in a grid inside */}
+      <div className="flex flex-col gap-10">
         {DAYS.map((day) => {
           const dayTasks = groupedPlans[day];
           const dayCompleted = dayTasks.filter(
             (t) => t.status === "COMPLETED",
           ).length;
+          const totalTasks = dayTasks.length;
+          const completionRate = totalTasks > 0 ? Math.round((dayCompleted / totalTasks) * 100) : 0;
+          
           const plannedDate = cycleStartDate
             ? getPlannedDailyDate(cycleStartDate, selectedWeek, day)
             : null;
@@ -472,84 +478,109 @@ export default function DailyPlanTab({
             "MONDAY";
           const isToday = (plannedDate && formatDateInput(plannedDate) === todayKey) || day === fallbackTodayDay;
 
+          if (totalTasks === 0 && !isToday) return null;
+
           return (
             <div
               key={day}
-              className={`rounded-2xl border-2 ${DAY_COLORS[day]} overflow-hidden ${isToday ? "md:col-span-2 lg:col-span-3 order-first ring-2 ring-primary/20 shadow-lg shadow-primary/5" : ""}`}
+              className={`relative rounded-[2.5rem] border-2 transition-all duration-500 overflow-hidden ${
+                isToday 
+                  ? "border-primary/20 bg-white shadow-[0_20px_50px_rgba(var(--primary-rgb),0.08)] order-first ring-4 ring-primary/5" 
+                  : "border-slate-100 bg-slate-50/30 hover:border-slate-200 shadow-sm"
+              }`}
             >
-              {/* Day Header */}
+              {/* Day Header with Stats */}
               <div
-                className={`flex items-center justify-between px-4 py-3 ${DAY_HEADER_COLORS[day]} ${isToday ? "border-b border-primary/10 bg-white/70" : ""}`}
+                className={`px-8 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b ${
+                  isToday ? "bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border-primary/10" : "bg-white/50 border-slate-100"
+                }`}
               >
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-extrabold leading-none">
-                      {displayDayLabel}
+                <div className="flex items-center gap-5">
+                  <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center shadow-lg transition-transform hover:scale-110 duration-300 ${
+                    isToday ? "bg-primary text-white shadow-primary/30" : "bg-white text-slate-400 border border-slate-100"
+                  }`}>
+                    <span className="text-[10px] font-black uppercase tracking-tighter opacity-80">{displayDayShort}</span>
+                    <span className="text-xl font-black leading-none mt-0.5">
+                      {plannedDate ? plannedDate.getDate() : "?"}
                     </span>
-                    {plannedDate && (
-                      <span className="text-[10px] font-bold opacity-60 mt-0.5">
-                        {
-                          formatReadableDate(
-                            formatDateInput(plannedDate),
-                          ).split(",")[0]
-                        }{" "}
-                        {/* Just Month Day */}
-                      </span>
-                    )}
                   </div>
-                  {isToday && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-primary text-white text-[10px] font-black uppercase tracking-wider">
-                      Today
-                    </span>
-                  )}
-                  {dayTasks.length > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-white/60 text-[10px] font-black">
-                      {dayCompleted}/{dayTasks.length}
-                    </span>
-                  )}
+                  <div>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                      {displayDayLabel}
+                      {isToday && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest animate-pulse">
+                          Today
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-sm font-semibold text-slate-400">
+                      {plannedDate ? formatReadableDate(plannedDate.toISOString()) : "No date set"}
+                    </p>
+                  </div>
                 </div>
-                <button
-                  onClick={() => openAddForDay(day)}
-                  disabled={!allowAdd}
-                  className={`p-1.5 rounded-lg transition-colors ${allowAdd ? "hover:bg-white/40" : "opacity-40 cursor-not-allowed"}`}
-                  title={
-                    !allowAdd
-                      ? "Daily tasks are not enabled for your role"
-                      : `Add task for ${displayDayShort}`
-                  }
-                >
-                  <MdAdd className="text-lg" />
-                </button>
+
+                <div className="flex items-center gap-4 w-full sm:w-auto">
+                  <div className="hidden sm:block text-right">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Daily Progress</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-primary transition-all duration-1000" 
+                          style={{ width: `${completionRate}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-black text-slate-700 tabular-nums">{completionRate}%</span>
+                    </div>
+                  </div>
+                  
+                  <div className="h-10 w-px bg-slate-100 mx-2 hidden sm:block" />
+
+                  <div className="flex items-center gap-2">
+                    <div className="text-center px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-lg font-black text-slate-700 tabular-nums">{dayCompleted}</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block -mt-1">Done</span>
+                    </div>
+                    <div className="text-center px-4 py-2 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-lg font-black text-slate-700 tabular-nums">{totalTasks}</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block -mt-1">Tasks</span>
+                    </div>
+                    
+                    <button
+                      onClick={() => openAddForDay(day)}
+                      disabled={!allowAdd}
+                      className={`ml-2 w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+                        allowAdd 
+                          ? "bg-primary/10 text-primary hover:bg-primary hover:text-white shadow-sm" 
+                          : "bg-slate-50 text-slate-300 cursor-not-allowed"
+                      }`}
+                      title={!allowAdd ? "Daily tasks not enabled" : `Add task for ${displayDayLabel}`}
+                    >
+                      <MdAdd className="text-xl" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Day Content */}
-              <div className={`${isToday ? "p-4 min-h-50" : "p-3 min-h-30"}`}>
+              <div className="p-8">
                 {dayTasks.length === 0 ? (
-                  <div className="flex items-center justify-center h-25">
-                    <button
-                      onClick={() => allowAdd && openAddForDay(day)}
-                      disabled={!allowAdd}
-                      className={`text-center transition-colors group ${allowAdd ? "text-slate-400 hover:text-primary cursor-pointer" : "text-slate-300 cursor-not-allowed opacity-50"}`}
-                      title={
-                        !allowAdd
-                          ? "Daily tasks are not enabled for your role"
-                          : undefined
-                      }
-                    >
-                      <MdAdd
-                        className={`text-2xl mx-auto mb-1 transition-colors ${allowAdd ? "text-slate-300 group-hover:text-primary" : "text-slate-200"}`}
-                      />
-                      <p className="text-[11px] font-semibold">Add a task</p>
-                    </button>
+                  <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-100 rounded-3xl bg-slate-50/20">
+                    <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-slate-300 shadow-sm mb-4">
+                      <MdAdd className="text-3xl" />
+                    </div>
+                    <p className="text-slate-400 font-bold mb-4">No tasks planned for {displayDayLabel}</p>
+                    {allowAdd && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => openAddForDay(day)}
+                      >
+                        Create Your First Task
+                      </Button>
+                    )}
                   </div>
                 ) : (
-                  <div
-                    className={
-                      isToday
-                        ? "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3"
-                        : "space-y-3"
-                    }
-                  >
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {dayTasks.map((plan) => (
                       <DailyTaskCard
                         key={plan.id}
