@@ -442,9 +442,9 @@ export default function PlanningCompliancePage() {
         const weekRange = getCycleWeekRange(cycle.start_date, weekNumber);
         if (!weekRange) return null;
 
-        // A week belongs to this month if its start date is within the month
+        // A week belongs to this month if it overlaps with the month boundary
         const isChildOfSelectedMonth =
-          weekRange.start >= monthStart && weekRange.start < monthEnd;
+          weekRange.end >= monthStart && weekRange.start < monthEnd;
 
         if (!isChildOfSelectedMonth) return null;
 
@@ -559,17 +559,12 @@ export default function PlanningCompliancePage() {
       });
     }
 
-    // Filter by Status (Reported / Not Reported) based on progress score
+    // Filter by Status (Reported / Not Reported)
     if (reportingStatus !== "All") {
       result = result.filter((item: any) => {
-        const summaryItem = summaryData.find(
-          (s) => s.employee_id === item.employee_id,
-        );
-        if (!summaryItem) return reportingStatus === "not_reported";
-
-        const score = getSummaryScores(summaryItem).score;
-
-        return reportingStatus === "reported" ? score > 0 : score === 0;
+        const isReported =
+          item.is_reported || (item.breakdown?.daily_plan_with_progress || 0) > 0;
+        return reportingStatus === "reported" ? isReported : !isReported;
       });
     }
 
@@ -630,25 +625,11 @@ export default function PlanningCompliancePage() {
       );
     }
 
-    if (summaryProgressStatus !== "All") {
-      result = result.filter((item: any) => {
-        const { score } = getSummaryScores(item);
-        if (summaryProgressStatus === "Not Started") return score <= 0;
-        if (summaryProgressStatus === "In Progress")
-          return score > 0 && score < 100;
-        if (summaryProgressStatus === "Completed") return score >= 100;
-        if (summaryProgressStatus === "Blocked")
-          return Boolean(item.is_blocked);
-        return true;
-      });
-    }
-
     return result;
   }, [
     summaryData,
     summaryDept,
     summarySearch,
-    summaryProgressStatus,
     getSummaryScores,
   ]);
 
@@ -971,8 +952,8 @@ export default function PlanningCompliancePage() {
           <div className="relative">
             <MdBusiness className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
+              value={reportingDept}
+              onChange={(e) => setReportingDept(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
               {departments.map((dept) => (
@@ -1141,13 +1122,9 @@ export default function PlanningCompliancePage() {
                 </tr>
               ) : (
                 paginatedReportingData.map((item: any) => {
-                  const summaryItem = summaryData.find(
-                    (s) => s.employee_id === item.employee_id,
-                  );
-                  const displayScore = summaryItem
-                    ? getSummaryScores(summaryItem).score
-                    : 0;
-                  const isReported = displayScore > 0;
+                  const isReported =
+                    item.is_reported ||
+                    (item.breakdown?.daily_plan_with_progress || 0) > 0;
 
                   return (
                     <tr
@@ -1243,8 +1220,8 @@ export default function PlanningCompliancePage() {
           <div className="relative">
             <MdBusiness className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <select
-              value={selectedDept}
-              onChange={(e) => setSelectedDept(e.target.value)}
+              value={summaryDept}
+              onChange={(e) => setSummaryDept(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
             >
               {departments.map((dept) => (
@@ -1340,28 +1317,6 @@ export default function PlanningCompliancePage() {
             </div>
           </div>
         )}
-
-        <div className="flex-1 min-w-37.5">
-          <label className="text-xs font-bold text-gray-400 mb-1.5 block">
-            Status
-          </label>
-          <div className="relative">
-            <MdFilterList className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <select
-              value={summaryProgressStatus}
-              onChange={(e) =>
-                setSummaryProgressStatus(e.target.value as ProgressStatusType)
-              }
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Not Started">Not Started</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="Blocked">Blocked</option>
-            </select>
-          </div>
-        </div>
 
         <button
           onClick={resetSummaryFilters}

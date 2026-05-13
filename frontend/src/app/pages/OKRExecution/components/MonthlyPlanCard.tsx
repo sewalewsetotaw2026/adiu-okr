@@ -32,6 +32,8 @@ export default function MonthlyPlanCard({
   onUpdateProgress,
 }: MonthlyPlanCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
+  const [isParentTitleExpanded, setIsParentTitleExpanded] = useState(false);
   const editable = EDITABLE_STATUSES.has(plan.plan_status);
   const isPublished = plan.plan_status === "PUBLISHED";
   const rejected = plan.plan_status === "REJECTED";
@@ -65,73 +67,128 @@ export default function MonthlyPlanCard({
       </div>
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4 pr-12">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pr-12">
+        {/* LEFT SECTION */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1">
             {!editable && (
-              <span
-                aria-label="Locked"
-                className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-1 ring-slate-200"
-              >
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-1 ring-slate-200">
                 <MdLock className="text-xs" />
               </span>
             )}
             <PlanStatusBadge status={plan.plan_status} size="xs" />
           </div>
-          <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight group-hover:text-primary transition-colors duration-300">
-            {plan.title}
-          </h4>
+
+          <div className="relative">
+            <h4
+              className={`text-base font-semibold text-slate-800 tracking-tight group-hover:text-primary transition-colors duration-300 ${
+                !isTitleExpanded ? "line-clamp-2" : ""
+              }`}
+            >
+              {plan.title}
+            </h4>
+            {plan.title.length > 80 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsTitleExpanded(!isTitleExpanded);
+                }}
+                className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1"
+              >
+                {isTitleExpanded ? "Show Less" : "Read More"}
+              </button>
+            )}
+
+            {plan.parent_key_result?.title && (
+              <div className="mt-2 group/parent">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">
+                  Parent Key Result
+                </span>
+                <div
+                  className={`text-xs font-semibold text-slate-600 ${
+                    !isParentTitleExpanded ? "line-clamp-1" : ""
+                  }`}
+                >
+                  {plan.parent_key_result.title}
+                </div>
+                {plan.parent_key_result.title.length > 80 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsParentTitleExpanded(!isParentTitleExpanded);
+                    }}
+                    className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1"
+                  >
+                    {isParentTitleExpanded ? "Show Less" : "Read More"}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-6 shrink-0">
-          <div className="text-center">
-            <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase block mb-0.5">
-              Direct
+        {/* RIGHT SECTION (COMPACT KPI GRID) */}
+        <div className="flex items-center gap-5 shrink-0">
+
+        {/* DIRECT */}
+        <div className="text-center min-w-[60px]">
+          <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase block mb-0.5">
+            Direct
+          </span>
+          <div className="flex items-baseline justify-center gap-0.5">
+            <span className="text-xl font-black text-slate-900 tabular-nums">
+              {formatOkrNumber(progress)}
+            </span>
+            <span className="text-xs font-bold text-slate-400">%</span>
+          </div>
+        </div>
+
+        {/* INDIRECT */}
+        {indirectProgress > 0 && (
+          <div className="text-center min-w-[60px]">
+            <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase block mb-0.5">
+              Indirect
             </span>
             <div className="flex items-baseline justify-center gap-0.5">
-              <span className="text-2xl font-black text-slate-900 tabular-nums tracking-tighter">
-                {formatOkrNumber(progress)}
+              <span className="text-xl font-black text-slate-500/80 tabular-nums">
+                {formatOkrNumber(indirectProgress)}
               </span>
-              <span className="text-xs font-bold text-slate-400">%</span>
+              <span className="text-xs font-bold text-slate-300">%</span>
             </div>
           </div>
+        )}
 
-          {indirectProgress > 0 && (
-            <div className="text-center">
-              <span className="text-[9px] font-black tracking-widest text-slate-400 uppercase block mb-0.5">
-                Indirect
-              </span>
-              <div className="flex items-baseline justify-center gap-0.5">
-                <span className="text-2xl font-black text-slate-500/80 tabular-nums tracking-tighter">
-                  {formatOkrNumber(indirectProgress)}
-                </span>
-                <span className="text-xs font-bold text-slate-300">%</span>
-              </div>
-            </div>
-          )}
+        {/* DIVIDER */}
+        <div className="h-7 w-px bg-slate-100" />
 
-          <div className="h-8 w-px bg-slate-100 hidden md:block" />
+        {/* CURRENT / TARGET (NEW STRUCTURE) */}
+        <div className="text-right min-w-[110px]">
+          <span className="text-[9px] font-bold tracking-widest text-primary/60 uppercase block mb-0.5">
+            Progress (Current / Target)
+          </span>
 
-          <div className="text-right">
-            <span className="text-[9px] font-black tracking-widest text-primary/60 uppercase block mb-0.5">
-              Target Met
+          <div className="flex items-baseline justify-end gap-1">
+            <span className="text-sm font-semibold text-slate-600 tabular-nums whitespace-nowrap">
+              {formatOkrNumber(current)}
             </span>
-            <div className="flex items-baseline justify-end gap-1">
-              <span className="text-xl font-black text-primary tabular-nums tracking-tight">
-                {formatOkrNumber(current)}
+
+            <span className="text-[10px] font-bold text-slate-300">/</span>
+
+            <span className="text-sm font-semibold text-slate-600 tabular-nums whitespace-nowrap">
+              {formatOkrNumber(target)}
+            </span>
+
+            {u && (
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight ml-0.5">
+                {u}
               </span>
-              <span className="text-[10px] font-bold text-slate-300">/</span>
-              <span className="text-sm font-bold text-slate-500 tabular-nums">
-                {formatOkrNumber(target)}
-              </span>
-              {u && (
-                <span className="text-[10px] font-bold text-slate-400 ml-0.5 uppercase tracking-tighter">
-                  {u}
-                </span>
-              )}
-            </div>
+            )}
           </div>
         </div>
+
+      </div>
       </div>
 
       {/* Rejected chip */}
@@ -158,17 +215,6 @@ export default function MonthlyPlanCard({
       {/* Parent Key Result */}
       {isExpanded && (
         <>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
-            <div className="min-w-0">
-              <span className="font-black tracking-widest uppercase text-[10px] text-slate-400 mr-1.5">
-                Parent Key Result:
-              </span>
-              <span className="font-semibold text-slate-700 truncate">
-                {plan.parent_key_result?.title || "—"}
-              </span>
-            </div>
-          </div>
-
           <div className="mb-2">
             <div className="flex items-center justify-between text-[10px] font-black tracking-widest uppercase text-slate-400 mb-1">
               <span>Progress</span>

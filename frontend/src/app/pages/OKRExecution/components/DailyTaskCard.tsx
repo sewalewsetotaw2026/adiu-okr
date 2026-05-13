@@ -5,6 +5,7 @@ import {
   MdEdit,
   MdDelete,
   MdBlock,
+  MdKeyboardArrowDown,
 } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
 import type { DailyPlan, DailyStatus } from "../../../../types/okr.types";
@@ -31,6 +32,8 @@ export default function DailyTaskCard({
     plan.current_value,
   );
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
+  const [isParentTitleExpanded, setIsParentTitleExpanded] = useState(false);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [completing, setCompleting] = useState(false);
 
@@ -68,15 +71,15 @@ export default function DailyTaskCard({
   return (
     <div
       id={`focus-${plan.id}`}
-      className={`group relative bg-white rounded-3xl border transition-all duration-500 flex flex-col overflow-hidden hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(0,0,0,0.06)] ${
-        isExpanded ? "ring-2 ring-primary/20 border-primary/20" : "border-slate-100 shadow-sm"
+      className={`group relative bg-white rounded-2xl border transition-all duration-300 flex flex-col overflow-hidden hover:-translate-y-1 hover:shadow-md ${
+        isExpanded ? "ring-2 ring-primary/20 border-primary/20 shadow-sm" : "border-slate-100 shadow-sm"
       }`}
     >
       {/* Glow Effect on Hover */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
       {/* Card Header */}
-      <div className="relative p-6 pb-4">
+      <div className={`relative p-5 transition-all duration-300 ${isExpanded ? "pb-3" : ""}`}>
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex flex-wrap gap-2">
             <span
@@ -123,21 +126,67 @@ export default function DailyTaskCard({
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
-          className="text-left w-full group/title"
+          className="text-left w-full group/title flex items-start gap-3"
         >
-          <h4
-            className={`text-lg font-black text-slate-800 mb-1 leading-tight tracking-tight group-hover/title:text-primary transition-colors ${isSkipped ? "line-through text-slate-400" : ""}`}
-          >
-            {plan.title}
-          </h4>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-            {(plan as any)._weeklyPlanTitle || "Weekly Plan"}
-          </p>
+          <div className="flex-1 min-w-0">
+            <h4
+              className={`text-[15px] font-bold text-slate-800 leading-snug tracking-tight group-hover/title:text-primary transition-colors ${
+                isSkipped ? "line-through text-slate-400" : ""
+              } ${!isTitleExpanded ? "line-clamp-2" : ""}`}
+            >
+              {plan.title}
+            </h4>
+            {plan.title.length > 80 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsTitleExpanded(!isTitleExpanded);
+                }}
+                className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1 inline-block"
+              >
+                {isTitleExpanded ? "Show Less" : "Read More"}
+              </span>
+            )}
+            
+            <div className={`transition-all duration-300 overflow-hidden ${isExpanded ? "max-h-[200px] mt-3 opacity-100" : "max-h-0 mt-0 opacity-0"}`}>
+              <div className="group/parent">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">
+                  Parent Weekly Plan
+                </span>
+                <div
+                  className={`text-xs font-semibold text-slate-600 ${
+                    !isParentTitleExpanded ? "line-clamp-1" : ""
+                  }`}
+                >
+                  {(plan as any)._weeklyPlanTitle || "Weekly Plan"}
+                </div>
+                {((plan as any)._weeklyPlanTitle || "").length > 80 && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsParentTitleExpanded(!isParentTitleExpanded);
+                    }}
+                    className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1 inline-block"
+                  >
+                    {isParentTitleExpanded ? "Show Less" : "Read More"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className={`mt-0.5 shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-all duration-300 group-hover/title:bg-primary/10 group-hover/title:text-primary ${isExpanded ? "rotate-180" : ""}`}>
+            <MdKeyboardArrowDown className="text-xl" />
+          </div>
         </button>
       </div>
 
       {/* Card Body */}
-      <div className="relative px-6 pb-6 space-y-5">
+      <div 
+        className={`relative px-5 transition-all duration-300 ease-in-out overflow-hidden ${
+          isExpanded ? "max-h-[1000px] pb-5 opacity-100 space-y-4" : "max-h-0 pb-0 opacity-0 space-y-0"
+        }`}
+      >
         {isMilestone ? (
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -172,10 +221,10 @@ export default function DailyTaskCard({
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-2xl bg-slate-50/50 p-4 border border-slate-100/50">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.1em] block mb-1">Target</span>
-                <span className="text-lg font-black text-slate-700 tabular-nums">
+                <span className="text-base font-semibold text-slate-700 tabular-nums whitespace-nowrap">
                   {formatOkrNumber(plan.target_value)}
                   {plan.metricDefinition?.unit_of_measure && (
-                    <span className="text-xs ml-1 text-slate-400 uppercase font-black">
+                    <span className="text-[10px] ml-1 text-slate-400 uppercase font-black">
                       {plan.metricDefinition.unit_of_measure}
                     </span>
                   )}
@@ -183,10 +232,10 @@ export default function DailyTaskCard({
               </div>
               <div className="rounded-2xl bg-primary/5 p-4 border border-primary/10 text-right">
                 <span className="text-[9px] font-black text-primary/50 uppercase tracking-[0.1em] block mb-1">Current</span>
-                <span className="text-lg font-black text-primary tabular-nums">
+                <span className="text-base font-semibold text-primary tabular-nums whitespace-nowrap">
                   {formatOkrNumber(localCurrentValue)}
                   {plan.metricDefinition?.unit_of_measure && (
-                    <span className="text-xs ml-1 text-primary/40 uppercase font-black">
+                    <span className="text-[10px] ml-1 text-primary/40 uppercase font-black">
                       {plan.metricDefinition.unit_of_measure}
                     </span>
                   )}

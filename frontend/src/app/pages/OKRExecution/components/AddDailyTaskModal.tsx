@@ -23,6 +23,7 @@ interface AddDailyTaskModalProps {
   onSuccess: () => void;
   publishedWeeklyPlans: WeeklyPlan[];
   initialDay?: DayOfWeek;
+  selectedWeek?: number;
 }
 
 const DAYS: { value: DayOfWeek; label: string }[] = [
@@ -41,6 +42,7 @@ export default function AddDailyTaskModal({
   onSuccess,
   publishedWeeklyPlans,
   initialDay,
+  selectedWeek,
 }: AddDailyTaskModalProps) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<
@@ -59,23 +61,35 @@ export default function AddDailyTaskModal({
   const [error, setError] = useState<string | null>(null);
 
   // Pre-select today's day if no initialDay provided
+  // Reset form and handle initial day when modal opens
   useEffect(() => {
-    if (!initialDay) {
-      const days: DayOfWeek[] = [
-        "SUNDAY",
-        "MONDAY",
-        "TUESDAY",
-        "WEDNESDAY",
-        "THURSDAY",
-        "FRIDAY",
-        "SATURDAY",
-      ];
-      const todayIndex = new Date().getDay();
-      setFormData((prev) => ({ ...prev, completion_day: days[todayIndex] }));
-    } else {
-      setFormData((prev) => ({ ...prev, completion_day: initialDay }));
+    if (open) {
+      setFormData({
+        weeklyPlanId: "",
+        completion_day: (initialDay || "MONDAY") as DayOfWeek,
+        title: "",
+        target_value: 0,
+        start_value: 0,
+        contribute_to_score: true,
+        contribute_to_value: true,
+        metric_definition_id: undefined,
+      });
+
+      if (!initialDay) {
+        const days: DayOfWeek[] = [
+          "SUNDAY",
+          "MONDAY",
+          "TUESDAY",
+          "WEDNESDAY",
+          "THURSDAY",
+          "FRIDAY",
+          "SATURDAY",
+        ];
+        const todayIndex = new Date().getDay();
+        setFormData((prev) => ({ ...prev, completion_day: days[todayIndex] }));
+      }
     }
-  }, [initialDay, open]);
+  }, [open, initialDay]);
 
   useEffect(() => {
     if (open) {
@@ -204,10 +218,15 @@ export default function AddDailyTaskModal({
             onChange={(e: any) =>
               setFormData({ ...formData, weeklyPlanId: e.target.value })
             }
-            options={publishedWeeklyPlans.map((wp) => ({
-              value: wp.id,
-              label: `Week ${wp.week_number} — ${wp.title}`,
-            }))}
+            options={publishedWeeklyPlans
+              .filter((wp) => {
+                if (!selectedWeek) return true;
+                return (wp.week_number || 0) === selectedWeek;
+              })
+              .map((wp) => ({
+                value: wp.id,
+                label: `Week ${wp.week_number} — ${wp.title}`,
+              }))}
             placeholder={
               publishedWeeklyPlans.length === 0
                 ? "No published weekly plans"

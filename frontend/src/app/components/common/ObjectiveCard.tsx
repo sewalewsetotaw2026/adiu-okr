@@ -58,6 +58,7 @@ export interface ObjectiveCardProps {
   onDecomposeKR?: (krId: number, title: string) => void;
   feedbackNote?: string;
   reviewerName?: string;
+  parentKrTitle?: string;
 }
 
 function getStatusStyles(status: string, progress: number = 0) {
@@ -135,6 +136,8 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
     progressLabel = "Overall Progress",
   } = props;
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
+  const [isParentKrExpanded, setIsParentKrExpanded] = useState(false);
 
   const id = objective?.id ?? props.id ?? "";
   const title = objective?.title ?? props.title ?? "";
@@ -200,9 +203,60 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
               </span>
             </div>
 
-            <h3 className="text-xl font-bold text-slate-900 leading-tight tracking-tight mb-2 group-hover:text-primary transition-colors">
-              {title}
-            </h3>
+            <div className="relative">
+              <h3
+                className={`text-xl font-extrabold text-slate-900 leading-tight tracking-tight mb-1 group-hover:text-primary transition-colors ${
+                  !isTitleExpanded ? "line-clamp-2" : ""
+                }`}
+              >
+                {title}
+              </h3>
+              {title.length > 100 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsTitleExpanded(!isTitleExpanded);
+                  }}
+                  className="text-primary text-[10px] font-bold uppercase tracking-wider hover:underline mb-2"
+                >
+                  {isTitleExpanded ? "Show Less" : "Read More"}
+                </button>
+              )}
+
+              {(props.parentKrTitle || objective?.description) && (
+                <div className="mt-2 flex flex-col gap-1">
+                  {props.parentKrTitle && (
+                    <div className="relative">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
+                          Parent Key Result:
+                        </span>
+                      </div>
+                      <div
+                        className={`text-sm font-semibold text-slate-600 ${
+                          !isParentKrExpanded ? "line-clamp-1" : ""
+                        }`}
+                      >
+                        {props.parentKrTitle}
+                      </div>
+                      {props.parentKrTitle.length > 80 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsParentKrExpanded(!isParentKrExpanded);
+                          }}
+                          className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1"
+                        >
+                          {isParentKrExpanded ? "Show Less" : "Read More"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {props.headerContext && (
               <div className="mb-2 text-sm text-slate-500">
@@ -213,7 +267,7 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               {(krCount !== undefined ||
                 departmentsLinkedCount !== undefined) && (
-                <span className="text-slate-400 text-xs font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
+                <span className="text-slate-400 text-sm font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
                   {krCount !== undefined && (
                     <span>
                       {formatOkrCount(krCount)}{" "}

@@ -89,11 +89,12 @@ async function fetchDepartmentKrRows(
             id: Number(c?.id ?? 0),
             userId: String(c?.user_id ?? ""),
             name:
-              c?.user?.full_name ??
-              c?.employee?.full_name ??
-              c?.full_name ??
-              c?.name ??
-              "Contributor",
+              c?.full_name ||
+              c?.user?.employee?.full_name ||
+              c?.user?.employee?.fullName ||
+              c?.employee?.full_name ||
+              c?.employee?.fullName ||
+              (c?.user_id ? `User ${c.user_id}` : "Contributor"),
             required: Boolean(
               c?.is_required_for_completion ??
               c?.isRequiredForCompletion ??
@@ -364,34 +365,6 @@ export default function ContributorAssignmentPage() {
             ) : null}
           </div>
 
-          {summary ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
-              <div className="rounded-xl bg-white p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-xs text-k-medium-grey font-medium">Contributors</p>
-                <p className="text-lg font-semibold text-k-dark-grey mt-1">
-                  {summary.active_contributors}/{summary.total_contributors}
-                </p>
-              </div>
-              <div className="rounded-xl bg-white p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-xs text-k-medium-grey font-medium">Employee objectives</p>
-                <p className="text-lg font-semibold text-k-dark-grey mt-1">
-                  {summary.total_employee_objectives}
-                </p>
-              </div>
-              <div className="rounded-xl bg-white p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-xs text-k-medium-grey font-medium">Draft / approved</p>
-                <p className="text-lg font-semibold text-k-dark-grey mt-1">
-                  {summary.draft_objectives}/{summary.approved_objectives}
-                </p>
-              </div>
-              <div className="rounded-xl bg-white p-4 ring-1 ring-gray-100 shadow-sm">
-                <p className="text-xs text-k-medium-grey font-medium">Published</p>
-                <p className="text-lg font-semibold text-k-dark-grey mt-1">
-                  {summary.published_objectives}
-                </p>
-              </div>
-            </div>
-          ) : null}
 
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 overflow-hidden">
             {loading ? (
@@ -456,33 +429,6 @@ export default function ContributorAssignmentPage() {
                                       {c.name}
                                     </span>
                                     <span className="flex items-center gap-2">
-                                      {c.required ? (
-                                        <OkrStatusBadge
-                                          label="Required"
-                                          tone="warning"
-                                          size="xs"
-                                        />
-                                      ) : (
-                                        <OkrStatusBadge
-                                          label="Optional"
-                                          tone="muted"
-                                          size="xs"
-                                        />
-                                      )}
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() =>
-                                          void handleToggleRequired(
-                                            c.id,
-                                            c.required,
-                                          )
-                                        }
-                                      >
-                                        {c.required
-                                          ? "Make optional"
-                                          : "Make required"}
-                                      </Button>
                                     </span>
                                   </li>
                                 ))}

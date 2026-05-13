@@ -32,6 +32,8 @@ export default function WeeklyPlanCard({
   onUpdateProgress,
 }: WeeklyPlanCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
+  const [isParentTitleExpanded, setIsParentTitleExpanded] = useState(false);
   const editable = EDITABLE_STATUSES.has(plan.plan_status);
   const isPublished = plan.plan_status === "PUBLISHED";
   const rejected = plan.plan_status === "REJECTED";
@@ -77,9 +79,54 @@ export default function WeeklyPlanCard({
             )}
             <PlanStatusBadge status={plan.plan_status} size="xs" />
           </div>
-          <h4 className="text-xl font-black text-slate-900 leading-tight tracking-tight group-hover:text-primary transition-colors duration-300">
-            {plan.title}
-          </h4>
+          <div className="relative">
+            <h4
+              className={`text-base font-semibold text-slate-900 leading-tight tracking-tight group-hover:text-primary transition-colors duration-300 ${
+                !isTitleExpanded ? "line-clamp-2" : ""
+              }`}
+            >
+              {plan.title}
+            </h4>
+            {plan.title.length > 80 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsTitleExpanded(!isTitleExpanded);
+                }}
+                className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1"
+              >
+                {isTitleExpanded ? "Show Less" : "Read More"}
+              </button>
+            )}
+
+            {plan.parent_monthly_plan?.parent_kr_title && (
+              <div className="mt-2 group/parent">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">
+                  Parent Key Result
+                </span>
+                <div
+                  className={`text-xs font-semibold text-slate-600 ${
+                    !isParentTitleExpanded ? "line-clamp-1" : ""
+                  }`}
+                >
+                  {plan.parent_monthly_plan.parent_kr_title}
+                </div>
+                {plan.parent_monthly_plan.parent_kr_title.length > 80 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsParentTitleExpanded(!isParentTitleExpanded);
+                    }}
+                    className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mt-1"
+                  >
+                    {isParentTitleExpanded ? "Show Less" : "Read More"}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-6 shrink-0">
@@ -116,11 +163,11 @@ export default function WeeklyPlanCard({
               Target Met
             </span>
             <div className="flex items-baseline justify-end gap-1">
-              <span className="text-xl font-black text-primary tabular-nums tracking-tight">
+              <span className="text-base font-semibold text-primary tabular-nums tracking-tight whitespace-nowrap">
                 {formatOkrNumber(current)}
               </span>
               <span className="text-[10px] font-bold text-slate-300">/</span>
-              <span className="text-sm font-bold text-slate-500 tabular-nums">
+              <span className="text-sm font-semibold text-slate-500 tabular-nums whitespace-nowrap">
                 {formatOkrNumber(target)}
               </span>
               {u && (
@@ -155,17 +202,6 @@ export default function WeeklyPlanCard({
 
       {isExpanded && (
         <>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
-            <div className="min-w-0">
-              <span className="font-black tracking-widest uppercase text-[10px] text-slate-400 mr-1.5">
-                Parent Key Result:
-              </span>
-              <span className="font-semibold text-slate-700 truncate">
-                {plan.parent_monthly_plan?.parent_kr_title || "—"}
-              </span>
-            </div>
-          </div>
-
           <div className="mb-2">
             <div className="flex items-center justify-between text-[10px] font-black tracking-widest uppercase text-slate-400 mb-1">
               <span>Progress</span>

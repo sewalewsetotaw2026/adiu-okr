@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import React, { ReactNode, useState } from "react";
 import FeedbackBanner from "../../pages/OKRExecution/components/FeedbackBanner";
 
 export interface KeyResultListItemProps {
@@ -75,6 +75,7 @@ export default function KeyResultListItem({
   feedbackNote,
   reviewerName,
 }: KeyResultListItemProps) {
+  const [isTitleExpanded, setIsTitleExpanded] = useState(false);
   const styles = getKRStatusStyles(status, progress);
   const clampedProgress = Math.min(100, Math.max(0, progress));
   const clampedIndirectProgress = Math.min(100, Math.max(0, indirectProgress));
@@ -102,9 +103,27 @@ export default function KeyResultListItem({
             )}
           </div>
 
-          <h4 className="text-base font-bold text-slate-900 group-hover:text-primary transition-colors mb-1 leading-snug">
-            {title}
-          </h4>
+          <div className="relative">
+            <h4
+              className={`text-base font-semibold text-slate-900 group-hover:text-primary transition-colors mb-1 leading-snug ${
+                !isTitleExpanded ? "line-clamp-2" : ""
+              }`}
+            >
+              {title}
+            </h4>
+            {title.length > 80 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsTitleExpanded(!isTitleExpanded);
+                }}
+                className="text-primary text-[9px] font-bold uppercase tracking-wider hover:underline mb-2"
+              >
+                {isTitleExpanded ? "Show Less" : "Read More"}
+              </button>
+            )}
+          </div>
 
           {subtitle && (
             <div className="mb-4 text-xs font-medium text-slate-400">
@@ -177,7 +196,7 @@ export default function KeyResultListItem({
             <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] font-space mb-1">
               Target Metric
             </div>
-            <div className="text-lg font-black text-slate-900 tracking-tight">
+            <div className="text-base font-semibold text-slate-900 tracking-tight whitespace-nowrap">
               {targetString}
             </div>
           </div>

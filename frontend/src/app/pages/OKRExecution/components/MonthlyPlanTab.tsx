@@ -981,7 +981,9 @@ function MonthSection({
               </Button> */}
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            // <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            // <div className="grid grid-cols-[repeat(auto-fit,minmax(100%,1fr))] gap-4">
+            <div className="grid grid-cols-1 gap-4">  
               {plans.map((plan) => (
                 <MonthlyPlanCard
                   key={plan.id}

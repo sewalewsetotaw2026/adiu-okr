@@ -1203,24 +1203,7 @@ export default function MyExecutionDashboardPage() {
                         krCount={c.keyResults?.length}
                         expandable={c.keyResults && c.keyResults.length > 0}
                         onClick={() => goDetail(c.id)}
-                        headerContext={
-                          <div className="flex flex-col gap-1.5 mt-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest font-space">
-                                Parent Key Result:
-                              </span>
-                              {c.parentKr ? (
-                                <span className="text-xs font-bold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 line-clamp-1">
-                                  {c.parentKr}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-slate-300 italic">
-                                  Standalone
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        }
+                        parentKrTitle={c.parentKr || undefined}
                         actions={
                           <div className="flex flex-wrap items-center gap-2 justify-end flex-1">
                             <Button

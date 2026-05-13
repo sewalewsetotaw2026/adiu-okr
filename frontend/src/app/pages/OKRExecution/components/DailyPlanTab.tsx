@@ -180,11 +180,15 @@ export default function DailyPlanTab({
       await Promise.all(
         published.map(async (wp) => {
           const res = await fetchDailyPlans(wp.id);
+          const monthNum = wp.parent_monthly_plan?.month_number || 1;
+          const weekInMonth = wp.week_number || 1;
+          const absoluteWeek = (monthNum - 1) * 4 + weekInMonth;
+
           const enriched = res.map((dp) => {
             const plannedDate = cycleStartDate
               ? getPlannedDailyDate(
                   cycleStartDate,
-                  Number(wp.week_number) || 1,
+                  absoluteWeek,
                   dp.completion_day,
                 )
               : null;
@@ -193,13 +197,16 @@ export default function DailyPlanTab({
 
             return {
               ...dp,
+              _absoluteWeek: absoluteWeek,
               _weeklyPlanTitle: wp.title,
               _weeklyPlanNumber: wp.week_number,
-              _monthlyPlanNumber: wp.parent_monthly_plan?.month_number,
+              _monthlyPlanNumber: monthNum,
               _plannedDate: plannedDate
                 ? formatReadableDate(plannedDate.toISOString())
                 : undefined,
               _isToday: isToday,
+              // Adding this back so groupedPlans can use it if it expects the object
+              weeklyPlan: wp, 
             } as any;
           });
           allDailies.push(...(enriched as any));
@@ -230,8 +237,13 @@ export default function DailyPlanTab({
       SUNDAY: [],
     };
     dailyPlans.forEach((plan) => {
-      // Filter by selected week if parent weekly plan is available
-      if (plan.weeklyPlan && plan.weeklyPlan.week_number !== selectedWeek)
+      // Filter by absolute week
+      const planAbsWeek = (plan as any)._absoluteWeek;
+      if (planAbsWeek && planAbsWeek !== selectedWeek)
+        return;
+      
+      // Fallback to legacy weeklyPlan object check if _absoluteWeek is missing
+      if (!planAbsWeek && plan.weeklyPlan && plan.weeklyPlan.week_number !== selectedWeek)
         return;
 
       if (groups[plan.completion_day]) {
@@ -476,7 +488,9 @@ export default function DailyPlanTab({
           const fallbackTodayDay =
             DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1] ??
             "MONDAY";
-          const isToday = (plannedDate && formatDateInput(plannedDate) === todayKey) || day === fallbackTodayDay;
+          const isToday = plannedDate 
+            ? formatDateInput(plannedDate) === todayKey 
+            : day === fallbackTodayDay;
 
           if (totalTasks === 0 && !isToday) return null;
 
@@ -580,7 +594,7 @@ export default function DailyPlanTab({
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  <div className="flex flex-col gap-8">
                     {dayTasks.map((plan) => (
                       <DailyTaskCard
                         key={plan.id}
@@ -610,6 +624,7 @@ export default function DailyPlanTab({
           }}
           publishedWeeklyPlans={availableWeeklyPlans}
           initialDay={preSelectedDay}
+          selectedWeek={selectedWeek}
         />
       )}
 
