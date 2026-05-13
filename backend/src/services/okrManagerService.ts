@@ -1636,16 +1636,16 @@ export async function getPlanningInsights(params: {
   };
 
   // Performance Metrics Calculation
-  let totalKrProgress = new Decimal(0);
-  let totalKrsWithProgress = 0;
+  let totalObjectiveProgress = new Decimal(0);
   let atRiskKrCount = 0;
   let onTrackKrCount = 0;
 
   for (const obj of objectives) {
-    for (const kr of obj.keyResults) {
-      totalKrProgress = totalKrProgress.add(new Decimal(kr.final_score || 0));
-      totalKrsWithProgress++;
+    totalObjectiveProgress = totalObjectiveProgress.add(
+      new Decimal(obj.final_score || 0),
+    );
 
+    for (const kr of obj.keyResults) {
       let isAtRisk = false;
       let isOnTrack = false;
 
@@ -1700,8 +1700,8 @@ export async function getPlanningInsights(params: {
       0,
     ),
     avg_progress:
-      totalKrsWithProgress > 0
-        ? totalKrProgress.div(totalKrsWithProgress).toNumber()
+      objectives.length > 0
+        ? totalObjectiveProgress.div(objectives.length).toNumber()
         : 0,
     at_risk_kr_count: atRiskKrCount,
     on_track_kr_count: onTrackKrCount,

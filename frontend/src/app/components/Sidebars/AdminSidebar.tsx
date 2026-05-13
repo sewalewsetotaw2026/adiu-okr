@@ -227,11 +227,11 @@ export default function AdminSidebar() {
       label: "Configuration",
       icon: MdSettings,
     },
-    {
-      to: routeConstants.okrDepartmentComparison,
-      label: "Compare",
-      icon: MdCompareArrows,
-    },
+    // {
+    //   to: routeConstants.okrDepartmentComparison,
+    //   label: "Compare",
+    //   icon: MdCompareArrows,
+    // },
     {
       to: routeConstants.okrCompanyGallery,
       label: "Gallery",
