@@ -89,6 +89,11 @@ export async function listDepartmentObjectives(
           objective: { select: { id: true, title: true, status_code: true } },
         },
       },
+      keyResults: {
+        include: {
+          metricDefinition: true,
+        },
+      },
       _count: { select: { keyResults: true } },
     },
   });

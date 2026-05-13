@@ -406,6 +406,7 @@ const apiRoutes = {
     managerApprove: `${BASE_URL}/okr/manager/approve`,
     managerBulkApprove: `${BASE_URL}/okr/manager/bulk-approve`,
     managerPlanningCompliance: `${BASE_URL}/okr/manager/planning-compliance`,
+    planningInsights: `${BASE_URL}/okr/manager/planning-insights`,
 
     // Manager Plan Alignment (subordinate-facing)
     managerPlans: {

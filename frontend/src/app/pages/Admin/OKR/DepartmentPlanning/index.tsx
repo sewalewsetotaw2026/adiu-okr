@@ -62,24 +62,36 @@ export default function DepartmentPlanningList() {
 
       setLoadingMetrics(true);
       try {
-        // Fetch planning insights to get metrics for each department
+        // 1. Fetch current cycle first
+        const cycleResponse = await makeCall("GET", apiRoutes.okr.currentCycle);
+        const cycle = cycleResponse?.data?.data || cycleResponse?.data;
+        const cycleId = cycle?.id;
+
+        if (!cycleId) {
+          setLoadingMetrics(false);
+          return;
+        }
+
+        // 2. Fetch planning insights with cycle_id
         const response = await makeCall(
           "GET",
           apiRoutes.okr.dashboardDepartmentsCompare,
           undefined,
-          undefined,
+          { cycle_id: cycleId },
         );
 
-        if (response?.data?.departments) {
+        const data = response?.data?.data || response?.data;
+        if (data?.departments) {
           const metricsMap = new Map();
 
-          for (const dept of response.data.departments) {
-            metricsMap.set(dept.id, {
-              objectiveCount: dept.objectiveCount || 0,
-              krCount: dept.krCount || 0,
-              progressPercent: dept.progressPercent || 0,
-              employeeCount: dept.employeeCount || 0,
-              atRiskCount: dept.atRiskCount || 0,
+          for (const dept of data.departments) {
+            // Use the consistent field names from backend
+            metricsMap.set(Number(dept.id), {
+              objectiveCount: Number(dept.objectiveCount || 0),
+              krCount: Number(dept.krCount || 0),
+              progressPercent: Number(dept.progressPercent || 0),
+              employeeCount: Number(dept.employeeCount || 0),
+              atRiskCount: Number(dept.atRiskCount || 0),
             });
           }
 
@@ -95,6 +107,7 @@ export default function DepartmentPlanningList() {
 
     fetchDepartmentInsights();
   }, [authUser, departments.length]);
+
 
   const goToDepartment = (id: number) => {
     navigate(

@@ -20,6 +20,7 @@ import { okrUnwrap } from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 import DepartmentInsightsDashboard from "./components/DepartmentInsightsDashboard";
 import EmployeeContributionTable from "./components/EmployeeContributionTable";
+import ObjectiveCard from "../../../../components/common/ObjectiveCard";
 
 type DepartmentData = {
   id: number;
@@ -87,6 +88,7 @@ export default function DepartmentDetail() {
   const [department, setDepartment] = useState<DepartmentData | null>(null);
   const [planningInsights, setPlanningInsights] =
     useState<PlanningInsightData | null>(null);
+  const [departmentObjectives, setDepartmentObjectives] = useState<any[]>([]);
   const [currentCycle, setCurrentCycle] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -129,23 +131,36 @@ export default function DepartmentDetail() {
       try {
         const insightsResponse = await makeCall(
           "GET",
-          `${apiRoutes.okr.dashboardCeo || apiRoutes.okr.cycles}/../manager/planning-insights`,
+          apiRoutes.okr.planningInsights,
           undefined,
           {
             cycle_id: cycle.id,
             department_id: Number(departmentId),
             scope: "department",
-          }
+          },
         );
 
-        if (insightsResponse?.data) {
-          setPlanningInsights(insightsResponse.data);
+        const insightsData = insightsResponse?.data?.data || insightsResponse?.data;
+        if (insightsData) {
+          setPlanningInsights(insightsData);
+        }
+
+        // Fetch department objectives (execution data)
+        const objectivesResponse = await makeCall(
+          "GET",
+          apiRoutes.okr.departmentObjectives,
+          undefined,
+          {
+            cycle_id: cycle.id,
+            department_id: Number(departmentId),
+          },
+        );
+
+        if (objectivesResponse?.data) {
+          setDepartmentObjectives(objectivesResponse.data);
         }
       } catch (insightsError) {
-        // If the specific endpoint doesn't exist, use alternative approach
-        console.warn(
-          "Could not fetch planning insights with POST, trying alternative",
-        );
+        console.error("Could not fetch planning insights:", insightsError);
       }
     } catch (error) {
       console.error("Failed to fetch department data:", error);
@@ -215,40 +230,33 @@ export default function DepartmentDetail() {
   // Calculate aggregate metrics from planning insights
   const metrics = planningInsights
     ? {
-        totalObjectives: planningInsights.totals?.objectives || 0,
-        totalKRs: planningInsights.totals?.krs || 0,
-        totalEmployees: planningInsights.totals?.members || 0,
-        averageProgress:
-          (planningInsights.totals?.krs || 0) > 0
-            ? Math.round(
-                (((planningInsights.highlights?.set_monthly_plan?.length || 0) /
-                  Math.max(planningInsights.totals?.members || 1, 1)) *
-                  100) as unknown as number,
-              )
-            : 0,
-        atRiskCount:
-          planningInsights.highlights?.missing_progress_update?.length || 0,
-        onTrackCount: planningInsights.highlights?.updated_progress?.length || 0,
-        missingPlansCount:
-          planningInsights.highlights?.missing_monthly_plan?.length || 0,
-        missingSetsCount:
-          planningInsights.highlights?.missing_monthly_plan?.length || 0,
-        completedPlansCount:
-          (planningInsights.totals?.monthly_plans || 0) +
-          (planningInsights.totals?.weekly_plans || 0) +
-          (planningInsights.totals?.daily_plans || 0),
-      }
+      totalObjectives: planningInsights.totals?.objectives || 0,
+      totalKRs: planningInsights.totals?.krs || 0,
+      totalEmployees: planningInsights.totals?.members || 0,
+      averageProgress: Number(planningInsights.totals?.avg_progress || 0),
+      atRiskCount: Number(planningInsights.totals?.at_risk_kr_count || 0),
+      onTrackCount: Number(planningInsights.totals?.on_track_kr_count || 0),
+      missingPlansCount:
+        planningInsights.highlights?.missing_monthly_plan?.length || 0,
+      missingSetsCount:
+        planningInsights.highlights?.missing_monthly_plan?.length || 0,
+      completedPlansCount:
+        (planningInsights.totals?.monthly_plans || 0) +
+        (planningInsights.totals?.weekly_plans || 0) +
+        (planningInsights.totals?.daily_plans || 0),
+    }
     : {
-        totalObjectives: 0,
-        totalKRs: 0,
-        totalEmployees: 0,
-        averageProgress: 0,
-        atRiskCount: 0,
-        onTrackCount: 0,
-        missingPlansCount: 0,
-        missingSetsCount: 0,
-        completedPlansCount: 0,
-      };
+      totalObjectives: 0,
+      totalKRs: 0,
+      totalEmployees: 0,
+      averageProgress: 0,
+      atRiskCount: 0,
+      onTrackCount: 0,
+      missingPlansCount: 0,
+      missingSetsCount: 0,
+      completedPlansCount: 0,
+    };
+
 
   return (
     <AdminLayout>
@@ -345,6 +353,54 @@ export default function DepartmentDetail() {
             />
           </div> */}
 
+          {/* Departmental Execution Section */}
+          {/* <div className="mt-12 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <MdTrendingUp className="text-primary" />
+                Departmental Execution
+              </h2>
+              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-space">
+                {departmentObjectives.length} Objectives
+              </span>
+            </div>
+
+            {departmentObjectives.length > 0 ? (
+              <div className="grid grid-cols-1 gap-6">
+                {departmentObjectives.map((obj) => (
+                  <ObjectiveCard
+                    key={obj.id}
+                    objective={{
+                      id: obj.id,
+                      title: obj.title,
+                      description: obj.description,
+                      status: obj.status_code || "draft",
+                      progress: Number(obj.final_score || 0),
+                      indirectProgress: Number(obj.indirect_score || 0),
+                      krCount: obj._count?.keyResults || 0,
+                    }}
+                    keyResults={obj.keyResults}
+                    expandable={true}
+                    parentKrTitle={obj.parentCompanyKr?.title}
+                    variant="admin"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <MdBusiness className="text-3xl text-slate-300" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 mb-1">
+                  No execution data found
+                </h3>
+                <p className="text-sm text-slate-500 max-w-xs mx-auto">
+                  This department hasn't started executing any objectives for the current cycle yet.
+                </p>
+              </div>
+            )}
+          </div> */}
+
           {/* Call to Action */}
           {/* <div className="mt-12 rounded-xl bg-gradient-to-r from-primary/10 to-blue-50 border border-primary/20 p-6">
             <div className="flex items-start gap-4">
@@ -373,6 +429,7 @@ export default function DepartmentDetail() {
               </div>
             </div>
           </div> */}
+
         </div>
       </div>
     </AdminLayout>

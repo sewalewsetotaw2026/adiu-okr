@@ -47,7 +47,7 @@ export default function AdminSidebar() {
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isOkrExpanded, setIsOkrExpanded] = useState(
     location.pathname.startsWith("/admin/okr") ||
-      location.pathname.startsWith("/manager/okr"),
+    location.pathname.startsWith("/manager/okr"),
   );
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
@@ -294,10 +294,9 @@ export default function AdminSidebar() {
         className={`
           h-screen bg-white shadow-xl border-r border-gray-100 flex flex-col transition-all duration-300 z-40
           fixed top-0 left-0
-          ${
-            isMobileOpen
-              ? "translate-x-0 w-72"
-              : "-translate-x-full lg:translate-x-0"
+          ${isMobileOpen
+            ? "translate-x-0 w-72"
+            : "-translate-x-full lg:translate-x-0"
           }
           ${isOpen ? "lg:w-72" : "lg:w-24"}
         `}
@@ -314,9 +313,8 @@ export default function AdminSidebar() {
           <img
             src={user?.company?.logo_url || "/kacha-logo.jpg"}
             alt={`${user?.company?.company_code || "Kacha"} Logo`}
-            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${
-              isOpen || isMobileOpen ? "max-h-14" : "max-h-10"
-            }`}
+            className={`w-full max-w-[90%] object-contain mx-auto transition-all duration-300 ${isOpen || isMobileOpen ? "max-h-14" : "max-h-10"
+              }`}
           />
 
           {/* Toggle button - hidden on mobile */}
@@ -344,10 +342,9 @@ export default function AdminSidebar() {
                       className={`
                         group w-full flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors cursor-pointer
                         ${isOpen || isMobileOpen ? "" : "justify-center"}
-                        ${
-                          location.pathname.startsWith("/admin/okr")
-                            ? "bg-primary text-white"
-                            : "text-gray-500 hover:bg-primary-light hover:text-primary"
+                        ${location.pathname.startsWith("/admin/okr")
+                          ? "bg-primary text-white"
+                          : "text-gray-500 hover:bg-primary-light hover:text-primary"
                         }
                       `}
                       title="OKR Management"
@@ -375,18 +372,17 @@ export default function AdminSidebar() {
                           const active = link.exact
                             ? location.pathname === link.to
                             : location.pathname === link.to ||
-                              location.pathname.startsWith(`${link.to}/`);
+                            location.pathname.startsWith(`${link.to}/`);
                           const LinkIcon = link.icon;
                           return (
                             <Link
                               key={link.to}
                               to={link.to}
                               onClick={closeMobile}
-                              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                                active
+                              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active
                                   ? "bg-primary/10 text-primary"
                                   : "text-k-medium-grey hover:bg-gray-50 hover:text-k-dark-grey"
-                              }`}
+                                }`}
                             >
                               <LinkIcon className="text-sm shrink-0" />
                               {link.label}
@@ -412,10 +408,9 @@ export default function AdminSidebar() {
                 className={`
                   group flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors
                   ${isOpen || isMobileOpen ? "" : "justify-center"}
-                  ${
-                    isActive(item.path)
-                      ? "bg-primary text-white"
-                      : "text-gray-500 hover:bg-primary-light hover:text-primary"
+                  ${isActive(item.path)
+                    ? "bg-primary text-white"
+                    : "text-gray-500 hover:bg-primary-light hover:text-primary"
                   }
                 `}
                 onClick={closeMobile}

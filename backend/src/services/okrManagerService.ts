@@ -1,4 +1,5 @@
 import { prisma } from "src/app";
+import { Decimal } from "@prisma/client/runtime/library";
 import { logActivity } from "src/services/okrActivityLogService";
 import { OkrApprovalAction, OkrEntityType } from "@prisma/client";
 import { validateStatusTransition } from "src/services/okrStatusTransitionService";
@@ -366,18 +367,18 @@ export async function getTeamExecutionSummary(
     const progress =
       empObjectives.length > 0
         ? empObjectives.reduce(
-            (s: number, o: any) => s + Number(o.final_score ?? 0),
-            0,
-          ) / empObjectives.length
+          (s: number, o: any) => s + Number(o.final_score ?? 0),
+          0,
+        ) / empObjectives.length
         : 0;
 
     // Quarterly indirect progress
     const indirect_progress =
       empObjectives.length > 0
         ? empObjectives.reduce(
-            (s: number, o: any) => s + Number(o.indirect_score ?? 0),
-            0,
-          ) / empObjectives.length
+          (s: number, o: any) => s + Number(o.indirect_score ?? 0),
+          0,
+        ) / empObjectives.length
         : 0;
 
     // Build monthly_progress and indirect_monthly_progress maps
@@ -552,38 +553,38 @@ export async function listPendingApprovals(
   const pendingObjectives =
     managedIds.length > 0
       ? await prisma.employeeObjective.findMany({
-          where: {
-            company_id: companyId,
-            cycle_id: cycleId,
-            user_id: { in: managedIds },
-            status_code: { in: ["submitted", "pending_approval"] },
+        where: {
+          company_id: companyId,
+          cycle_id: cycleId,
+          user_id: { in: managedIds },
+          status_code: { in: ["submitted", "pending_approval"] },
+        },
+        include: {
+          keyResults: {
+            select: { id: true, title: true, status_code: true },
           },
-          include: {
-            keyResults: {
-              select: { id: true, title: true, status_code: true },
-            },
-          },
-        })
+        },
+      })
       : [];
 
   // Get pending employee KRs (submitted for approval)
   const pendingKRs =
     managedIds.length > 0
       ? await prisma.employeeKeyResult.findMany({
-          where: {
-            company_id: companyId,
-            status_code: { in: ["submitted", "pending_approval"] },
-            employeeObjective: {
-              cycle_id: cycleId,
-              user_id: { in: managedIds },
-            },
+        where: {
+          company_id: companyId,
+          status_code: { in: ["submitted", "pending_approval"] },
+          employeeObjective: {
+            cycle_id: cycleId,
+            user_id: { in: managedIds },
           },
-          include: {
-            employeeObjective: {
-              select: { id: true, user_id: true, title: true },
-            },
+        },
+        include: {
+          employeeObjective: {
+            select: { id: true, user_id: true, title: true },
           },
-        })
+        },
+      })
       : [];
 
   const pendingObjectiveIds = pendingObjectives.map((o) => o.id);
@@ -593,25 +594,25 @@ export async function listPendingApprovals(
   const pendingMonthPlans =
     pendingObjectiveIds.length > 0
       ? await prisma.employeeMonthPlan.findMany({
-          where: {
-            company_id: companyId,
-            status_code: { in: ["submitted", "pending_approval"] },
-            ...({ employee_objective_id: { in: pendingObjectiveIds } } as any),
-          } as any,
-        })
+        where: {
+          company_id: companyId,
+          status_code: { in: ["submitted", "pending_approval"] },
+          ...({ employee_objective_id: { in: pendingObjectiveIds } } as any),
+        } as any,
+      })
       : [];
 
   // Get pending weekly plans for managed employees
   const pendingWeeklyPlans =
     pendingKrIds.length > 0
       ? await prisma.weeklyPlan.findMany({
-          where: {
-            company_id: companyId,
-            monthPlan: { employee_kr_id: { in: pendingKrIds } },
-            plan_status: "SUBMITTED",
-          },
-          include: { monthPlan: { select: { employee_kr_id: true } } },
-        })
+        where: {
+          company_id: companyId,
+          monthPlan: { employee_kr_id: { in: pendingKrIds } },
+          plan_status: "SUBMITTED",
+        },
+        include: { monthPlan: { select: { employee_kr_id: true } } },
+      })
       : [];
 
   const pendingWeeklyPlanIds = pendingWeeklyPlans.map((w) => w.id);
@@ -620,14 +621,14 @@ export async function listPendingApprovals(
   const pendingDailyPlans =
     pendingWeeklyPlanIds.length > 0
       ? await prisma.dailyPlan.findMany({
-          where: {
-            company_id: companyId,
-            weekly_plan_id: { in: pendingWeeklyPlanIds },
-            // Daily plans don't have a submission lifecycle in the new schema;
-            // surface in-progress / pending tasks for visibility.
-            status: { in: ["PENDING", "IN_PROGRESS"] },
-          },
-        })
+        where: {
+          company_id: companyId,
+          weekly_plan_id: { in: pendingWeeklyPlanIds },
+          // Daily plans don't have a submission lifecycle in the new schema;
+          // surface in-progress / pending tasks for visibility.
+          status: { in: ["PENDING", "IN_PROGRESS"] },
+        },
+      })
       : [];
 
   // Create employee name map for easy lookup
@@ -1342,28 +1343,26 @@ export async function getPlanningInsights(params: {
     is_active: true,
   };
 
-  if (params.scope === "organization") {
-    if (!isOrganizationRole) {
-      employmentWhere.OR = [
-        { manager_id: { in: managerScopeIds } },
-        requesterDepartmentIds.length > 0
-          ? { department_id: { in: requesterDepartmentIds } }
-          : undefined,
-      ].filter(Boolean);
-    }
-  } else {
-    const constraints: any[] = [
+  // 1. Apply strict department filter if requested
+  if (params.departmentId && Number.isFinite(params.departmentId)) {
+    employmentWhere.department_id = Number(params.departmentId);
+  }
+
+  // 2. Apply visibility constraints for non-privileged users
+  if (!isOrganizationRole) {
+    const visibilityConstraints: any[] = [
       { manager_id: { in: managerScopeIds } },
       requesterDepartmentIds.length > 0
         ? { department_id: { in: requesterDepartmentIds } }
         : undefined,
     ].filter(Boolean);
 
-    if (params.departmentId && Number.isFinite(params.departmentId)) {
-      constraints.push({ department_id: Number(params.departmentId) });
+    if (visibilityConstraints.length > 0) {
+      // If we already have a department_id filter, the visibility must be within that department or manager scope
+      employmentWhere.OR = visibilityConstraints;
     }
-    employmentWhere.AND = [{ OR: constraints }];
   }
+
 
   const employments = await prisma.employment.findMany({
     where: employmentWhere,
@@ -1559,8 +1558,8 @@ export async function getPlanningInsights(params: {
       const filteredDailyPlans = allWeeklyPlans.flatMap((wp: any) => {
         return params.completionDay
           ? wp.dailyPlans.filter(
-              (dp: any) => dp.completion_day === params.completionDay,
-            )
+            (dp: any) => dp.completion_day === params.completionDay,
+          )
           : wp.dailyPlans;
       });
 
@@ -1636,6 +1635,59 @@ export async function getPlanningInsights(params: {
       .map((m) => m.employee_name),
   };
 
+  // Performance Metrics Calculation
+  let totalKrProgress = new Decimal(0);
+  let totalKrsWithProgress = 0;
+  let atRiskKrCount = 0;
+  let onTrackKrCount = 0;
+
+  for (const obj of objectives) {
+    for (const kr of obj.keyResults) {
+      totalKrProgress = totalKrProgress.add(new Decimal(kr.final_score || 0));
+      totalKrsWithProgress++;
+
+      let isAtRisk = false;
+      let isOnTrack = false;
+
+      // 1. Check latest progress update confidence
+      const latestUpdate = kr.progressUpdates[0];
+      if (latestUpdate) {
+        if (["AT_RISK", "OFF_TRACK"].includes(latestUpdate.confidence_level)) {
+          isAtRisk = true;
+        } else if (latestUpdate.confidence_level === "ON_TRACK") {
+          isOnTrack = true;
+        }
+      }
+
+      // 2. Check plans if not already decided
+      if (!isAtRisk && !isOnTrack) {
+        for (const mp of kr.monthlyPlans) {
+          for (const wp of mp.weeklyPlans) {
+            if (["AT_RISK", "OFF_TRACK"].includes(wp.confidence_level)) {
+              isAtRisk = true;
+              break;
+            } else if (wp.confidence_level === "ON_TRACK") {
+              isOnTrack = true;
+              // we don't break yet, maybe a daily plan is at risk?
+            }
+            for (const dp of wp.dailyPlans) {
+              if (["AT_RISK", "OFF_TRACK"].includes(dp.confidence_level)) {
+                isAtRisk = true;
+                isOnTrack = false;
+                break;
+              }
+            }
+            if (isAtRisk) break;
+          }
+          if (isAtRisk) break;
+        }
+      }
+
+      if (isAtRisk) atRiskKrCount++;
+      else if (isOnTrack) onTrackKrCount++;
+    }
+  }
+
   const totals = {
     members: memberRows.length,
     objectives: memberRows.reduce((s, m) => s + m.objective_count, 0),
@@ -1647,7 +1699,14 @@ export async function getPlanningInsights(params: {
       (s, m) => s + m.progress_update_count,
       0,
     ),
+    avg_progress:
+      totalKrsWithProgress > 0
+        ? totalKrProgress.div(totalKrsWithProgress).toNumber()
+        : 0,
+    at_risk_kr_count: atRiskKrCount,
+    on_track_kr_count: onTrackKrCount,
   };
+
 
   return {
     cycle_id: params.cycleId,

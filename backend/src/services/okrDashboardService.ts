@@ -232,71 +232,125 @@ export async function getDepartmentComparison(
   companyId: number,
   cycleId: number,
 ) {
+  // 1. Fetch all departments for this company
+  const allDepts = await prisma.department.findMany({
+    where: { company_id: companyId },
+    select: { id: true, name: true },
+  });
+
+  // 2. Fetch headcount per department
+  const headcount = await prisma.employment.groupBy({
+    by: ["department_id"],
+    where: { company_id: companyId, is_active: true },
+    _count: { employee_id: true },
+  });
+  const headcountMap = new Map(
+    headcount.map((h) => [h.department_id, h._count.employee_id]),
+  );
+
+  // 3. Fetch all employee objectives for this cycle
   const deptObjectives = await prisma.employeeObjective.findMany({
     where: { company_id: companyId, cycle_id: cycleId },
     select: {
       id: true,
       final_score: true,
       final_value: true,
+      indirect_score: true,
       user: {
         select: {
           employee: {
             select: {
               employments: {
                 where: { is_active: true },
-                select: { department: { select: { id: true, name: true } } }
-              }
-            }
-          }
-        }
+                select: { department: { select: { id: true, name: true } } },
+              },
+            },
+          },
+        },
       },
       keyResults: {
         select: {
+          id: true,
           final_score: true,
           final_value: true,
+          indirect_value: true,
           is_mandatory_for_completion: true,
+          progressUpdates: {
+            orderBy: { created_at: "desc" },
+            take: 1,
+            select: { confidence_level: true },
+          },
+          monthlyPlans: {
+            select: {
+              weeklyPlans: {
+                select: {
+                  confidence_level: true,
+                  dailyPlans: {
+                    select: { confidence_level: true },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
   });
 
-  const deptMap = new Map<
+  const deptDataMap = new Map<
     number,
-    { departmentId: number; departmentName: string; objectives: any[] }
+    {
+      id: number;
+      name: string;
+      objectives: any[];
+      employeeCount: number;
+    }
   >();
 
+  // Initialize with all departments to ensure none are missing
+  for (const d of allDepts) {
+    deptDataMap.set(d.id, {
+      id: d.id,
+      name: d.name,
+      objectives: [],
+      employeeCount: headcountMap.get(d.id) || 0,
+    });
+  }
+
+  // Group objectives by department
   for (const obj of deptObjectives) {
     const department = obj.user?.employee?.employments[0]?.department;
     if (!department) continue;
     const deptId = department.id;
-    if (!deptMap.has(deptId)) {
-      deptMap.set(deptId, {
-        departmentId: deptId,
-        departmentName: department.name,
-        objectives: [],
-      });
+    if (deptDataMap.has(deptId)) {
+      deptDataMap.get(deptId)!.objectives.push(obj);
     }
-    deptMap.get(deptId)!.objectives.push(obj);
   }
 
-  const departments = Array.from(deptMap.values()).map((dept) => {
+  const departments = Array.from(deptDataMap.values()).map((dept) => {
     const allKRs = dept.objectives.flatMap((o: any) => o.keyResults);
-    const progressValues = dept.objectives
-      .map((o: any) => Number(o.final_score || 0));
+    const progressValues = dept.objectives.map((o: any) =>
+      Number(o.final_score || 0),
+    );
+
     const avgScore =
       progressValues.length > 0
         ? new Decimal(
-            progressValues.reduce((sum: number, v: number) => sum + v, 0) / progressValues.length,
+            progressValues.reduce((sum: number, v: number) => sum + v, 0) /
+              progressValues.length,
           ).toDecimalPlaces(2)
         : new Decimal(0);
+
     const totalValue = allKRs.reduce(
       (sum: Decimal, kr: any) =>
         sum.add(kr.final_value ? new Decimal(kr.final_value) : new Decimal(0)),
       new Decimal(0),
     );
+
     const objectiveIndirectScores = dept.objectives
       .filter((o: any) => o.indirect_score)
       .map((o: any) => new Decimal(o.indirect_score));
+
     const avgIndirectScore =
       objectiveIndirectScores.length > 0
         ? objectiveIndirectScores
@@ -318,23 +372,61 @@ export async function getDepartmentComparison(
     ).length;
     const completionRate = totalKRs > 0 ? (completedKRs / totalKRs) * 100 : 0;
 
+    // Calculate atRiskCount
+    let atRiskCount = 0;
+    for (const kr of allKRs) {
+      let isAtRisk = false;
+      // Check latest progress update
+      if (
+        kr.progressUpdates[0] &&
+        ["AT_RISK", "OFF_TRACK"].includes(kr.progressUpdates[0].confidence_level)
+      ) {
+        isAtRisk = true;
+      }
+      // Check weekly/daily plans if not already marked at risk
+      if (!isAtRisk) {
+        for (const mp of kr.monthlyPlans) {
+          for (const wp of mp.weeklyPlans) {
+            if (["AT_RISK", "OFF_TRACK"].includes(wp.confidence_level)) {
+              isAtRisk = true;
+              break;
+            }
+            for (const dp of wp.dailyPlans) {
+              if (["AT_RISK", "OFF_TRACK"].includes(dp.confidence_level)) {
+                isAtRisk = true;
+                break;
+              }
+            }
+            if (isAtRisk) break;
+          }
+          if (isAtRisk) break;
+        }
+      }
+      if (isAtRisk) atRiskCount++;
+    }
+
     return {
-      departmentId: dept.departmentId,
-      departmentName: dept.departmentName,
+      id: dept.id,
+      departmentId: dept.id,
+      departmentName: dept.name,
       objectiveCount: dept.objectives.length,
       krCount: totalKRs,
       completedKRs,
       avgScore,
+      progressPercent: avgScore, // Map to progressPercent for frontend
       totalValue,
       avgIndirectScore,
       totalIndirectValue,
       completionRate,
+      employeeCount: dept.employeeCount,
+      atRiskCount,
     };
   });
 
   departments.sort((a, b) => Number(b.avgScore) - Number(a.avgScore));
   return { cycleId, companyId, departments };
 }
+
 
 /**
  * Company OKR Gallery — All objectives with nested KR status.
