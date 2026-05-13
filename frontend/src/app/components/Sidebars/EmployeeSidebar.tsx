@@ -181,7 +181,7 @@ export default function EmployeeSidebar() {
     },
     {
       path: routeConstants.okrTeamExecutionMonitor,
-      label: "Team monitor",
+      label: "Team Monitor",
       icon: MdPersonOutline,
       visible: true,
       indicator: hasUnsubmittedPlans,
@@ -205,7 +205,7 @@ export default function EmployeeSidebar() {
   const okrNavItems = [
     {
       path: routeConstants.okrMyExecution,
-      label: "My execution",
+      label: "My Execution",
       icon: MdOutlineList,
       visible: true,
     },
