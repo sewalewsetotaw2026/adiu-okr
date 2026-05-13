@@ -11,8 +11,6 @@ type Props = {
   employees: EmployeeOption[];
   selectedEmployeeId: string | "";
   onSelectEmployee: (id: string | "") => void;
-  required: boolean;
-  onToggleRequired: (v: boolean) => void;
   onSubmit: () => void;
   loading?: boolean;
 };
@@ -25,8 +23,6 @@ export default function AssignContributorModal({
   employees,
   selectedEmployeeId,
   onSelectEmployee,
-  required,
-  onToggleRequired,
   onSubmit,
   loading,
 }: Props) {
@@ -69,18 +65,6 @@ export default function AssignContributorModal({
           ))}
         </select>
       </div>
-
-      <label className="mt-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-k-light-grey/40 px-4 py-3 cursor-pointer transition-colors hover:bg-k-light-grey/60">
-        <input
-          type="checkbox"
-          checked={required}
-          onChange={(e) => onToggleRequired(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
-        />
-        <span className="text-sm text-k-dark-grey font-medium">
-          Required contributor (blocks closure until complete)
-        </span>
-      </label>
 
       <ApprovalFooter
         onCancel={onClose}

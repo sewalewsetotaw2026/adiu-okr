@@ -22,12 +22,11 @@ type KrRow = {
   id: string;
   krTitle: string;
   objectiveTitle: string;
-  contributors: {
-    id: number;
-    userId: string;
-    name: string;
-    required: boolean;
-  }[];
+    contributors: {
+      id: number;
+      userId: string;
+      name: string;
+    }[];
 };
 
 type DepartmentContributorSummary = {
@@ -95,11 +94,6 @@ async function fetchDepartmentKrRows(
               c?.employee?.full_name ||
               c?.employee?.fullName ||
               (c?.user_id ? `User ${c.user_id}` : "Contributor"),
-            required: Boolean(
-              c?.is_required_for_completion ??
-              c?.isRequiredForCompletion ??
-              true,
-            ),
           }))
           .filter((c: { id: number }) => Number.isFinite(c.id));
       } catch {
@@ -149,7 +143,6 @@ export default function ContributorAssignmentPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | "">("");
-  const [required, setRequired] = useState(true);
   const [assignLoading, setAssignLoading] = useState(false);
 
   useEffect(() => {
@@ -266,7 +259,6 @@ export default function ContributorAssignmentPage() {
   const openAssign = (id: string) => {
     setActiveKrId(id);
     setSelectedEmployeeId("");
-    setRequired(true);
     setModalOpen(true);
   };
 
@@ -281,7 +273,7 @@ export default function ContributorAssignmentPage() {
           department_kr_id: Number(activeKrId),
           user_id: String(selectedEmployeeId),
           role_type: "EMPLOYEE",
-          is_required_for_completion: required,
+          is_required_for_completion: true,
         },
         isSecureRoute: true,
       });
@@ -295,29 +287,7 @@ export default function ContributorAssignmentPage() {
     }
   };
 
-  const handleToggleRequired = async (
-    contributorId: number,
-    currentRequired: boolean,
-  ) => {
-    try {
-      await makeCall({
-        method: "PATCH",
-        route: apiRoutes.okr.contributorFlag(contributorId),
-        body: {
-          is_required_for_completion: !currentRequired,
-        },
-        isSecureRoute: true,
-      });
-      ToastService.success(
-        !currentRequired
-          ? "Contributor marked required."
-          : "Contributor marked optional.",
-      );
-      await loadSummary();
-    } catch (e) {
-      ToastService.error(okrErrorMessage(e));
-    }
-  };
+
 
   return (
     <EmployeeLayout forceEmployeeSidebar>
@@ -462,8 +432,6 @@ export default function ContributorAssignmentPage() {
           employees={employees}
           selectedEmployeeId={selectedEmployeeId}
           onSelectEmployee={setSelectedEmployeeId}
-          required={required}
-          onToggleRequired={setRequired}
           onSubmit={handleAssign}
           loading={assignLoading}
         />

@@ -1958,33 +1958,34 @@ async function rollupWeeklyPlanFromDailies(
 
   if (!hasChildren) {
     current = decOrZero(weekly.current_value);
-    if (target.sub(start).gt(0)) {
-      progress = clampPercent(current.sub(start).div(target.sub(start)).mul(100));
+    const range = target.sub(start);
+    if (range.gt(0)) {
+      progress = clampPercent(current.sub(start).div(range).mul(100));
     } else {
-      progress = new Decimal(current.gte(target) ? 100 : 0);
+      // Degenerate case (target <= start). 
+      // For Milestone/Binary metrics, we check if current >= target AND target > 0.
+      const isAchieved = target.gt(0) && current.gte(target);
+      progress = new Decimal(isAchieved ? 100 : 0);
     }
   } else {
     if (isValueBased) {
       let totalValue = new Decimal(0);
-      // Value aggregation only includes nodes with contribute_to_value = true
       for (const d of dailies as any[]) {
         if (d.contribute_to_value) {
-          const val = decOrZero(d.current_value);
-          totalValue = totalValue.add(val);
+          totalValue = totalValue.add(decOrZero(d.current_value));
         }
       }
       for (const aw of alignedWeeklies as any[]) {
         if (aw.contribute_to_value) {
-          const val = decOrZero(aw.current_value);
-          totalValue = totalValue.add(val);
+          totalValue = totalValue.add(decOrZero(aw.current_value));
         }
       }
       current = totalValue;
-      progress = target.sub(start).gt(0)
-        ? clampPercent(current.sub(start).div(target.sub(start)).mul(100))
+      const range = target.sub(start);
+      progress = range.gt(0)
+        ? clampPercent(current.sub(start).div(range).mul(100))
         : new Decimal(0);
     } else {
-      // Score aggregation only includes nodes with contribute_to_score = true
       const sources: Decimal[] = [
         ...dailies.filter((d: any) => d.contribute_to_score).map((d: any) => decOrZero(d.progress_pct)),
         ...alignedWeeklies.filter((aw: any) => aw.contribute_to_score).map((aw: any) => decOrZero(aw.progress_pct)),
@@ -1994,14 +1995,10 @@ async function rollupWeeklyPlanFromDailies(
         progress = new Decimal(0);
       } else {
         if (metric?.allows_binary_completion) {
-          // AND logic for milestone metrics
           const allCompleted = sources.every((p: Decimal) => p.gte(100));
           progress = allCompleted ? new Decimal(100) : new Decimal(0);
         } else {
-          const total = sources.reduce(
-            (sum: Decimal, p: Decimal) => sum.add(p),
-            new Decimal(0),
-          );
+          const total = sources.reduce((sum: Decimal, p: Decimal) => sum.add(p), new Decimal(0));
           progress = total.div(sources.length);
         }
       }
@@ -2101,10 +2098,13 @@ async function rollupMonthlyPlanFromWeeklies(
 
   if (!hasChildren) {
     current = decOrZero(monthly.current_value);
-    if (target.sub(start).gt(0)) {
-      progress = clampPercent(current.sub(start).div(target.sub(start)).mul(100));
+    const range = target.sub(start);
+    if (range.gt(0)) {
+      progress = clampPercent(current.sub(start).div(range).mul(100));
     } else {
-      progress = new Decimal(current.gte(target) ? 100 : 0);
+      // Degenerate case (target <= start).
+      const isAchieved = target.gt(0) && current.gte(target);
+      progress = new Decimal(isAchieved ? 100 : 0);
     }
   } else {
     if (isValueBased) {
@@ -2121,8 +2121,9 @@ async function rollupMonthlyPlanFromWeeklies(
         }
       }
       current = totalValue;
-      progress = target.sub(start).gt(0)
-        ? clampPercent(current.sub(start).div(target.sub(start)).mul(100))
+      const range = target.sub(start);
+      progress = range.gt(0)
+        ? clampPercent(current.sub(start).div(range).mul(100))
         : new Decimal(0);
       console.log(`[RollupEngine] MonthlyPlan ${monthlyPlanId} (Value-Based): TotalValue=${totalValue}, Progress=${progress}`);
     } else {
