@@ -35,6 +35,9 @@ import { usePermission } from "../../hooks/usePermission";
 import { useManagerSlice } from "../../slice/managerSlice";
 import { selectIsManager } from "../../slice/managerSlice/selectors";
 import { routeConstants } from "../../../utils/constants";
+import makeCall from "../../API";
+import apiRoutes from "../../API/apiRoutes";
+import * as okrExecutionApi from "../../services/okr-execution.api";
 
 export default function AdminSidebar() {
   const { isOpen, toggle, isMobileOpen, closeMobile } = useSidebar();
@@ -45,10 +48,7 @@ export default function AdminSidebar() {
   const { actions: managerActions } = useManagerSlice();
   const isManager = useSelector(selectIsManager);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [isOkrExpanded, setIsOkrExpanded] = useState(
-    location.pathname.startsWith("/admin/okr") ||
-    location.pathname.startsWith("/manager/okr"),
-  );
+  const [isOkrExpanded, setIsOkrExpanded] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   useEffect(() => {
@@ -207,7 +207,9 @@ export default function AdminSidebar() {
       icon: MdTrackChanges,
     },
     {
-      to: routeConstants.okrDepartmentApprovalQueue,
+      to: isManager
+        ? routeConstants.okrApprovalQueue
+        : routeConstants.okrDepartmentApprovalQueue,
       label: "Approvals",
       icon: MdFactCheck,
       badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
@@ -270,14 +272,6 @@ export default function AdminSidebar() {
     ...normalNavItems.slice(okrInsertIndex),
   ];
 
-  useEffect(() => {
-    if (
-      location.pathname.startsWith("/admin/okr") ||
-      location.pathname.startsWith("/manager/okr")
-    ) {
-      setIsOkrExpanded(true);
-    }
-  }, [location.pathname]);
 
   return (
     <>

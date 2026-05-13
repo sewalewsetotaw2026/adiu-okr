@@ -1148,8 +1148,10 @@ export async function listAdminSubmissions(params: {
   type?: OkrSubmissionType;
   search?: string;
   departmentId?: number;
+  reviewerUserId?: string;
 }) {
-  const { companyId, cycleId, status, search, departmentId } = params;
+  const { companyId, cycleId, status, search, departmentId, reviewerUserId } =
+    params;
 
   // Query OkrSubmission table primarily (modernized)
   const where: any = {
@@ -1157,9 +1159,38 @@ export async function listAdminSubmissions(params: {
     cycle_id: cycleId,
   };
 
-  if (status) {
+  if (params.reviewerUserId) {
+    const directReports = await prisma.employment.findMany({
+      where: {
+        OR: [
+          { manager_id: params.reviewerUserId },
+          {
+            manager: {
+              appUsers: {
+                some: {
+                  id: isNaN(Number(params.reviewerUserId))
+                    ? -1
+                    : Number(params.reviewerUserId),
+                },
+              },
+            },
+          },
+        ],
+        company_id: companyId,
+        is_active: true,
+      },
+      select: { employee_id: true },
+    });
+    const directReportIds = directReports.map((dr) => dr.employee_id);
+    if (directReportIds.length === 0) return [];
+    where.submitter_id = { in: directReportIds };
+  }
+
+  if (status === "approved") {
+    where.status = { in: ["approved", "published"] };
+  } else if (status && status !== "all") {
     where.status = status;
-  } else {
+  } else if (!status) {
     where.status = "pending_approval";
   }
 
@@ -1275,14 +1306,44 @@ export async function listManagerSubmissions(params: {
     departmentId,
   } = params;
 
+  // Immediate-only: include direct reports + direct reviewer assignments
+  const directReports = await prisma.employment.findMany({
+    where: {
+      OR: [
+        { manager_id: reviewerUserId },
+        {
+          manager: {
+            appUsers: {
+              some: {
+                id: isNaN(Number(reviewerUserId))
+                  ? -1
+                  : Number(reviewerUserId),
+              },
+            },
+          },
+        },
+      ],
+      company_id: companyId,
+      is_active: true,
+    },
+    select: { employee_id: true },
+  });
+  const directReportIds = directReports.map((dr) => dr.employee_id);
+
+  if (directReportIds.length === 0) return [];
+
   const where: any = {
     company_id: companyId,
     cycle_id: cycleId,
-    reviewer_id: reviewerUserId,
+    submitter_id: { in: directReportIds },
   };
 
-  if (status) {
+  if (status === "approved") {
+    where.status = { in: ["approved", "published"] };
+  } else if (status && status !== "all") {
     where.status = status;
+  } else if (!status) {
+    where.status = "pending_approval";
   }
 
   if (type) {

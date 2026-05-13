@@ -44,11 +44,7 @@ export default function EmployeeSidebar() {
   const isManager = useSelector(selectIsManager);
   const user = useSelector(selectAuthUser);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [isOkrNavOpen, setIsOkrNavOpen] = useState(
-    location.pathname.startsWith("/employee/execution") ||
-    location.pathname.startsWith("/manager/okr") ||
-    location.pathname.startsWith("/okr/reviews"),
-  );
+  const [isOkrNavOpen, setIsOkrNavOpen] = useState(false);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [hasUnsubmittedPlans, setHasUnsubmittedPlans] = useState(false);
 
@@ -57,15 +53,6 @@ export default function EmployeeSidebar() {
     dispatch(managerActions.checkIsManager());
   }, [dispatch, managerActions]);
 
-  useEffect(() => {
-    const isOkrActive =
-      location.pathname.startsWith("/employee/execution") ||
-      location.pathname.startsWith("/manager/okr");
-
-    if (isOkrActive) {
-      setIsOkrNavOpen(true);
-    }
-  }, [location.pathname]);
 
   useEffect(() => {
     if (isManager) {

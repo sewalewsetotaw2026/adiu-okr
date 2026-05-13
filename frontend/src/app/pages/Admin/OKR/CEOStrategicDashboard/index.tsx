@@ -431,7 +431,7 @@ export default function CEOStrategicDashboardPage() {
                 progress: null,
               },
               {
-                label: "Strategic Progress",
+                label: "Overall Progress",
                 value: `${avgCompanyScore}%`,
                 icon: MdTrendingUp,
                 color: "text-blue-500",

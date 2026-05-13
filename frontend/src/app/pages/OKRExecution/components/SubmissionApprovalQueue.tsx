@@ -149,7 +149,7 @@ function SubmissionReviewCard({
   onReject: (id: number) => void;
   onRefresh: () => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [pendingFeedbacks, setPendingFeedbacks] = useState<PendingFeedback[]>(
     [],
   );
@@ -158,24 +158,25 @@ function SubmissionReviewCard({
   const typeLabel =
     submission.type === "QUARTERLY_PLANNING"
       ? "Quarterly Plan"
-      : submission.type === "DEPARTMENT_OBJECTIVE"
-        ? "Department Plan"
+      // : submission.type === "DEPARTMENT_OBJECTIVE"
+      //   ? "Department Plan"
         : submission.type === "MONTHLY_PLAN"
           ? "Monthly Plan"
           : "Weekly Plan";
 
   const typeTone =
     submission.type === "QUARTERLY_PLANNING" ||
-    submission.type === "DEPARTMENT_OBJECTIVE"
-      ? "primary"
-      : submission.type === "MONTHLY_PLAN"
+    // submission.type === "DEPARTMENT_OBJECTIVE"
+    //   ? "primary"
+    //   : 
+      submission.type === "MONTHLY_PLAN"
         ? "warning"
         : "info";
 
   const statusTone =
     submission.status === "pending_approval"
       ? "warning"
-      : submission.status === "approved"
+      : submission.status === "approved" || submission.status === "published"
         ? "success"
         : submission.status === "rejected"
           ? "danger"
@@ -593,7 +594,7 @@ export default function SubmissionApprovalQueue({
   const [planType, setPlanType] = useState<
     | "all"
     | "QUARTERLY_PLANNING"
-    | "DEPARTMENT_OBJECTIVE"
+    // | "DEPARTMENT_OBJECTIVE"
     | "MONTHLY_PLAN"
     | "WEEKLY_PLAN"
   >("all");
@@ -626,13 +627,13 @@ export default function SubmissionApprovalQueue({
       // to them, regardless of whether they are manager/admin/CEO.
       const route =
         viewerType === "admin"
-          ? apiRoutes.okr.managerSubmissions
+          ? apiRoutes.okr.adminSubmissions
           : apiRoutes.okr.managerSubmissions;
 
       const res = await makeCall({
         method: "GET",
         route,
-        query: { cycle_id: cid },
+        query: { cycle_id: cid, status: filter },
         isSecureRoute: true,
       });
       const data = okrUnwrap<any>(res);
@@ -643,7 +644,7 @@ export default function SubmissionApprovalQueue({
     } finally {
       setLoading(false);
     }
-  }, [viewerType]);
+  }, [viewerType, filter]);
 
   useEffect(() => {
     void load();
@@ -651,7 +652,14 @@ export default function SubmissionApprovalQueue({
 
   const filtered = useMemo(() => {
     let list = submissions;
-    if (filter !== "all") list = list.filter((s) => s.status === filter);
+    if (filter !== "all") {
+      list = list.filter((s) => {
+        if (filter === "approved") {
+          return s.status === "approved" || s.status === "published";
+        }
+        return s.status === filter;
+      });
+    }
     if (planType !== "all") list = list.filter((s) => s.type === planType);
     return list;
   }, [filter, planType, submissions]);
@@ -799,7 +807,7 @@ export default function SubmissionApprovalQueue({
                     [
                       ["all", "All Plans"],
                       ["QUARTERLY_PLANNING", "Quarterly"],
-                      ["DEPARTMENT_OBJECTIVE", "Department"],
+                      // ["DEPARTMENT_OBJECTIVE", "Department"],
                       ["MONTHLY_PLAN", "Monthly"],
                       ["WEEKLY_PLAN", "Weekly"],
                     ] as const

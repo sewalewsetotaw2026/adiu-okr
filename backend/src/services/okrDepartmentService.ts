@@ -79,6 +79,14 @@ export async function listDepartmentObjectives(
     },
     orderBy: { created_at: "asc" },
     include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          employee: { select: { full_name: true } },
+          employee_id: true,
+        },
+      },
       parentCompanyKr: {
         select: {
           id: true,
@@ -86,12 +94,29 @@ export async function listDepartmentObjectives(
           contributes_to_objective_score: true,
           contributes_to_objective_value: true,
           is_mandatory_for_completion: true,
-          objective: { select: { id: true, title: true, status_code: true } },
+          objective: {
+            select: {
+              id: true,
+              title: true,
+              status_code: true,
+            },
+          },
+          _count: { select: { departments: true } },
         },
       },
       keyResults: {
         include: {
           metricDefinition: true,
+          progressUpdates: {
+            orderBy: { created_at: "desc" },
+            take: 1,
+            select: {
+              confidence_level: true,
+              created_at: true,
+              current_value: true,
+              comment: true,
+            },
+          },
         },
       },
       _count: { select: { keyResults: true } },

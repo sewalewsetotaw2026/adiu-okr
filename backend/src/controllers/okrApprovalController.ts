@@ -242,6 +242,7 @@ export const listAdminSubmissions = async (
       type: type ? (String(type) as any) : undefined,
       search: search ? String(search) : undefined,
       departmentId: department_id ? Number(department_id) : undefined,
+      reviewerUserId: req.user!.employee_id || req.user!.user_id,
     });
 
     res.status(200).json({ status: "success", data: submissions });

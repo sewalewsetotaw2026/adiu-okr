@@ -177,11 +177,10 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
 
   return (
     <div
-      className={`bg-white rounded-2xl border ${variantStyles} shadow-sm overflow-hidden transition-all duration-300 hover-premium group ${
-        onClick || expandable
-          ? "cursor-pointer hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 hover:bg-primary/5 hover:-translate-y-1"
-          : ""
-      } ${className}`}
+      className={`bg-white rounded-2xl border ${variantStyles} shadow-sm overflow-hidden transition-all duration-300 hover-premium group ${onClick || expandable
+        ? "cursor-pointer hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 hover:bg-primary/5 hover:-translate-y-1"
+        : ""
+        } ${className}`}
     >
       <div
         className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative"
@@ -205,9 +204,8 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
 
             <div className="relative">
               <h3
-                className={`text-xl font-extrabold text-slate-900 leading-tight tracking-tight mb-1 group-hover:text-primary transition-colors ${
-                  !isTitleExpanded ? "line-clamp-2" : ""
-                }`}
+                className={`text-xl font-extrabold text-slate-900 leading-tight tracking-tight mb-1 group-hover:text-primary transition-colors ${!isTitleExpanded ? "line-clamp-2" : ""
+                  }`}
               >
                 {title}
               </h3>
@@ -234,9 +232,8 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                         </span>
                       </div>
                       <div
-                        className={`text-sm font-semibold text-slate-600 ${
-                          !isParentKrExpanded ? "line-clamp-1" : ""
-                        }`}
+                        className={`text-sm font-semibold text-slate-600 ${!isParentKrExpanded ? "line-clamp-1" : ""
+                          }`}
                       >
                         {props.parentKrTitle}
                       </div>
@@ -267,27 +264,27 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               {(krCount !== undefined ||
                 departmentsLinkedCount !== undefined) && (
-                <span className="text-slate-400 text-sm font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
-                  {krCount !== undefined && (
-                    <span>
-                      {formatOkrCount(krCount)}{" "}
-                      <span className="font-medium text-slate-300">
-                        Key Results
+                  <span className="text-slate-400 text-sm font-bold font-space uppercase tracking-wider flex items-center gap-1.5">
+                    {krCount !== undefined && (
+                      <span>
+                        {formatOkrCount(krCount)}{" "}
+                        <span className="font-medium text-slate-300">
+                          Key Results
+                        </span>
                       </span>
-                    </span>
-                  )}
-                  {krCount !== undefined &&
-                    departmentsLinkedCount !== undefined && (
-                      <span className="text-slate-200">|</span>
                     )}
-                  {departmentsLinkedCount !== undefined && (
-                    <span>
-                      {formatOkrCount(departmentsLinkedCount)}{" "}
-                      <span className="font-medium text-slate-300">Depts</span>
-                    </span>
-                  )}
-                </span>
-              )}
+                    {krCount !== undefined &&
+                      departmentsLinkedCount !== undefined && (
+                        <span className="text-slate-200">|</span>
+                      )}
+                    {departmentsLinkedCount !== undefined && (
+                      <span>
+                        {formatOkrCount(departmentsLinkedCount)}{" "}
+                        <span className="font-medium text-slate-300">Depts</span>
+                      </span>
+                    )}
+                  </span>
+                )}
 
               {ownerName && (
                 <div className="flex items-center gap-2 text-slate-400 text-xs font-medium">
@@ -388,9 +385,9 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                     const krTgt = Number(kr.target_value ?? 0);
                     const krCur = Number(
                       kr.current_value ??
-                        kr.currentValue ??
-                        kr.final_value ??
-                        0,
+                      kr.currentValue ??
+                      kr.final_value ??
+                      0,
                     );
                     const directRaw =
                       kr.final_score ??
@@ -405,9 +402,9 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                           : 0;
                     const krIndirectPct = Number(
                       kr.indirect_score ??
-                        kr.indirect_score_percent ??
-                        kr.indirectProgress ??
-                        0,
+                      kr.indirect_score_percent ??
+                      kr.indirectProgress ??
+                      0,
                     );
                     return (
                       <KeyResultListItem
