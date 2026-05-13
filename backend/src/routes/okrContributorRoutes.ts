@@ -1,4 +1,5 @@
 import express from "express";
+import * as contributorService from "src/services/okrContributorService";
 import { protect } from "src/middleware/authMiddleware";
 import {
   assignContributor,

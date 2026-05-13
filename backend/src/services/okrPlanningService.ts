@@ -866,8 +866,8 @@ export async function createWeeklyPlan(input: CreateWeeklyPlanInput) {
     aligned_manager_plan_id,
   } = input;
 
-  if (!Number.isInteger(weekNumber) || weekNumber < 1 || weekNumber > 5) {
-    throw new Error("week_number must be between 1 and 5.");
+  if (!Number.isInteger(weekNumber) || weekNumber < 1) {
+    throw new Error("week_number must be a positive integer.");
   }
   if (!title?.trim()) throw new Error("title is required.");
 
@@ -1175,7 +1175,7 @@ export async function createDailyPlan(input: CreateDailyPlanInput) {
       created_by: ownerId,
     },
   });
-  await recalculateRollUp("weekly_plan", weeklyPlanId).catch((err: any) => {
+  recalculateRollUp("weekly_plan", weeklyPlanId).catch((err: any) => {
     console.error(`[RollupEngine] Failed weekly_plan ${weeklyPlanId}:`, err.message);
   });
   return created;
@@ -1276,7 +1276,7 @@ export async function updateDailyPlan(
       `[RollupDebug] Triggering recalculateRollUp("weekly_plan", ${existing.weekly_plan_id})...`,
     );
 
-    await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
+    recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
       (err: any) => {
         console.error(
           `[RollupDebug] FAILED recalculateRollUp for weekly_plan ${existing.weekly_plan_id}:`,
@@ -1320,7 +1320,7 @@ export async function updateDailyPlanStatus(
 
   // Always trigger rollup on status change so parents stay in sync
   if (existing.weekly_plan_id) {
-    await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
+    recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
       (err: any) => {
         console.error(
           `[RollupEngine] Failed weekly_plan ${existing.weekly_plan_id}:`,
@@ -1338,7 +1338,7 @@ export async function deleteDailyPlan(id: number, ownerId: string) {
   if (existing.owner_id !== ownerId)
     throw new Error("Not authorized — daily plan does not belong to you.");
   await prisma.dailyPlan.delete({ where: { id } });
-  await recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
+  recalculateRollUp("weekly_plan", existing.weekly_plan_id).catch(
     (err: any) => {
       console.error(
         `[RollupEngine] Failed weekly_plan ${existing.weekly_plan_id}:`,

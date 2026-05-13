@@ -1574,7 +1574,9 @@ export async function getPlanningInsights(params: {
       if (allWeeklyPlans.some((wp: any) => (wp._count?.dailyPlans || 0) > 0)) {
         row.has_set_daily_plan = true;
       }
-      if (kr._count.progressUpdates > 0) row.has_updated_progress = true;
+      if (kr._count.progressUpdates > 0 || row.daily_plan_with_progress_count > 0) {
+        row.has_updated_progress = true;
+      }
 
       const latestProgress = kr.progressUpdates[0]?.created_at ?? null;
       if (
@@ -1671,7 +1673,7 @@ export async function getPlanningCompliance(params: {
     cycleId: params.cycleId,
     role: params.role,
     scope: "organization",
-    forceOrganizationView: true,
+    forceOrganizationView: false,
     monthNumber: params.monthNumber,
     weekNumber: params.weekNumber,
     completionDay: params.completionDay,
@@ -1721,6 +1723,7 @@ export async function getPlanningCompliance(params: {
     update_count: m.progress_update_count + m.daily_plan_count,
     last_update: m.last_progress_at,
     status: m.has_updated_progress ? "On Track" : "Off Track",
+    is_reported: m.has_updated_progress,
     breakdown: {
       weekly: m.weekly_plan_count,
       daily_plan_total: m.daily_plan_count,

@@ -280,7 +280,7 @@ export async function listCompanyKrContributors(
   companyKrId: number,
   companyId: number,
 ) {
-  return prisma.krContributor.findMany({
+  const contributors = await prisma.krContributor.findMany({
     where: { company_kr_id: companyKrId, company_id: companyId },
     orderBy: { assigned_at: "asc" },
     include: {
@@ -295,13 +295,27 @@ export async function listCompanyKrContributors(
       },
     },
   });
+
+  return Promise.all(
+    contributors.map(async (c) => {
+      const emp = await prisma.employee.findFirst({
+        where: { id: c.user_id, company_id: companyId },
+        select: { full_name: true },
+      });
+      return {
+        ...c,
+        full_name: emp?.full_name || null,
+        name: emp?.full_name || null,
+      };
+    }),
+  );
 }
 
 export async function listEmployeeKrContributors(
   employeeKrId: number,
   companyId: number,
 ) {
-  return prisma.krContributor.findMany({
+  const contributors = await prisma.krContributor.findMany({
     where: { employee_kr_id: employeeKrId, company_id: companyId },
     orderBy: { assigned_at: "asc" },
     include: {
@@ -316,6 +330,20 @@ export async function listEmployeeKrContributors(
       },
     },
   });
+
+  return Promise.all(
+    contributors.map(async (c) => {
+      const emp = await prisma.employee.findFirst({
+        where: { id: c.user_id },
+        select: { full_name: true },
+      });
+      return {
+        ...c,
+        full_name: emp?.full_name || null,
+        name: emp?.full_name || null,
+      };
+    }),
+  );
 }
 
 export async function listContributors(

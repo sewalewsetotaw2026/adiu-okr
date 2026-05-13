@@ -1,0 +1,18 @@
+[2026-05-13T06:02:04.434Z] listEmployeeKrContributors: krId=57, companyId=3, found=1
+  - Contributor: id=88, user_id=|52|, empFound=true, name=Gelantu Tesfaye Yebase
+[2026-05-13T06:02:07.554Z] listEmployeeKrContributors: krId=58, companyId=3, found=1
+  - Contributor: id=89, user_id=|19|, empFound=true, name=Selamawit Temechu Dagne
+[2026-05-13T06:02:12.867Z] listEmployeeKrContributors: krId=57, companyId=3, found=1
+  - Contributor: id=88, user_id=|52|, empFound=true, name=Gelantu Tesfaye Yebase
+[2026-05-13T06:02:15.403Z] listEmployeeKrContributors: krId=59, companyId=3, found=1
+[2026-05-13T06:02:15.670Z] listEmployeeKrContributors: krId=58, companyId=3, found=1
+  - Contributor: id=89, user_id=|19|, empFound=true, name=Selamawit Temechu Dagne
+  - Contributor: id=90, user_id=|45|, empFound=true, name=Tina Kibru Desalegn
+[2026-05-13T06:02:23.355Z] listEmployeeKrContributors: krId=60, companyId=3, found=1
+  - Contributor: id=91, user_id=|29|, empFound=true, name=Emnet Abebe Getahun
+[2026-05-13T06:02:25.672Z] listEmployeeKrContributors: krId=59, companyId=3, found=1
+  - Contributor: id=90, user_id=|45|, empFound=true, name=Tina Kibru Desalegn
+[2026-05-13T06:02:34.238Z] listEmployeeKrContributors: krId=60, companyId=3, found=1
+  - Contributor: id=91, user_id=|29|, empFound=true, name=Emnet Abebe Getahun
+[2026-05-13T06:18:54.808Z] listEmployeeKrContributors: krId=58, companyId=3, found=1
+  - Contributor: id=89, user_id=|19|, empFound=true, name=Selamawit Temechu Dagne
