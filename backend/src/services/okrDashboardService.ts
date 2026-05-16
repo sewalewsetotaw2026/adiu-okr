@@ -688,23 +688,30 @@ export async function generateSnapshot(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Fetch company objectives with their KR count in one query
+  // Fetch company objectives with their KR count and status in one query
   const companyObjectives = await prisma.companyObjective.findMany({
     where: { company_id: companyId, cycle_id: cycleId },
     select: {
       final_score: true,
+      status_code: true,
       _count: { select: { keyResults: true } },
     },
   });
 
-  const companyScores = companyObjectives
-    .filter((o) => o.final_score)
-    .map((o) => o.final_score!);
   const companyAvg =
-    companyScores.length > 0
-      ? companyScores
-          .reduce((s, v) => s.add(v), new Decimal(0))
-          .div(companyScores.length)
+    companyObjectives.length > 0
+      ? companyObjectives
+          .reduce((s, o) => s.add(new Decimal(o.final_score ?? 0)), new Decimal(0))
+          .div(companyObjectives.length)
+      : new Decimal(0);
+
+  const COMPLETED_STATUSES = ["completed", "done", "published", "closed"];
+  const completedCount = companyObjectives.filter((o) =>
+    COMPLETED_STATUSES.includes(String(o.status_code ?? "").toLowerCase()),
+  ).length;
+  const completionRate =
+    companyObjectives.length > 0
+      ? new Decimal(completedCount).div(companyObjectives.length).mul(100)
       : new Decimal(0);
 
   const companySnapshot = await prisma.okrScoreSnapshot.create({
@@ -715,6 +722,7 @@ export async function generateSnapshot(
       scope_level: "COMPANY",
       snapshot_date: today,
       score_value: companyAvg,
+      completion_rate: completionRate,
       total_objectives: companyObjectives.length,
       total_key_results: companyObjectives.reduce(
         (s, o) => s + o._count.keyResults,
@@ -764,7 +772,7 @@ export async function generateSnapshot(
     }
     const entry = deptObjMap.get(deptId)!;
     entry.count++;
-    if (obj.final_score) entry.scores.push(obj.final_score);
+    if (obj.final_score !== null && obj.final_score !== undefined) entry.scores.push(obj.final_score);
   }
 
   // Build all department snapshot rows and insert in a single createMany

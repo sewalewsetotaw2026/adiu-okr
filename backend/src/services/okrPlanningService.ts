@@ -279,6 +279,192 @@ export async function getManagerWeeklyPlans(
   });
 }
 
+/**
+ * Check if the employee's manager has any plans at the specified cadence level.
+ * Used to determine if alignment is required during plan creation.
+ */
+export async function checkManagerPlanExists(
+  employeeId: string,
+  cadence: "monthly" | "weekly" | "daily",
+  context: {
+    cycleId?: number;
+    monthNumber?: number;
+    krId?: number;
+    monthlyPlanId?: number;
+    weekNumber?: number;
+  },
+) {
+  const managerId = await getManagerId(employeeId);
+  if (!managerId) {
+    return { exists: false, managerPlans: [] };
+  }
+
+  if (cadence === "monthly") {
+    // For monthly plans, check if manager has monthly plans for the same KR/period
+    const { cycleId, monthNumber, krId } = context;
+    if (!cycleId || !monthNumber) {
+      return { exists: false, managerPlans: [] };
+    }
+
+    // If krId is provided, check for plans the manager has for that KR directly
+    if (krId) {
+      const plans = await prisma.employeeMonthPlan.findMany({
+        where: {
+          employee_kr_id: krId,
+          owner_id: managerId,
+          month_number: monthNumber,
+          cycle_id: cycleId,
+          plan_status: { in: ["PUBLISHED", "APPROVED"] },
+        },
+        select: { id: true, title: true },
+      });
+      if (plans.length > 0) {
+        return { exists: true, managerPlans: plans };
+      }
+
+      // Also check via objective delegation: find employee objectives that delegate
+      // from this krId and see if the manager has plans on that delegated KR
+      const delegatedObjectives = await prisma.employeeObjective.findMany({
+        where: {
+          chosen_parent_employee_kr_id: krId,
+          user_id: managerId,
+          cycle_id: cycleId,
+        },
+        select: { keyResults: { select: { id: true } } },
+      });
+      const delegatedKrIds = delegatedObjectives.flatMap((o) =>
+        o.keyResults.map((kr) => kr.id),
+      );
+      if (delegatedKrIds.length > 0) {
+        const delegatedPlans = await prisma.employeeMonthPlan.findMany({
+          where: {
+            employee_kr_id: { in: delegatedKrIds },
+            month_number: monthNumber,
+            cycle_id: cycleId,
+            plan_status: { in: ["PUBLISHED", "APPROVED"] },
+          },
+          select: { id: true, title: true },
+        });
+        return { exists: delegatedPlans.length > 0, managerPlans: delegatedPlans };
+      }
+    }
+
+    // Check for any manager monthly plans in the same cycle/month
+    const plans = await prisma.employeeMonthPlan.findMany({
+      where: {
+        owner_id: managerId,
+        month_number: monthNumber,
+        cycle_id: cycleId,
+        plan_status: { in: ["PUBLISHED", "APPROVED"] },
+      },
+      select: { id: true, title: true },
+    });
+    return { exists: plans.length > 0, managerPlans: plans };
+  }
+
+  if (cadence === "weekly") {
+    // For weekly plans, check if manager has weekly plans for the same month/week
+    const { monthlyPlanId, weekNumber } = context;
+    if (!monthlyPlanId || !weekNumber) {
+      return { exists: false, managerPlans: [] };
+    }
+
+    // Get the employee's monthly plan to find aligned manager plan
+    const empMonthPlan = await prisma.employeeMonthPlan.findUnique({
+      where: { id: monthlyPlanId },
+      select: { aligned_manager_plan_id: true, month_number: true, cycle_id: true },
+    });
+
+    if (empMonthPlan?.aligned_manager_plan_id) {
+      // Check if manager has weekly plans under their aligned monthly plan
+      const plans = await prisma.weeklyPlan.findMany({
+        where: {
+          employee_month_plan_id: empMonthPlan.aligned_manager_plan_id,
+          week_number: weekNumber,
+          plan_status: { in: ["PUBLISHED", "APPROVED"] },
+        },
+        select: { id: true, title: true },
+      });
+      if (plans.length > 0) {
+        return { exists: true, managerPlans: plans };
+      }
+    }
+
+    // Discovery mode: find manager's weekly plans for the same period
+    if (empMonthPlan) {
+      const managerMonthPlans = await prisma.employeeMonthPlan.findMany({
+        where: {
+          owner_id: managerId,
+          month_number: empMonthPlan.month_number,
+          cycle_id: empMonthPlan.cycle_id,
+          plan_status: { in: ["PUBLISHED", "APPROVED"] },
+        },
+        select: { id: true },
+      });
+
+      if (managerMonthPlans.length > 0) {
+        const managerMonthPlanIds = managerMonthPlans.map((p) => p.id);
+        const plans = await prisma.weeklyPlan.findMany({
+          where: {
+            employee_month_plan_id: { in: managerMonthPlanIds },
+            week_number: weekNumber,
+            plan_status: { in: ["PUBLISHED", "APPROVED"] },
+          },
+          select: { id: true, title: true },
+        });
+        return { exists: plans.length > 0, managerPlans: plans };
+      }
+    }
+
+    return { exists: false, managerPlans: [] };
+  }
+
+  if (cadence === "daily") {
+    // For daily plans, check if manager has daily plans for the same week/day
+    const { monthlyPlanId, weekNumber } = context;
+    if (!monthlyPlanId) {
+      return { exists: false, managerPlans: [] };
+    }
+
+    // Get the employee's monthly plan to find aligned manager plan
+    const empMonthPlan = await prisma.employeeMonthPlan.findUnique({
+      where: { id: monthlyPlanId },
+      select: { aligned_manager_plan_id: true },
+    });
+
+    if (!empMonthPlan?.aligned_manager_plan_id) {
+      return { exists: false, managerPlans: [] };
+    }
+
+    // Find manager's weekly plan for the same week
+    const managerWeeklyPlans = await prisma.weeklyPlan.findMany({
+      where: {
+        employee_month_plan_id: empMonthPlan.aligned_manager_plan_id,
+        week_number: weekNumber,
+        plan_status: { in: ["PUBLISHED", "APPROVED"] },
+      },
+      select: { id: true },
+    });
+
+    if (managerWeeklyPlans.length === 0) {
+      return { exists: false, managerPlans: [] };
+    }
+
+    const managerWeeklyPlanIds = managerWeeklyPlans.map((p) => p.id);
+
+    // Check if manager has daily plans under any of those weekly plans
+    const dailyCount = await prisma.dailyPlan.count({
+      where: {
+        weekly_plan_id: { in: managerWeeklyPlanIds },
+      },
+    });
+
+    return { exists: dailyCount > 0, managerPlans: [] };
+  }
+
+  return { exists: false, managerPlans: [] };
+}
+
 async function ensureMonthlyPublishedAndOwned(
   monthlyId: number,
   ownerId: string,
@@ -375,7 +561,7 @@ export async function listMonthlyPlansForKr(krId: number, ownerId: string) {
   // Get all comment authors
   const authorIds = new Set<string>();
   plans.forEach((p) => {
-    p.comments.forEach((c) => authorIds.add(c.author_id));
+    (p as any).comments.forEach((c: any) => authorIds.add(c.author_id));
   });
   const authors = await prisma.employee.findMany({
     where: { id: { in: Array.from(authorIds) } },
@@ -394,7 +580,7 @@ export async function listMonthlyPlansForKr(krId: number, ownerId: string) {
             unit: p.employeeKr.unit_of_measure,
           }
         : null,
-      comments: p.comments.map((c) => ({
+      comments: (p as any).comments.map((c: any) => ({
         ...c,
         author_name: authorMap.get(c.author_id) || "Reviewer",
       })),
@@ -744,6 +930,10 @@ export async function listWeeklyPlansForMonthly(
             select: {
               id: true,
               title: true,
+              target_value: true,
+              final_value: true,
+              final_score: true,
+              unit_of_measure: true,
             },
           },
         },
@@ -770,7 +960,7 @@ export async function listWeeklyPlansForMonthly(
   // Get all comment authors
   const authorIds = new Set<string>();
   plans.forEach((p) => {
-    p.comments.forEach((c) => authorIds.add(c.author_id));
+    (p as any).comments.forEach((c: any) => authorIds.add(c.author_id));
   });
   const authors = await prisma.employee.findMany({
     where: { id: { in: Array.from(authorIds) } },
@@ -779,15 +969,41 @@ export async function listWeeklyPlansForMonthly(
   const authorMap = new Map(authors.map((a) => [a.id, a.full_name]));
 
   return {
-    plans: plans.map((p) => ({
-      ...p,
-      reviewer_name: p.reviewer_id ? reviewerMap.get(p.reviewer_id) : null,
-      comments: p.comments.map((c) => ({
-        ...c,
-        author_name: authorMap.get(c.author_id) || "Reviewer",
-      })),
-      weight_remaining_pct: remainingPct,
-    })),
+    plans: plans.map((p) => {
+      // Get the included monthPlan data from the Prisma result
+      const monthPlan = (p as any).monthPlan;
+      return {
+        ...p,
+        reviewer_name: p.reviewer_id ? reviewerMap.get(p.reviewer_id) : null,
+        comments: (p as any).comments.map((c: any) => ({
+          ...c,
+          author_name: authorMap.get(c.author_id) || "Reviewer",
+        })),
+        weight_remaining_pct: remainingPct,
+        // Include formatted parent_monthly_plan with full hierarchy for breadcrumb
+        parent_monthly_plan: monthPlan
+          ? {
+              id: monthPlan.id,
+              title: monthPlan.title,
+              target_value: monthPlan.target_value,
+              current_value: monthPlan.current_value,
+              progress_pct: monthPlan.progress_pct,
+              month_number: monthPlan.month_number,
+              parent_kr_title: monthPlan.employeeKr?.title,
+              parent_kr: monthPlan.employeeKr
+                ? {
+                    id: monthPlan.employeeKr.id,
+                    title: monthPlan.employeeKr.title,
+                    target_value: monthPlan.employeeKr.target_value,
+                    current_value: monthPlan.employeeKr.final_value,
+                    progress_pct: monthPlan.employeeKr.final_score,
+                    unit: monthPlan.employeeKr.unit_of_measure,
+                  }
+                : null,
+            }
+          : null,
+      };
+    }),
     allocated_pct: allocatedPct,
     weight_remaining_pct: remainingPct,
   };
@@ -1125,11 +1341,72 @@ export async function listDailyPlansForWeekly(
   ownerId: string,
 ) {
   await ensureWeeklyOwned(weeklyId, ownerId);
-  return prisma.dailyPlan.findMany({
+  const dailyPlans = await prisma.dailyPlan.findMany({
     where: { weekly_plan_id: weeklyId },
     include: { metricDefinition: true },
     orderBy: [{ completion_day: "asc" }, { id: "asc" }],
   });
+
+  // Fetch the parent weekly plan with full hierarchy for breadcrumb enrichment
+  const weeklyPlan = await prisma.weeklyPlan.findUnique({
+    where: { id: weeklyId },
+    include: {
+      monthPlan: {
+        include: {
+          employeeKr: {
+            select: {
+              id: true,
+              title: true,
+              target_value: true,
+              final_value: true,
+              final_score: true,
+              unit_of_measure: true,
+              employeeObjective: {
+                select: {
+                  id: true,
+                  title: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Enrich daily plans with hierarchy data
+  return dailyPlans.map((dp) => ({
+    ...dp,
+    _parentWeeklyTitle: weeklyPlan?.title,
+    _parentMonthlyTitle: (weeklyPlan as any)?.monthPlan?.title,
+    _parentKRTitle: (weeklyPlan as any)?.monthPlan?.employeeKr?.title,
+    _parentObjectiveTitle: (weeklyPlan as any)?.monthPlan?.employeeKr?.employeeObjective?.title,
+    weeklyPlan: weeklyPlan
+      ? {
+          id: weeklyPlan.id,
+          title: weeklyPlan.title,
+          week_number: weeklyPlan.week_number,
+          parent_monthly_plan: (weeklyPlan as any).monthPlan
+            ? {
+                id: (weeklyPlan as any).monthPlan.id,
+                title: (weeklyPlan as any).monthPlan.title,
+                month_number: (weeklyPlan as any).monthPlan.month_number,
+                parent_kr_title: (weeklyPlan as any).monthPlan.employeeKr?.title,
+                parent_kr: (weeklyPlan as any).monthPlan.employeeKr
+                  ? {
+                      id: (weeklyPlan as any).monthPlan.employeeKr.id,
+                      title: (weeklyPlan as any).monthPlan.employeeKr.title,
+                      target_value: (weeklyPlan as any).monthPlan.employeeKr.target_value,
+                      current_value: (weeklyPlan as any).monthPlan.employeeKr.final_value,
+                      progress_pct: (weeklyPlan as any).monthPlan.employeeKr.final_score,
+                      unit: (weeklyPlan as any).monthPlan.employeeKr.unit_of_measure,
+                    }
+                  : null,
+              }
+            : null,
+        }
+      : null,
+  }));
 }
 
 export async function createDailyPlan(input: CreateDailyPlanInput) {

@@ -124,6 +124,7 @@ import okrConfigRoutes from "src/routes/okrConfigRoutes";
 import okrApprovalRoutes from "src/routes/okrApprovalRoutes";
 import okrPlanningRoutes from "src/routes/okrPlanningRoutes";
 import okrChangeRequestRoutes from "src/routes/okrChangeRequestRoutes";
+import okrImportExportRoutes from "src/routes/okrImportExportRoutes";
 
 router.use("/okr/approvals", okrApprovalRoutes);
 router.use("/okr/change-requests", okrChangeRequestRoutes);
@@ -140,6 +141,7 @@ router.use("/okr/metrics", okrMetricRoutes);
 router.use("/okr/configurations", okrConfigRoutes);
 router.use("/okr/audit", okrAuditRoutes);
 router.use("/okr/dashboard", okrDashboardRoutes);
+router.use("/okr", okrImportExportRoutes);
 router.use("/okr", okrArchiveRoutes);
 router.use("/okr", okrPlanningRoutes);
 

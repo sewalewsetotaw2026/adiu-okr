@@ -572,6 +572,47 @@ export const listManagerWeeklyPlans = async (
   }
 };
 
+export const checkManagerPlanExists = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const u = requireUser(req);
+    const cadence = validateEnum(
+      req.query.cadence as string,
+      ["MONTHLY", "WEEKLY", "DAILY"],
+      "cadence",
+    ).toLowerCase() as "monthly" | "weekly" | "daily";
+
+    const context: any = {};
+
+    if (cadence === "monthly") {
+      if (req.query.cycleId) {
+        context.cycleId = parseId(req.query.cycleId, "cycleId");
+      }
+      if (req.query.monthNumber) {
+        context.monthNumber = parseId(req.query.monthNumber, "monthNumber");
+      }
+      if (req.query.krId) {
+        context.krId = parseId(req.query.krId, "krId");
+      }
+    } else if (cadence === "weekly" || cadence === "daily") {
+      if (req.query.monthlyPlanId) {
+        context.monthlyPlanId = parseId(req.query.monthlyPlanId, "monthlyPlanId");
+      }
+      if (req.query.weekNumber) {
+        context.weekNumber = parseId(req.query.weekNumber, "weekNumber");
+      }
+    }
+
+    const result = await svc.checkManagerPlanExists(u.employee_id, cadence, context);
+    res.json({ status: "success", data: result });
+  } catch (e) {
+    next(e);
+  }
+};
+
 // ────────────── Daily Plan Endpoints ───────────────────────────────────
 
 export const listDailyPlans = async (

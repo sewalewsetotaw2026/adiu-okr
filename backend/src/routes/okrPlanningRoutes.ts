@@ -90,6 +90,7 @@ router.post("/recalculate/:entityType/:entityId", ctrl.manualRollup);
 // ── Manager Plans for Alignment ─────────────────────────────────────
 router.get("/manager/monthly-plans", ctrl.listManagerMonthlyPlans);
 router.get("/manager/weekly-plans", ctrl.listManagerWeeklyPlans);
+router.get("/manager/plan-exists", ctrl.checkManagerPlanExists);
 
 // ── Error Handler ──────────────────────────────────────────────────────
 // Must be last to catch all errors from the above routes

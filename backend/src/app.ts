@@ -4,6 +4,7 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import path from "path";
 
 const app = express();
 
@@ -93,6 +94,9 @@ app.use(
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Public static exports/downloads
+app.use("/exports", express.static(path.join(process.cwd(), "exports")));
 
 // database client
 // database client
