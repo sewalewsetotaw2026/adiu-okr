@@ -8,6 +8,9 @@ import {
 import KeyResultListItem from "./KeyResultListItem";
 import { formatOkrCount, formatOkrNumber } from "../../utils/okrNumber";
 import FeedbackBanner from "../../pages/OKRExecution/components/FeedbackBanner";
+import ConfidenceBadge from "./ConfidenceBadge";
+import type { ConfidenceLevel } from "../../constants/themeConstants";
+import { resolveConfidenceLevel } from "../../utils/okrApi";
 
 // Status types matched to the UI mockup
 export type ObjectiveStatusValue =
@@ -59,6 +62,12 @@ export interface ObjectiveCardProps {
   feedbackNote?: string;
   reviewerName?: string;
   parentKrTitle?: string;
+  /**
+   * The confidence level to display as a badge (ON_TRACK / AT_RISK / OFF_TRACK).
+   * When provided, a ConfidenceBadge is shown next to the status badge.
+   * Derive via `resolveConfidenceLevel(progress)` from okrApi.
+   */
+  confidenceLevel?: ConfidenceLevel;
 }
 
 function getStatusStyles(status: string, progress: number = 0) {
@@ -194,12 +203,18 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span
                 className={`${statusStyles.text} ${statusStyles.bg} text-[9px] font-black uppercase tracking-[0.2em] font-space px-2 py-0.5 rounded-lg border border-current/10`}
               >
                 {statusStyles.label}
               </span>
+              {props.confidenceLevel && (
+                <ConfidenceBadge
+                  level={props.confidenceLevel}
+                  size="xs"
+                />
+              )}
             </div>
 
             <div className="relative">
@@ -407,32 +422,33 @@ export default function ObjectiveCard(props: ObjectiveCardProps) {
                       0,
                     );
                     return (
-                      <KeyResultListItem
-                        key={kr.id}
-                        title={kr.title}
-                        index={index}
-                        progress={krPct}
-                        indirectProgress={krIndirectPct}
-                        status={kr.status_code || kr.status || "draft"}
-                        targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
-                        metricTypeString={`Weight: ${formatOkrNumber(kr.weight_percent ?? 0)}%`}
-                        feedbackNote={kr.feedbackNote}
-                        reviewerName={kr.reviewerName}
-                        actions={
-                          onDecomposeKR && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDecomposeKR(kr.id, kr.title);
-                              }}
-                              className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
-                            >
-                              Add Decomposition
-                            </button>
-                          )
-                        }
-                      />
+                        <KeyResultListItem
+                          key={kr.id}
+                          title={kr.title}
+                          index={index}
+                          progress={krPct}
+                          indirectProgress={krIndirectPct}
+                          status={kr.status_code || kr.status || "draft"}
+                          confidenceLevel={resolveConfidenceLevel(krPct)}
+                          targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
+                          metricTypeString={`Weight: ${formatOkrNumber(kr.weight_percent ?? 0)}%`}
+                          feedbackNote={kr.feedbackNote}
+                          reviewerName={kr.reviewerName}
+                          actions={
+                            onDecomposeKR && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDecomposeKR(kr.id, kr.title);
+                                }}
+                                className="px-3 py-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+                              >
+                                Add Decomposition
+                              </button>
+                            )
+                          }
+                        />
                     );
                   })}
                 </div>

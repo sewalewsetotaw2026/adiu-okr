@@ -97,12 +97,42 @@ export function fromBackendExecutionMode(
   return null;
 }
 
+export type ConfidenceLevel = "ON_TRACK" | "AT_RISK" | "OFF_TRACK" | null;
+
+export interface ConfidenceThresholds {
+  off_track_lte_percent: number; // e.g. 40
+  at_risk_lte_percent: number;   // e.g. 59
+  on_track_gte_percent: number;  // e.g. 60
+}
+
+export const DEFAULT_CONFIDENCE_THRESHOLDS: ConfidenceThresholds = {
+  off_track_lte_percent: 40,
+  at_risk_lte_percent: 59,
+  on_track_gte_percent: 60,
+};
+
+/**
+ * Resolves a confidence level from a progress percentage.
+ * Mirrors the backend `resolveConfidenceLevelFromProgress` in okrMeasurementService.
+ *
+ * @param progressPercent - 0–100 progress value
+ * @param thresholds      - configurable cutoffs (defaults match backend defaults)
+ */
+export function resolveConfidenceLevel(
+  progressPercent: number | null | undefined,
+  thresholds: ConfidenceThresholds = DEFAULT_CONFIDENCE_THRESHOLDS,
+): ConfidenceLevel {
+  if (progressPercent == null || isNaN(progressPercent)) return null;
+  const pct = Math.max(0, Math.min(100, progressPercent));
+  if (pct >= thresholds.on_track_gte_percent) return "ON_TRACK";
+  if (pct <= thresholds.off_track_lte_percent) return "OFF_TRACK";
+  return "AT_RISK";
+}
+
+/** @deprecated Use resolveConfidenceLevel instead */
 export function confidenceLevelFromScore(
   score: number,
-  blocked: boolean,
+  _blocked?: boolean,
 ): string {
-  if (blocked) return "AT_RISK";
-  if (score <= 2) return "AT_RISK";
-  if (score >= 4) return "ON_TRACK";
-  return "ON_TRACK";
+  return resolveConfidenceLevel(score) ?? "AT_RISK";
 }

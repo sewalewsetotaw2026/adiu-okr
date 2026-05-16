@@ -10,7 +10,8 @@ export type PlanStatus =
   | "UNDER_REVIEW"
   | "APPROVED"
   | "PUBLISHED"
-  | "REJECTED";
+  | "REJECTED"
+  | "pending_approval";
 
 export type DailyStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "SKIPPED";
 
@@ -42,6 +43,7 @@ export interface ParentMonthlySummary {
   progress_pct: number;
   month_number: 1 | 2 | 3;
   parent_kr_title?: string;
+  parent_kr?: ParentKRSummary; // Full parent KR info for breadcrumb
 }
 
 export interface MonthlyPlan {
@@ -77,6 +79,8 @@ export interface MonthlyPlan {
   metricDefinition?: MetricDefinition;
   parent_key_result: ParentKRSummary;
   aligned_manager_plan_id?: string | number;
+  aligned_manager_plan_title?: string;
+  comments?: Array<{ author_name?: string; content?: string; created_at?: string; [key: string]: any }>;
 }
 
 export interface WeeklyPlan {
@@ -109,6 +113,8 @@ export interface WeeklyPlan {
   metricDefinition?: MetricDefinition;
   parent_monthly_plan: ParentMonthlySummary;
   aligned_manager_plan_id?: string | number;
+  aligned_manager_plan_title?: string;
+  comments?: Array<{ author_name?: string; content?: string; created_at?: string; [key: string]: any }>;
 }
 
 export interface DailyPlan {
@@ -129,7 +135,12 @@ export interface DailyPlan {
   metric_definition_id?: number;
   metricDefinition?: MetricDefinition;
   notes?: string;
-  weeklyPlan?: WeeklyPlan;
+  weeklyPlan?: WeeklyPlan; // Full parent weekly plan with hierarchy
+  // Enriched hierarchy fields for breadcrumb display
+  _parentWeeklyTitle?: string;
+  _parentMonthlyTitle?: string;
+  _parentKRTitle?: string;
+  _parentObjectiveTitle?: string;
 }
 
 export interface AvailableWeight {

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Jost:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&family=Outfit:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Jost:wght@400;600;700&family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;500;600&family=Montserrat:wght@400;500&family=Outfit:wght@400;600&family=Plus+Jakarta+Sans:wght@500;600&display=swap");
 @import "tailwindcss";
 
 @keyframes slideUp {
@@ -193,8 +193,32 @@
   --font-sans: Montserrat, system-ui, -apple-system, sans-serif;
   --font-base: Montserrat, system-ui, -apple-system, sans-serif;
   --font-heading: Jost, "Space Grotesk", system-ui, sans-serif;
-  --font-display: "Space Grotesk", Outfit, system-ui, sans-serif;
-  --font-accent: Outfit, Jost, system-ui, sans-serif;
+  --font-display: Jost, "Space Grotesk", system-ui, sans-serif;
+  --font-headline: "Space Grotesk", system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-label: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-reading: Montserrat, system-ui, sans-serif;
+  --font-custom-num: Outfit, system-ui, sans-serif;
+}
+
+.editorial-blob {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(253, 216, 0, 0.12) 0%, rgba(253, 216, 0, 0) 70%);
+  z-index: -1;
+  top: -200px;
+  left: -150px;
+  pointer-events: none;
+}
+
+.glass-nav {
+  backdrop-filter: blur(24px);
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+.primary-gradient {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
 }
 
 @media print {

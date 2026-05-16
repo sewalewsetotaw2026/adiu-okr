@@ -52,7 +52,7 @@ export default function CreateUserForm({
 
   // Dropdown data
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [jobTitles, setJobTitles] = useState<JobTitle[]>([]);
+  const [_jobTitles, setJobTitles] = useState<JobTitle[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 

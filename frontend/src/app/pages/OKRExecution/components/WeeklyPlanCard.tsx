@@ -5,12 +5,17 @@ import {
   MdLock,
   MdEditDocument,
   MdExpandMore,
+  MdAccountTree,
 } from "react-icons/md";
 import type { WeeklyPlan } from "../../../../types/okr.types";
 import Button from "../../../components/Core/ui/Button";
 import PlanStatusBadge from "./PlanStatusBadge";
 import FeedbackBanner from "./FeedbackBanner";
 import { formatOkrNumber } from "../../../utils/okrNumber";
+import ConfidenceBadge from "../../../components/common/ConfidenceBadge";
+import { resolveConfidenceLevel } from "../../../utils/okrApi";
+import type { ConfidenceLevel } from "../../../constants/themeConstants";
+import PlanHierarchyBreadcrumb from "./PlanHierarchyBreadcrumb";
 
 const EDITABLE_STATUSES = new Set(["DRAFT", "REJECTED"]);
 
@@ -21,6 +26,8 @@ export interface WeeklyPlanCardProps {
   onPostPublishEdit?: (plan: WeeklyPlan) => void;
   onDelete?: (plan: WeeklyPlan) => void;
   onUpdateProgress?: (plan: WeeklyPlan) => void;
+  /** Pre-computed confidence level. If not provided, derived from plan.progress_pct. */
+  confidenceLevel?: ConfidenceLevel;
 }
 
 export default function WeeklyPlanCard({
@@ -30,6 +37,7 @@ export default function WeeklyPlanCard({
   onPostPublishEdit,
   onDelete,
   onUpdateProgress,
+  confidenceLevel: confidenceLevelProp,
 }: WeeklyPlanCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTitleExpanded, setIsTitleExpanded] = useState(false);
@@ -48,6 +56,11 @@ export default function WeeklyPlanCard({
   const target = Number(plan.target_value ?? 0);
   const current = Number(plan.current_value ?? 0);
   const u = unit ?? "";
+  // Derive confidence from progress if not explicitly provided
+  const confidenceLevel =
+    confidenceLevelProp !== undefined
+      ? confidenceLevelProp
+      : resolveConfidenceLevel(progress);
 
   return (
     <div
@@ -56,7 +69,7 @@ export default function WeeklyPlanCard({
       className={`group relative bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 cursor-pointer overflow-hidden ${isExpanded ? "p-6" : "p-5"}`}
     >
       {/* Background Gradient Effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/0 to-primary/[0.02] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-br from-primary/0 to-primary/2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
 
       <div className="absolute top-4 right-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 ring-1 ring-slate-200 transition-all duration-300 group-hover:bg-primary group-hover:text-white group-hover:ring-primary/20 shadow-sm">
@@ -68,7 +81,7 @@ export default function WeeklyPlanCard({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4 pr-12">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             {!editable && (
               <span
                 aria-label="Locked"
@@ -78,6 +91,7 @@ export default function WeeklyPlanCard({
               </span>
             )}
             <PlanStatusBadge status={plan.plan_status} size="xs" />
+            <ConfidenceBadge level={confidenceLevel} size="xs" />
           </div>
           <div className="relative">
             <h4
@@ -124,6 +138,44 @@ export default function WeeklyPlanCard({
                     {isParentTitleExpanded ? "Show Less" : "Read More"}
                   </button>
                 )}
+              </div>
+            )}
+
+            {plan.parent_monthly_plan?.title && (
+              <div className="mt-2 group/monthly">
+                <span className="text-[9px] font-black text-primary/60 uppercase tracking-widest block mb-0.5">
+                  Monthly Plan
+                </span>
+                <div className="text-xs font-semibold text-slate-600 line-clamp-1">
+                  {plan.parent_monthly_plan.title}
+                </div>
+              </div>
+            )}
+
+            {/* Plan Hierarchy Breadcrumb */}
+            {plan.parent_monthly_plan && (
+              <div className="mt-3 pt-2 border-t border-slate-100">
+                <PlanHierarchyBreadcrumb
+                  items={[
+                    ...(plan.parent_monthly_plan.parent_kr
+                      ? [{
+                          type: "kr" as const,
+                          title: plan.parent_monthly_plan.parent_kr.title,
+                          subtitle: `Target: ${plan.parent_monthly_plan.parent_kr.target_value}`,
+                        }]
+                      : []),
+                    {
+                      type: "monthly",
+                      title: plan.parent_monthly_plan.title,
+                      subtitle: `Month ${plan.parent_monthly_plan.month_number}`,
+                    },
+                    {
+                      type: "weekly",
+                      title: plan.title,
+                      subtitle: `Week ${plan.week_number}`,
+                    },
+                  ]}
+                />
               </div>
             )}
           </div>
@@ -238,6 +290,17 @@ export default function WeeklyPlanCard({
               {u ? ` ${u}` : ""}
             </div>
           </div>
+
+          {/* Aligned manager plan */}
+          {plan.aligned_manager_plan_title && (
+            <div className="flex items-start gap-2 rounded-xl bg-primary/5 border border-primary/10 px-3 py-2 mt-1">
+              <MdAccountTree className="text-primary/60 shrink-0 mt-0.5" style={{ fontSize: 14 }} />
+              <div className="min-w-0">
+                <span className="text-[9px] font-black tracking-widest uppercase text-primary/50 block mb-0.5">Aligned Manager Plan</span>
+                <span className="text-xs font-semibold text-slate-700 truncate block">{plan.aligned_manager_plan_title}</span>
+              </div>
+            </div>
+          )}
 
           {(editable || isPublished) &&
             (onEdit || onPostPublishEdit || onDelete) && (

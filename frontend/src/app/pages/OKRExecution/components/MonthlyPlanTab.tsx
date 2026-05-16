@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
+import { selectAuthUser } from "../../../slice/authSlice/selectors";
 import {
   MdAdd,
   MdChevronRight,
   MdSend,
   MdPublish,
-  MdLock,
-  MdLockOpen,
   MdCheckCircle,
   MdPlayCircle,
+  MdHistory,
+  MdSchedule,
+  MdArrowForward,
+  MdWarning,
 } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
 import ConfirmationModal from "../../../components/common/ConfirmationModal";
@@ -28,7 +32,12 @@ import PlanStatusBanner from "./PlanStatusBanner";
 import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
 import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 import MonthlyPlanProgressModal from "./modals/MonthlyPlanProgressModal";
-import { formatReadableDate } from "../utils/calendarDates";
+import {
+  formatReadableDate,
+  getMonthAvailability,
+  getCycleMonthRange,
+  type PeriodAvailability,
+} from "../utils/calendarDates";
 
 const MONTHS: (1 | 2 | 3)[] = [1, 2, 3];
 
@@ -108,6 +117,12 @@ export default function MonthlyPlanTab({
   onPostPublishEdit,
   allowUpdateProgress = false,
 }: MonthlyPlanTabProps) {
+  const authUser = useSelector(selectAuthUser);
+  const currentUserId = authUser?.employee_id
+    ? String(authUser.employee_id)
+    : authUser?.id
+      ? String(authUser.id)
+      : null;
   const [plans, setPlans] = useState<MonthlyPlan[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -427,46 +442,39 @@ export default function MonthlyPlanTab({
     [plans],
   );
 
-  // A month is locked when the previous month has no plans that are APPROVED or PUBLISHED.
-  // Month 1 is always unlocked (it's the starting point).
-  const monthLocked = useMemo<Record<1 | 2 | 3, boolean>>(() => {
-    const isMonthApprovedOrPublished = (m: 1 | 2 | 3) =>
-      plansByMonth[m].some(
-        (p) => p.plan_status === "APPROVED" || p.plan_status === "PUBLISHED",
-      );
-    return {
-      1: false,
-      2: !isMonthApprovedOrPublished(1),
-      3: !isMonthApprovedOrPublished(2),
-    };
-  }, [plansByMonth]);
+  // Calendar-driven availability: current month is editable, past is read-only, future is hidden/disabled.
+  const monthAvailability = useMemo<Record<1 | 2 | 3, PeriodAvailability>>(() => ({
+    1: getMonthAvailability(1, cycleStartDate, cycleEndDate),
+    2: getMonthAvailability(2, cycleStartDate, cycleEndDate),
+    3: getMonthAvailability(3, cycleStartDate, cycleEndDate),
+  }), [cycleStartDate, cycleEndDate]);
 
-  // Active month = the last month that has at least one plan (approved/published
-  // or even just in-progress). This represents where the user is currently working.
-  // Falls back to month 1.
+  // Active month = the current calendar month within the cycle.
+  // Falls back to the last month with plans, then month 1.
   const activeMonth = useMemo<1 | 2 | 3>(() => {
     if (initialExpandMonth) return initialExpandMonth;
-    // Prefer: last month that has plans (regardless of status)
+    const current = MONTHS.find((m) => monthAvailability[m] === "current");
+    if (current) return current;
     for (const m of [3, 2, 1] as (1 | 2 | 3)[]) {
       if (plansByMonth[m].length > 0) return m;
     }
     return 1;
-  }, [initialExpandMonth, plansByMonth]);
+  }, [initialExpandMonth, monthAvailability, plansByMonth]);
 
-  // The next unlocked month = first unlocked month with zero plans (ready to start).
-  // This is distinct from active — it just has a primary border hint.
-  const nextUnlockedMonth = useMemo<1 | 2 | 3 | null>(() => {
-    for (const m of MONTHS) {
-      if (
-        !monthLocked[m] &&
-        plansByMonth[m].length === 0 &&
-        m !== activeMonth
-      ) {
-        return m;
-      }
-    }
-    return null;
-  }, [monthLocked, plansByMonth, activeMonth]);
+  // No longer needed — future months are shown as greyed-out, not with a "next ready" hint.
+  const nextUnlockedMonth = null;
+
+  // Carry-over: for each month M (2, 3), collect PUBLISHED plans from month M-1
+  // that have not fully met their target (current_value < target_value).
+  const carryOverByMonth = useMemo<Record<2 | 3, MonthlyPlan[]>>(() => {
+    const unaccomplished = (monthNum: 1 | 2): MonthlyPlan[] =>
+      plansByMonth[monthNum].filter(
+        (p) =>
+          p.plan_status === "PUBLISHED" &&
+          Number(p.current_value ?? 0) < Number(p.target_value ?? 0),
+      );
+    return { 2: unaccomplished(1), 3: unaccomplished(2) };
+  }, [plansByMonth]);
 
   // Auto-expand the active month whenever it changes (driven by plan data).
   useEffect(() => {
@@ -616,9 +624,17 @@ export default function MonthlyPlanTab({
             expanded={!!expanded[m]}
             isActive={m === activeMonth}
             isNextUnlocked={m === nextUnlockedMonth}
-            isLocked={!!monthLocked[m]}
+            availability={monthAvailability[m]}
+            carryOverPlans={m >= 2 ? (carryOverByMonth[m as 2 | 3] ?? []) : []}
+            dateRange={(() => {
+              if (!cycleStartDate || !cycleEndDate) return undefined;
+              const range = getCycleMonthRange(cycleStartDate, cycleEndDate, m);
+              if (!range) return undefined;
+              const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+              return `${fmt(range.start)} – ${fmt(range.end)}`;
+            })()}
             onToggle={() => {
-              if (monthLocked[m]) return;
+              if (monthAvailability[m] === "future") return;
               setExpanded((prev) => ({ ...prev, [m]: !prev[m] }));
             }}
             onAdd={() => setAddForMonth(m as 1 | 2 | 3)}
@@ -628,7 +644,15 @@ export default function MonthlyPlanTab({
             onSubmit={() => startSubmitPeriod(m)}
             onPublish={() => setPublishConfirm({ monthNumber: m as 1 | 2 | 3 })}
             allowAdd={allowAdd}
-            onUpdateProgress={allowUpdateProgress ? setProgressPlan : undefined}
+            onUpdateProgress={
+              allowUpdateProgress
+                ? (plan) => {
+                    const ownerId = String(plan.owner_id ?? "");
+                    if (!currentUserId || ownerId !== currentUserId) return;
+                    setProgressPlan(plan);
+                  }
+                : undefined
+            }
           />
         ))
       )}
@@ -739,9 +763,11 @@ function MonthSection({
   plans,
   meta,
   expanded,
-  isActive,
-  isNextUnlocked,
-  isLocked,
+  isActive: _isActive,
+  isNextUnlocked: _isNextUnlocked,
+  availability,
+  carryOverPlans = [],
+  dateRange,
   onToggle,
   onAdd,
   onEdit,
@@ -758,7 +784,9 @@ function MonthSection({
   expanded: boolean;
   isActive: boolean;
   isNextUnlocked: boolean;
-  isLocked: boolean;
+  availability: PeriodAvailability;
+  carryOverPlans?: MonthlyPlan[];
+  dateRange?: string;
   onToggle: () => void;
   onAdd: () => void;
   onEdit: (plan: MonthlyPlan) => void;
@@ -771,55 +799,60 @@ function MonthSection({
 }) {
   const isCompleted =
     meta.bannerStatus === "PUBLISHED" || meta.bannerStatus === "APPROVED";
+  const isFuture = availability === "future";
+  const isPast = availability === "past";
+  const isCurrent = availability === "current" || availability === "no-cycle";
 
-  // Border theming: locked=slate, active=primary ring, completed=emerald, next-unlocked=primary(no ring), default=slate
-  const cardBorder = isLocked
-    ? "border-slate-200"
-    : isActive
+  // Border theming: future=slate/dim, current=primary ring, past=emerald, default=slate
+  const cardBorder = isFuture
+    ? "border-slate-100"
+    : isCurrent
       ? "border-primary/50 ring-2 ring-primary/15"
       : isCompleted
         ? "border-emerald-300"
-        : isNextUnlocked
-          ? "border-primary/30"
+        : isPast
+          ? "border-slate-300"
           : "border-slate-200";
 
-  const headerBg = isLocked
-    ? "bg-slate-50"
-    : isActive
+  const headerBg = isFuture
+    ? "bg-slate-50/60"
+    : isCurrent
       ? "bg-gradient-to-r from-primary/5 to-primary/10"
       : isCompleted
         ? "bg-gradient-to-r from-emerald-50 to-emerald-50/60"
-        : "bg-white";
+        : isPast
+          ? "bg-slate-50"
+          : "bg-white";
 
-  const badgeBg = isLocked
-    ? "bg-slate-200 text-slate-400"
-    : isActive
+  const badgeBg = isFuture
+    ? "bg-slate-100 text-slate-300"
+    : isCurrent
       ? "bg-primary text-white shadow-md shadow-primary/30"
       : isCompleted
         ? "bg-emerald-500 text-white"
-        : isNextUnlocked
-          ? "bg-primary/10 text-primary"
+        : isPast
+          ? "bg-slate-200 text-slate-500"
           : "bg-slate-100 text-slate-500";
 
   return (
     <section
       className={`rounded-3xl border-2 bg-white overflow-hidden transition-all duration-200 ${
-        isLocked ? "opacity-70" : "shadow-md hover:shadow-lg"
+        isFuture ? "opacity-50" : "shadow-md hover:shadow-lg"
       } ${cardBorder}`}
     >
       {/* Card Header */}
       <div
         role="button"
-        tabIndex={isLocked ? -1 : 0}
+        tabIndex={isFuture ? -1 : 0}
         onClick={onToggle}
         onKeyDown={(e) => {
-          if (!isLocked && (e.key === "Enter" || e.key === " ")) {
+          if (!isFuture && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             onToggle();
           }
         }}
         className={`w-full flex items-center justify-between gap-4 px-6 py-5 text-left transition-colors ${
-          isLocked ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
+          isFuture ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
         } ${headerBg}`}
       >
         {/* Left: badge + title */}
@@ -836,7 +869,12 @@ function MonthSection({
               <span className="text-base font-bold text-slate-800">
                 Month {monthNumber}
               </span>
-              {isActive && !isLocked && (
+              {dateRange && (
+                <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                  {dateRange}
+                </span>
+              )}
+              {isCurrent && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary text-white text-[10px] font-bold uppercase tracking-wide">
                   <MdPlayCircle className="text-xs" />
                   Active
@@ -848,77 +886,61 @@ function MonthSection({
                   {meta.bannerStatus === "PUBLISHED" ? "Published" : "Approved"}
                 </span>
               )}
-              {isNextUnlocked && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wide">
-                  <MdLockOpen className="text-xs" />
-                  Ready
+              {isPast && !isCompleted && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wide">
+                  <MdHistory className="text-xs" />
+                  Past
                 </span>
               )}
-              {isLocked && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide">
-                  Locked
+              {isFuture && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
+                  <MdSchedule className="text-xs" />
+                  Upcoming
                 </span>
               )}
             </div>
             <div className="text-xs text-slate-500 mt-0.5">
-              {isLocked
-                ? `Unlocks after Month ${monthNumber - 1} plan is approved`
-                : isNextUnlocked
-                  ? "Unlocked — add your first plan to start"
+              {isFuture
+                ? "Not yet available — becomes active when this month begins"
+                : isPast && plans.length === 0
+                  ? "No plans were created for this period"
                   : plans.length === 0
                     ? "No plans yet — click Add to start"
-                    : `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${meta.isSubmitted ? "Submitted" : "In progress"}`}
+                    : `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${meta.isSubmitted ? "Submitted" : isPast ? "Past" : "In progress"}`}
             </div>
           </div>
         </div>
 
-        {/* Right: lock icon + actions */}
+        {/* Right: actions */}
         <div className="flex items-center gap-3 shrink-0">
-          {isLocked ? (
-            <div className="flex flex-col items-center gap-1">
-              <MdLock className="text-slate-400" style={{ fontSize: 32 }} />
-              <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
-                Locked
-              </span>
-            </div>
+          {isFuture ? (
+            <span className="text-xs text-slate-400 font-medium">Not yet available</span>
           ) : (
             <>
-              <div className="flex flex-col items-center gap-1">
-                <MdLockOpen
-                  className={
-                    isActive || isNextUnlocked
-                      ? "text-primary"
-                      : "text-emerald-500"
+              {isCurrent && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={MdAdd}
+                  disabled={!allowAdd}
+                  title={
+                    !allowAdd
+                      ? "Monthly plans are not enabled for your role"
+                      : undefined
                   }
-                  style={{ fontSize: 28 }}
-                />
-                <span
-                  className={`text-[9px] font-semibold uppercase tracking-wider ${
-                    isActive || isNextUnlocked
-                      ? "text-primary"
-                      : "text-emerald-500"
-                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAdd();
+                  }}
                 >
-                  Unlocked
+                  Add
+                </Button>
+              )}
+              {isPast && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-semibold uppercase tracking-wide">
+                  Read-only
                 </span>
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={MdAdd}
-                disabled={!allowAdd}
-                title={
-                  !allowAdd
-                    ? "Monthly plans are not enabled for your role"
-                    : undefined
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAdd();
-                }}
-              >
-                Add
-              </Button>
+              )}
               <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
                 {expanded ? "Collapse" : "Expand"}
                 <MdChevronRight
@@ -930,27 +952,82 @@ function MonthSection({
         </div>
       </div>
 
-      {/* Locked overlay message */}
-      {isLocked && (
-        <div className="px-6 py-6 border-t border-slate-100 bg-slate-50/80">
+      {/* Future period overlay */}
+      {isFuture && (
+        <div className="px-6 py-6 border-t border-slate-100 bg-slate-50/60">
           <div className="flex flex-col items-center justify-center gap-3 py-4">
-            <MdLock className="text-slate-300" style={{ fontSize: 48 }} />
+            <MdSchedule className="text-slate-300" style={{ fontSize: 48 }} />
             <div className="text-center">
-              <p className="text-sm font-semibold text-slate-500">
-                Month {monthNumber} is locked
+              <p className="text-sm font-semibold text-slate-400">
+                Month {monthNumber} hasn't started yet
               </p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                Complete and get Month {(monthNumber - 1) as 1 | 2} approved
-                before planning Month {monthNumber}.
+                This period will become available when the current calendar month begins.
               </p>
             </div>
           </div>
         </div>
       )}
+      {/* Past period read-only notice */}
+      {isPast && !expanded && plans.length > 0 && (
+        <div className="px-6 py-2 border-t border-slate-100 bg-amber-50/40">
+          <p className="text-xs text-amber-700 font-medium">
+            This period has ended. Plans are read-only.
+          </p>
+        </div>
+      )}
 
       {/* Expanded content */}
-      {!isLocked && expanded && (
+      {!isFuture && expanded && (
         <div className="border-t border-slate-100 p-6 space-y-4 bg-slate-50/30">
+          {/* Carry-over banner: show unaccomplished targets from previous month */}
+          {carryOverPlans.length > 0 && isCurrent && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <MdWarning className="text-amber-500 shrink-0 mt-0.5" style={{ fontSize: 20 }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-amber-800 mb-1">
+                    {carryOverPlans.length} unaccomplished target{carryOverPlans.length > 1 ? "s" : ""} from Month {monthNumber - 1}
+                  </p>
+                  <p className="text-xs text-amber-700 mb-3">
+                    The following plans did not reach their target last month. Consider carrying them over into Month {monthNumber}.
+                  </p>
+                  <div className="space-y-2">
+                    {carryOverPlans.map((cp) => {
+                      const remaining = Math.max(0, Number(cp.target_value ?? 0) - Number(cp.current_value ?? 0));
+                      const unit = cp.parent_key_result?.unit ?? "";
+                      return (
+                        <div
+                          key={cp.id}
+                          className="flex items-center justify-between gap-2 rounded-xl bg-white border border-amber-100 px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-semibold text-slate-800 truncate">{cp.title}</p>
+                            <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                              Remaining: <span className="font-bold tabular-nums">{remaining}{unit ? ` ${unit}` : ""}</span>
+                              {" "}({Math.round(100 - Number(cp.progress_pct ?? 0))}% unmet)
+                            </p>
+                          </div>
+                          <MdArrowForward className="text-amber-400 shrink-0" style={{ fontSize: 16 }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {allowAdd && (
+                    <button
+                      type="button"
+                      onClick={onAdd}
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 hover:underline transition-colors cursor-pointer"
+                    >
+                      <MdAdd style={{ fontSize: 14 }} />
+                      Add carry-over plan for Month {monthNumber}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Banner if submitted; otherwise nothing here. */}
           {(meta.isSubmitted || meta.feedbackNote) && (
             <PlanStatusBanner
@@ -1000,8 +1077,8 @@ function MonthSection({
             </div>
           )}
 
-          {/* Period submit button (replaces banner when canShowSubmit) */}
-          {meta.canShowSubmit && (
+          {/* Period submit button — only for current or no-cycle periods */}
+          {meta.canShowSubmit && isCurrent && (
             <div className="flex items-center justify-end pt-2">
               <Button
                 variant="secondary"

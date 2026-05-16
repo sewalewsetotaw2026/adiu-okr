@@ -65,7 +65,7 @@ export default function HorizontalBarChart({
             />
 
             <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={48}>
-              {data.map((entry, index) => (
+              {data.map((_, index) => (
                 <Cell
                   key={index}
                   fill={colors && colors.length > 0 ? colors[index % colors.length] : "#e55400"}

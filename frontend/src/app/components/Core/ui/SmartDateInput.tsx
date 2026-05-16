@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MdCalendarToday, MdError } from "react-icons/md";
+import { MdCalendarToday } from "react-icons/md";
 
 interface SmartDateInputProps {
   label: string;
@@ -113,16 +113,17 @@ export default function SmartDateInput({
   };
 
   const triggerDatePicker = () => {
-    if (dateInputRef.current) {
-        if ('showPicker' in dateInputRef.current) {
+    const inputEl = dateInputRef.current as HTMLInputElement | null;
+    if (inputEl) {
+        if ('showPicker' in inputEl) {
             try {
-               (dateInputRef.current as any).showPicker();
+               (inputEl as any).showPicker();
             } catch (e) {
-                dateInputRef.current.focus();
+                (inputEl as any).focus();
             }
         } else {
-             dateInputRef.current.focus();
-             dateInputRef.current.click(); 
+             (inputEl as any).focus();
+             (inputEl as any).click(); 
         }
     }
   };

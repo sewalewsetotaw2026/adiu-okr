@@ -66,7 +66,7 @@ export default function RegistrationModal({
           </div>
 
           <Button
-            variant="default"
+            variant="primary"
             onClick={onManualStart}
             className="w-full py-3 flex items-center justify-center gap-2"
           >

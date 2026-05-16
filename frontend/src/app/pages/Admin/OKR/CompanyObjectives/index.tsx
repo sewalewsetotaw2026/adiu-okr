@@ -25,7 +25,10 @@ import { Status } from "../components/StatusBadge";
 
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
-import { okrErrorMessage } from "../../../../utils/okrApi";
+import {
+  okrErrorMessage,
+  resolveConfidenceLevel,
+} from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 
 /* ================= TYPES ================= */
@@ -74,7 +77,10 @@ export default function CompanyObjectives() {
       n > 0
         ? Math.round(objectives.reduce((s, o) => s + o.progress, 0) / n)
         : 0;
-    return { n, published, draft, totalKRs, avgProgress };
+    const atRisk = objectives.filter(
+      (o) => resolveConfidenceLevel(o.progress) === "AT_RISK",
+    ).length;
+    return { n, published, draft, totalKRs, avgProgress, atRisk };
   }, [objectives]);
 
   const filteredObjectives = useMemo(() => {
@@ -460,6 +466,14 @@ export default function CompanyObjectives() {
                       ? "text-amber-500"
                       : "text-emerald-500",
                   },
+                  {
+                    label: "Health Status",
+                    value:
+                      summary.atRisk > 0 ? `${summary.atRisk} At Risk` : "On Track",
+                    icon: MdOutlineVisibility,
+                    color:
+                      summary.atRisk > 0 ? "text-rose-500" : "text-emerald-500",
+                  },
                 ].map((stat, idx) => (
                   <div
                     key={idx}
@@ -606,6 +620,7 @@ export default function CompanyObjectives() {
                       status={obj.status}
                       progress={obj.progress}
                       indirectProgress={obj.indirectProgress}
+                      confidenceLevel={resolveConfidenceLevel(obj.progress)}
                       krsCount={obj.krCount}
                       headerContext={obj.description}
                       expandable={obj.keyResults?.length > 0}
@@ -723,6 +738,7 @@ export default function CompanyObjectives() {
                                 index={index}
                                 progress={krPct}
                                 status={kr.status_code || "draft"}
+                                confidenceLevel={resolveConfidenceLevel(krPct)}
                                 targetString={`${formatOkrNumber(krCur)} / ${formatOkrNumber(krTgt)}${kr.unit_of_measure ? (kr.unit_of_measure === "%" ? "%" : ` ${kr.unit_of_measure}`) : ""}`}
                                 metricTypeString={`Weight: ${Math.round(kr.weight_percent ?? 0)}%`}
                               />

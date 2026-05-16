@@ -1,5 +1,7 @@
 import React, { ReactNode, useState } from "react";
 import FeedbackBanner from "../../pages/OKRExecution/components/FeedbackBanner";
+import ConfidenceBadge from "./ConfidenceBadge";
+import type { ConfidenceLevel } from "../../constants/themeConstants";
 
 export interface KeyResultListItemProps {
   title: string;
@@ -14,6 +16,7 @@ export interface KeyResultListItemProps {
   subtitle?: ReactNode;
   feedbackNote?: string;
   reviewerName?: string;
+  confidenceLevel?: ConfidenceLevel;
 }
 
 function getKRStatusStyles(status: string, progress: number) {
@@ -74,6 +77,7 @@ export default function KeyResultListItem({
   subtitle,
   feedbackNote,
   reviewerName,
+  confidenceLevel,
 }: KeyResultListItemProps) {
   const [isTitleExpanded, setIsTitleExpanded] = useState(false);
   const styles = getKRStatusStyles(status, progress);
@@ -96,6 +100,7 @@ export default function KeyResultListItem({
             >
               {styles.label}
             </div>
+            {confidenceLevel && <ConfidenceBadge level={confidenceLevel} size="xs" />}
             {metricTypeString && (
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-space">
                 {metricTypeString}

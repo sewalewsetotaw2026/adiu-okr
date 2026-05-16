@@ -46,6 +46,7 @@ import CelebrationPage from "../../app/pages/Celebration/CelebrationPage";
 import RoleManagement from "../../app/pages/Admin/Roles/RoleManagement";
 import { SuperAdminLayout } from "../../app/pages/SuperAdmin/SuperAdminLayout";
 import SuperAdminLogin from "../../app/pages/Authentication/SuperAdminLogin";
+import FinancialRollup from "../../app/pages/Admin/FinancialRollup";
 
 import OKRDashboard from "../../app/pages/Admin/OKR";
 import CycleManagement from "../../app/pages/Admin/OKR/CycleManagement";
@@ -59,6 +60,7 @@ import CompanyOKRGalleryPage from "../../app/pages/Admin/OKR/CompanyOKRGallery";
 import OKRConfigurationPage from "../../app/pages/Admin/OKR/Configuration";
 import ArchiveManagementPage from "../../app/pages/Admin/OKR/ArchiveManagement";
 import ArchiveDetailReportsPage from "../../app/pages/Admin/OKR/ArchiveDetailReports";
+import AnnualReportingPage from "../../app/pages/Admin/OKR/AnnualReporting";
 import OkrAuditLogsPage from "../../app/pages/Admin/OKR/AuditLogs";
 import OkrAuditSnapshotDetailPage from "../../app/pages/Admin/OKR/AuditSnapshotDetail";
 
@@ -71,6 +73,7 @@ import ApprovalQueuePage from "../../app/pages/OKRExecution/ApprovalQueue";
 import DepartmentApprovalQueuePage from "../../app/pages/Admin/OKR/DepartmentApprovalQueue";
 import ReviewDashboard from "../../app/pages/OKRExecution/ReviewerPanel";
 import ReviewDetail from "../../app/pages/OKRExecution/ReviewerPanel/ReviewDetail";
+import OKRImportExportPage from "../../app/pages/OKRExecution/ImportExport";
 
 import { IRoute } from "./types";
 
@@ -113,6 +116,12 @@ export const routes: IRoute[] = [
   {
     path: routeConstants.dashboard,
     element: <AdminDashboard />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, "Admin", "HR"],
+  },
+  {
+    path: routeConstants.financialRollup,
+    element: <FinancialRollup />,
     isAuthenticated: true,
     allowedRoles: [1, 2, "Admin", "HR"],
   },
@@ -462,6 +471,12 @@ export const routes: IRoute[] = [
     allowedRoles: [1, 2, "Admin", "HR"],
   },
   {
+    path: routeConstants.okrAnnualReporting,
+    element: <AnnualReportingPage />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, "Admin", "HR"],
+  },
+  {
     path: routeConstants.okrAuditLogs,
     element: <OkrAuditLogsPage />,
     isAuthenticated: true,
@@ -533,5 +548,11 @@ export const routes: IRoute[] = [
     element: <ReviewDetail />,
     isAuthenticated: true,
     allowedRoles: [1, 2, 4, "Admin", "HR", "Manager", "CEO"],
+  },
+  {
+    path: routeConstants.okrImportExport,
+    element: <OKRImportExportPage />,
+    isAuthenticated: true,
+    allowedRoles: [1, 2, 3, 4, "Admin", "HR", "Employee", "Manager"],
   },
 ];

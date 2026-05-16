@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   FiTrendingUp,
   FiTrendingDown,
@@ -158,7 +158,7 @@ export default function CareerHistoryTimeline({
 
         {/* Events */}
         <div className="space-y-6">
-          {events.map((event, index) => {
+          {events.map((event, _index) => {
             const config =
               EVENT_CONFIG[event.event_type] || EVENT_CONFIG.Transfer;
             const Icon = config.icon;

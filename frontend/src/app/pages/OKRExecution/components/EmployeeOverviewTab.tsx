@@ -3,11 +3,7 @@ import {
   MdTrendingUp,
   MdCheckCircle,
   MdCalendarMonth,
-  MdDateRange,
-  MdToday,
   MdFlagCircle,
-  MdFlag,
-  MdTimeline,
 } from "react-icons/md";
 import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
@@ -114,8 +110,6 @@ export default function EmployeeOverviewTab({
     off_track: 0,
     not_reported: 0,
   };
-  const recentComments = data?.recentComments ?? [];
-  const adoption = data?.adoption ?? { adopted: 0, personal: 0 };
   const compliance = summary.planningCompliance;
   const totalActivities =
     compliance.monthlyPlans + compliance.weeklyPlans + compliance.dailyPlans;
@@ -177,7 +171,7 @@ export default function EmployeeOverviewTab({
           color="amber"
         />
         <StatCard
-          icon={<MdFlag />}
+          icon={<MdFlagCircle />}
           label="KR Status Distribution"
           value={`${formatOkrCount(confidenceStats.on_track + confidenceStats.at_risk + confidenceStats.off_track)}`}
           subtext={`${formatOkrCount(confidenceStats.on_track)}✓ · ${formatOkrCount(confidenceStats.at_risk)}⚠ · ${formatOkrCount(confidenceStats.off_track)}✗`}
@@ -460,47 +454,3 @@ function StatCard({ icon, label, value, subtext, badge, color }: any) {
   );
 }
 
-function PlanningCard({
-  icon,
-  label,
-  count,
-  description,
-  colorClass,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
-  description: string;
-  colorClass: string;
-}) {
-  return (
-    <div className="group p-6 rounded-2xl border border-slate-100 bg-slate-50/30 hover:bg-white hover:border-primary-100 hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-300">
-      <div className={`inline-flex p-2.5 rounded-xl ${colorClass} mb-4`}>
-        {icon}
-      </div>
-      <div className="text-4xl font-black text-slate-900 tracking-tighter mb-1">
-        {count}
-      </div>
-      <div className="text-sm font-black text-slate-700 mb-1">{label}</div>
-      <p className="text-xs text-slate-400">{description}</p>
-    </div>
-  );
-}
-
-function HealthBar({ label, count, total, color }: any) {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
-  return (
-    <div className="space-y-2.5">
-      <div className="flex justify-between text-[10px] font-black uppercase tracking-wider">
-        <span className="text-slate-400">{label}</span>
-        <span className="text-slate-900">{count}</span>
-      </div>
-      <div className="h-2 w-full bg-slate-50 rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(0,0,0,0.1)]`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  );
-}

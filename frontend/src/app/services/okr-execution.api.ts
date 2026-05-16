@@ -329,6 +329,33 @@ export async function fetchManagerWeeklyPlans(
   return (Array.isArray(data) ? data : []).map(normalizeWeeklyPlan);
 }
 
+export async function checkManagerPlanExists(
+  params: {
+    cadence: "monthly" | "weekly" | "daily";
+    cycleId?: string | number;
+    monthNumber?: number;
+    krId?: string;
+    monthlyPlanId?: string;
+    weekNumber?: number;
+  },
+): Promise<{ exists: boolean; managerPlans: Array<{ id: number; title: string }> }> {
+  const query: Record<string, string | number> = { cadence: params.cadence };
+  if (params.cycleId) query.cycleId = params.cycleId;
+  if (params.monthNumber) query.monthNumber = params.monthNumber;
+  if (params.krId) query.krId = params.krId;
+  if (params.monthlyPlanId) query.monthlyPlanId = params.monthlyPlanId;
+  if (params.weekNumber) query.weekNumber = params.weekNumber;
+
+  const data = await unwrap<any>(
+    makeCall({
+      route: `${OKR}/manager/plan-exists`,
+      method: "GET",
+      query,
+    }),
+  );
+  return data || { exists: false, managerPlans: [] };
+}
+
 export async function createWeeklyPlan(
   monthlyId: string,
   dto: CreateWeeklyPlanDTO,

@@ -3,10 +3,16 @@ import { useDispatch, useSelector } from "react-redux";
 import EmployeeLayout from "../../../components/DefaultLayout/EmployeeLayout";
 import ExecutionShell from "../components/ExecutionShell";
 import { routeConstants } from "../../../../utils/constants";
-import { MdGroupAdd, MdPersonAdd } from "react-icons/md";
+import {
+  MdGroupAdd,
+  MdPersonAdd,
+  MdPerson,
+  MdExpandMore,
+  MdChevronRight,
+  MdPeople,
+} from "react-icons/md";
 import AssignContributorModal from "../components/modals/AssignContributorModal";
 import Button from "../../../components/Core/ui/Button";
-import OkrStatusBadge from "../components/OkrStatusBadge";
 import makeCall from "../../../API";
 import apiRoutes from "../../../API/apiRoutes";
 import { okrAsArray, okrErrorMessage, okrUnwrap } from "../../../utils/okrApi";
@@ -27,6 +33,14 @@ type KrRow = {
       userId: string;
       name: string;
     }[];
+};
+
+type SubordinateItem = {
+  id: string;
+  name: string;
+  jobTitle: string;
+  department: string;
+  directReports: SubordinateItem[];
 };
 
 type DepartmentContributorSummary = {
@@ -131,12 +145,13 @@ export default function ContributorAssignmentPage() {
 
   const [allSubordinates, setAllSubordinates] = useState<any[]>([]);
   const [subordinatesLoaded, setSubordinatesLoaded] = useState(false);
+  const [expandedSubordinates, setExpandedSubordinates] = useState<Set<string>>(new Set());
 
   const [rows, setRows] = useState<KrRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [departmentId, setDepartmentId] = useState<number | "">("");
   const [cycleId, setCycleId] = useState<number | null>(null);
-  const [summary, setSummary] = useState<DepartmentContributorSummary | null>(
+  const [_summary, setSummary] = useState<DepartmentContributorSummary | null>(
     null,
   );
 
@@ -180,6 +195,49 @@ export default function ContributorAssignmentPage() {
       setDepartmentId(departments[0].id);
     }
   }, [departments, departmentId, userDeptId, isAdmin]);
+
+  // Build immediate subordinate tree from `allSubordinates`.
+  // Each direct report's own sub-reports are nested.
+  const immediateSubordinates = useMemo<SubordinateItem[]>(() => {
+    const all = allSubordinates;
+    if (!all.length) return [];
+
+    // Build a lookup: employee_user_id → raw record
+    const byUserId = new Map<string, any>();
+    all.forEach((s: any) => {
+      const uid = String(s.employee_user_id ?? s.user_id ?? "");
+      if (uid) byUserId.set(uid, s);
+    });
+
+    const currentUserIds = [
+      String(user?.employee_id ?? ""),
+      String(user?.id ?? ""),
+    ].filter(Boolean);
+
+    // Find direct reports (reports_to = current user's employee_id)
+    const directReports = all.filter((s: any) => {
+      const reportsTo = String(s.reports_to ?? s.manager_user_id ?? "");
+      return reportsTo && currentUserIds.some((id) => id === reportsTo);
+    });
+
+    const toItem = (s: any): SubordinateItem => {
+      const uid = String(s.employee_user_id ?? s.user_id ?? "");
+      // Find their direct reports
+      const subReports = all.filter((sub: any) => {
+        const rt = String(sub.reports_to ?? sub.manager_user_id ?? "");
+        return rt && rt === uid;
+      });
+      return {
+        id: uid,
+        name: s.employee_name ?? s.full_name ?? "Employee",
+        jobTitle: s.job_title ?? s.position_name ?? "—",
+        department: s.department_name ?? "—",
+        directReports: subReports.map((sr: any) => toItem(sr)),
+      };
+    };
+
+    return directReports.map((dr: any) => toItem(dr));
+  }, [allSubordinates, user]);
 
   const employees = useMemo(() => {
     const source = typeof departmentId === "number"
@@ -291,7 +349,7 @@ export default function ContributorAssignmentPage() {
 
   return (
     <EmployeeLayout forceEmployeeSidebar>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white -mx-4 md:-mx-8 px-4 md:px-8">
+      <div className="min-h-screen bg-linear-to-b from-slate-50 to-white -mx-4 md:-mx-8 px-4 md:px-8">
         <ExecutionShell
           breadcrumbs={[
             { label: "My team", to: routeConstants.managerMyTeam },
@@ -343,7 +401,7 @@ export default function ContributorAssignmentPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-sm text-left">
+                <table className="w-full min-w-180 text-sm text-left">
                   <thead>
                     <tr className="border-b border-gray-100 bg-k-light-grey/40">
                       <th className="px-5 py-3 font-semibold text-k-dark-grey">
@@ -424,6 +482,88 @@ export default function ContributorAssignmentPage() {
             )}
           </div>
         </ExecutionShell>
+
+        {/* Immediate Subordinates Section */}
+        {immediateSubordinates.length > 0 && (
+          <div className="mt-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center justify-center w-9 h-9 rounded-2xl bg-primary/10">
+                <MdPeople className="text-primary text-xl" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-800">Your Direct Reports</h2>
+                <p className="text-xs text-slate-500">{immediateSubordinates.length} immediate team member{immediateSubordinates.length !== 1 ? "s" : ""}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 overflow-hidden divide-y divide-gray-50">
+              {immediateSubordinates.map((sub) => (
+                <div key={sub.id}>
+                  {/* Direct report row */}
+                  <div className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 shrink-0">
+                        <MdPerson className="text-primary text-base" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{sub.name}</p>
+                        <p className="text-xs text-slate-500 truncate">{sub.jobTitle} · {sub.department}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {sub.directReports.length > 0 && (
+                        <span className="text-[10px] font-bold text-primary/70 bg-primary/5 px-2 py-0.5 rounded-full">
+                          {sub.directReports.length} sub-report{sub.directReports.length !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {sub.directReports.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedSubordinates((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(sub.id)) next.delete(sub.id);
+                              else next.add(sub.id);
+                              return next;
+                            })
+                          }
+                          className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-primary transition-colors cursor-pointer"
+                        >
+                          {expandedSubordinates.has(sub.id) ? (
+                            <MdExpandMore className="text-base" />
+                          ) : (
+                            <MdChevronRight className="text-base" />
+                          )}
+                          {expandedSubordinates.has(sub.id) ? "Collapse" : "Expand"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sub-reports collapsible */}
+                  {expandedSubordinates.has(sub.id) && sub.directReports.length > 0 && (
+                    <div className="ml-14 border-l-2 border-primary/10 bg-slate-50/50">
+                      {sub.directReports.map((sr) => (
+                        <div
+                          key={sr.id}
+                          className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100/60 last:border-0"
+                        >
+                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-200 shrink-0">
+                            <MdPerson className="text-slate-500 text-xs" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-slate-700 truncate">{sr.name}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{sr.jobTitle}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <AssignContributorModal
           isOpen={modalOpen}

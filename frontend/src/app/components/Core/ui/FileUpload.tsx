@@ -1,5 +1,5 @@
 import React from "react";
-import { MdCloudUpload, MdDelete, MdFilePresent, MdRemoveRedEye, MdCancel, MdError } from "react-icons/md";
+import { MdCloudUpload, MdDelete, MdFilePresent, MdRemoveRedEye, MdError } from "react-icons/md";
 
 interface FileUploadProps {
   label?: string;

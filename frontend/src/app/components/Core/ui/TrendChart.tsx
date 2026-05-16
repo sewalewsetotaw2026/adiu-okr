@@ -69,7 +69,7 @@ export default function TrendChart({
               radius={[6, 6, 0, 0]}
               animationDuration={1500}
             >
-              {data.map((entry, index) => (
+              {data.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={mainColor} />
               ))}
             </Bar>

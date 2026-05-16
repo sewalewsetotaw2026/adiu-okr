@@ -1,14 +1,13 @@
 import {
   MdOutlineCorporateFare,
   MdChevronRight,
-  MdCheckCircle,
-  MdWarning,
-  MdTrendingUp,
 } from "react-icons/md";
 import {
   formatOkrCount,
   formatOkrNumber,
 } from "../../../../../utils/okrNumber";
+import ConfidenceBadge from "../../../../../components/common/ConfidenceBadge";
+import { resolveConfidenceLevel } from "../../../../../utils/okrApi";
 
 type DepartmentSummaryCardProps = {
   id: number;
@@ -17,7 +16,6 @@ type DepartmentSummaryCardProps = {
   krCount: number;
   progressPercent: number;
   employeeCount: number;
-  atRiskCount?: number;
   onNavigate: (id: number) => void;
 };
 
@@ -35,7 +33,6 @@ export default function DepartmentSummaryCard({
   krCount,
   progressPercent,
   employeeCount,
-  atRiskCount = 0,
   onNavigate,
 }: DepartmentSummaryCardProps) {
   const progressColor =
@@ -55,9 +52,6 @@ export default function DepartmentSummaryCard({
         : progressPercent >= 25
           ? "bg-amber-50"
           : "bg-red-50";
-
-  const statusLabel =
-    atRiskCount > 0 || progressPercent < 75 ? "Off Track" : "On Track";
 
   return (
     <button
@@ -126,16 +120,7 @@ export default function DepartmentSummaryCard({
       {/* Status bar & alerts */}
       <div className="flex items-center justify-between pt-3 border-t border-slate-100">
         <div className="flex items-center gap-2">
-          {statusLabel === "On Track" ? (
-            <MdCheckCircle className="text-green-600 text-base" />
-          ) : atRiskCount > 0 ? (
-            <MdWarning className="text-amber-600 text-base" />
-          ) : (
-            <MdTrendingUp className="text-blue-600 text-base" />
-          )}
-          <span className="text-xs font-semibold text-slate-600">
-            {statusLabel}
-          </span>
+          <ConfidenceBadge level={resolveConfidenceLevel(progressPercent)} size="sm" />
         </div>
         <span className="text-[10px] font-black uppercase tracking-widest text-primary font-space">
           View Details

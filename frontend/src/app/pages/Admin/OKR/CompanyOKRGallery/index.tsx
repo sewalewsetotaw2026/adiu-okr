@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
-import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
 import { okrFeatureFlags } from "../okrFeatureFlags";
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
-import { okrAsArray, okrErrorMessage, okrUnwrap } from "../../../../utils/okrApi";
+import {
+  okrAsArray,
+  okrErrorMessage,
+  okrUnwrap,
+  resolveConfidenceLevel,
+} from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
-import { useNavigate } from "react-router-dom";
-import { routeConstants } from "../../../../../utils/constants";
-import { MdChevronRight, MdSearch, MdFilterList, MdWarningAmber } from "react-icons/md";
-import Button from "../../../../components/Core/ui/Button";
-import ObjectiveCard from "../../../../components/common/ObjectiveCard";
-import KeyResultListItem from "../../../../components/common/KeyResultListItem";
+
+import {
+  MdOutlineFlag,
+  MdBusiness,
+  MdExpandMore,
+  MdExpandLess,
+  MdWarningAmber,
+} from "react-icons/md";
 import LoadingSkeleton from "../../../../components/common/LoadingSkeleton";
-import { formatOkrNumber } from "../../../../utils/okrNumber";
+import ConfidenceBadge from "../../../../components/common/ConfidenceBadge";
+import PageHeader from "../../../../components/common/PageHeader";
 
 type GalleryObjective = {
   id: number;
@@ -37,18 +44,144 @@ type GalleryObjective = {
       title: string;
       status: string;
       departmentId: number;
+      progress: number;
     }>;
   }>;
 };
 
-export default function CompanyOKRGalleryPage() {
-  const navigate = useNavigate();
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState<"all" | "draft" | "published" | "closed">(
-    "all",
+type DepartmentStat = {
+  id: number;
+  departmentId: number;
+  departmentName: string;
+  objectiveCount: number;
+  krCount: number;
+  avgScore: number;
+  employeeCount: number;
+  atRiskCount: number;
+};
+
+// Top-level Summary Card for Company Objectives
+function CompanyObjectiveSummaryCard({
+  title,
+  progress,
+}: {
+  title: string;
+  progress: number;
+}) {
+  const conf = resolveConfidenceLevel(progress);
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-4">
+        <h3 className="text-lg font-bold text-slate-800 line-clamp-2 pr-4">{title}</h3>
+        <ConfidenceBadge level={conf} />
+      </div>
+      <div className="space-y-2">
+        <div className="flex justify-between items-center text-sm font-medium">
+          <span className="text-slate-500">Progress</span>
+          <span className="text-slate-800">{progress}%</span>
+        </div>
+        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 rounded-full ${
+              conf === "ON_TRACK"
+                ? "bg-emerald-500"
+                : conf === "AT_RISK"
+                  ? "bg-amber-500"
+                  : "bg-rose-500"
+            }`}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+    </div>
   );
+}
+
+function DepartmentAccordion({
+  dept,
+  deptObjectives,
+}: {
+  dept: DepartmentStat;
+  deptObjectives: Array<{ id: number; title: string; progress: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden transition-all shadow-sm mb-4">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-6 bg-slate-50/50 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+            {dept.avgScore}%
+          </div>
+          <div className="text-left">
+            <h4 className="text-xl font-bold text-slate-800">{dept.departmentName}</h4>
+            <p className="text-sm text-slate-500 font-medium">
+              {dept.employeeCount} Employees • {deptObjectives.length} Objectives
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-slate-400">
+          {dept.atRiskCount > 0 && (
+            <span className="px-3 py-1 rounded-full bg-rose-50 text-rose-600 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+              <MdWarningAmber className="text-sm" />
+              {dept.atRiskCount} At Risk
+            </span>
+          )}
+          {open ? <MdExpandLess className="text-2xl" /> : <MdExpandMore className="text-2xl" />}
+        </div>
+      </button>
+
+      {open && (
+        <div className="p-6 border-t border-slate-100 bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {deptObjectives.length === 0 ? (
+            <div className="col-span-full py-8 text-center text-slate-400 text-sm">
+              No objectives mapped to this department yet.
+            </div>
+          ) : (
+            deptObjectives.map((obj) => (
+              <div
+                key={obj.id}
+                className="p-5 rounded-xl border border-slate-100 bg-slate-50 hover:bg-white hover:shadow-sm transition-all flex flex-col justify-between gap-4"
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <h5 className="font-bold text-slate-800 text-sm leading-tight line-clamp-2">
+                    {obj.title}
+                  </h5>
+                  <ConfidenceBadge level={resolveConfidenceLevel(obj.progress)} className="shrink-0" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${
+                        resolveConfidenceLevel(obj.progress) === "ON_TRACK"
+                          ? "bg-emerald-500"
+                          : resolveConfidenceLevel(obj.progress) === "AT_RISK"
+                            ? "bg-amber-500"
+                            : "bg-rose-500"
+                      }`}
+                      style={{ width: `${obj.progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-slate-600 w-8 text-right">
+                    {obj.progress}%
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function CompanyOKRGalleryPage() {
   const [loading, setLoading] = useState(true);
   const [objectives, setObjectives] = useState<GalleryObjective[]>([]);
+  const [departments, setDepartments] = useState<DepartmentStat[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -62,15 +195,27 @@ export default function CompanyOKRGalleryPage() {
       const cid = cycle?.id != null ? Number(cycle.id) : null;
       if (!cid) {
         setObjectives([]);
+        setDepartments([]);
         return;
       }
-      const res = await makeCall({
-        method: "GET",
-        route: apiRoutes.okr.dashboardCompanyGallery,
-        query: { cycle_id: cid },
-        isSecureRoute: true,
-      });
-      const body = okrUnwrap<any>(res) ?? {};
+      
+      // Fetch both endpoints concurrently
+      const [galleryRes, deptRes] = await Promise.all([
+        makeCall({
+          method: "GET",
+          route: apiRoutes.okr.dashboardCompanyGallery,
+          query: { cycle_id: cid },
+          isSecureRoute: true,
+        }),
+        makeCall({
+          method: "GET",
+          route: apiRoutes.okr.dashboardDepartmentsCompare,
+          query: { cycle_id: cid },
+          isSecureRoute: true,
+        })
+      ]);
+
+      const body = okrUnwrap<any>(galleryRes) ?? {};
       const objs = okrAsArray<any>(body.objectives ?? []);
       setObjectives(
         objs.map((o) => ({
@@ -78,7 +223,9 @@ export default function CompanyOKRGalleryPage() {
           title: String(o.title ?? "Objective"),
           description: String(o.description ?? ""),
           status: String(o.status ?? o.status_code ?? "draft").toLowerCase(),
-          progress: Number(o.progress ?? o.final_score ?? o.progress_percent ?? 0),
+          progress: Number(
+            o.score ?? o.progress ?? o.final_score ?? o.progress_percent ?? 0,
+          ),
           keyResults: okrAsArray<any>(o.keyResults ?? []).map((k) => ({
             id: Number(k.id),
             title: String(k.title ?? "KR"),
@@ -87,22 +234,42 @@ export default function CompanyOKRGalleryPage() {
             metricName: k.metricName ?? null,
             metricCategory: k.metricCategory ?? null,
             isFinancial: Boolean(k.isFinancial),
-            progress: Number(k.progress ?? k.final_score ?? k.progress_percent ?? 0),
-            status: String(k.status ?? k.status_code ?? "draft").toLowerCase(),
-            departmentObjectives: okrAsArray<any>(k.departmentObjectives ?? []).map(
-              (d) => ({
-                id: Number(d.id),
-                title: String(d.title ?? "Department objective"),
-                status: String(d.status ?? d.status_code ?? "draft"),
-                departmentId: Number(d.departmentId),
-              }),
+            progress: Number(
+              k.score ?? k.progress ?? k.final_score ?? k.progress_percent ?? 0,
             ),
+            status: String(k.status ?? k.status_code ?? "draft").toLowerCase(),
+            departmentObjectives: okrAsArray<any>(
+              k.departmentObjectives ?? k.employeeObjectives ?? [],
+            ).map((d) => ({
+              id: Number(d.id),
+              title: String(d.title ?? "Department objective"),
+              status: String(d.status ?? d.status_code ?? "draft"),
+              departmentId: Number(d.departmentId ?? d.department_id),
+              progress: Number(d.score ?? d.final_score ?? d.progress ?? 0),
+            })),
           })),
         })),
       );
+
+      const deptBody = okrUnwrap<any>(deptRes) ?? {};
+      const depts = okrAsArray<any>(deptBody.departments ?? []);
+      setDepartments(
+        depts.map((d) => ({
+          id: Number(d.id),
+          departmentId: Number(d.departmentId),
+          departmentName: String(d.departmentName ?? "Unknown"),
+          objectiveCount: Number(d.objectiveCount ?? 0),
+          krCount: Number(d.krCount ?? 0),
+          avgScore: Number(d.avgScore ?? 0),
+          employeeCount: Number(d.employeeCount ?? 0),
+          atRiskCount: Number(d.atRiskCount ?? 0),
+        }))
+      );
+
     } catch (e) {
       ToastService.error(okrErrorMessage(e));
       setObjectives([]);
+      setDepartments([]);
     } finally {
       setLoading(false);
     }
@@ -112,16 +279,52 @@ export default function CompanyOKRGalleryPage() {
     if (okrFeatureFlags.gallery) void load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    return objectives.filter((o) => {
-      const m =
-        !q ||
-        o.title.toLowerCase().includes(q.toLowerCase()) ||
-        o.keyResults.some((k) => k.title.toLowerCase().includes(q.toLowerCase()));
-      const s = status === "all" || o.status === status;
-      return m && s;
+  // Map all department objectives from the gallery payload to their respective departments
+  const departmentObjectivesMap = useMemo(() => {
+    const map = new Map<number, Array<{ id: number; title: string; progress: number }>>();
+    
+    // Initialize map for all known departments
+    for (const d of departments) {
+      map.set(d.departmentId, []);
+    }
+
+    // Collect all department objectives
+    objectives.forEach(obj => {
+      obj.keyResults.forEach(kr => {
+        kr.departmentObjectives.forEach(dObj => {
+          if (!map.has(dObj.departmentId)) {
+            map.set(dObj.departmentId, []);
+          }
+          // Avoid duplicates (since multiple KRs might reference the same dept objective if mapping is complex, though usually 1:1)
+          const list = map.get(dObj.departmentId)!;
+          if (!list.find(x => x.id === dObj.id)) {
+            list.push({
+              id: dObj.id,
+              title: dObj.title,
+              progress: dObj.progress,
+            });
+          }
+        });
+      });
     });
-  }, [objectives, q, status]);
+
+    return map;
+  }, [objectives, departments]);
+
+  // Aggregate stats for the bottom panel
+  const stats = useMemo(() => {
+    const totalKRs = objectives.reduce((a, o) => a + o.keyResults.length, 0);
+    const avgProgress =
+      objectives.length > 0
+        ? Math.round(
+            objectives.reduce((a, o) => a + o.progress, 0) / objectives.length,
+          )
+        : 0;
+    const onTrack = objectives.filter(
+      (o) => resolveConfidenceLevel(o.progress) === "ON_TRACK",
+    ).length;
+    return { totalKRs, avgProgress, onTrack };
+  }, [objectives]);
 
   if (!okrFeatureFlags.gallery) {
     return (
@@ -135,113 +338,105 @@ export default function CompanyOKRGalleryPage() {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 pt-2 space-y-6">
-          <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(routeConstants.okr)}
-              className="text-gray-500 hover:text-gray-800 transition-colors p-0 h-auto font-normal"
-            >
-              OKR
-            </Button>
-            <MdChevronRight className="text-gray-300 shrink-0 text-lg" />
-            <span className="text-gray-800 font-medium">Gallery</span>
-          </nav>
-
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
+          
+          {/* ── Page Header ─────────────────────────────────────────── */}
           <PageHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight capitalize">
-                  OKR gallery
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+              <div className="max-w-2xl text-white">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-white/80 mb-4 ring-1 ring-white/20">
+                  <MdOutlineFlag className="text-sm" />
+                  Company Overview
+                </div>
+                <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-4">
+                  Company OKR Gallery
                 </h1>
-                <p className="text-white/80 text-sm mt-1">Current cycle.</p>
+                <p className="text-white/80 text-base md:text-lg font-medium">
+                  See how we're tracking our goals across every department.
+                </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="shrink-0">
                 <RefreshButton onClick={load} loading={loading} />
               </div>
             </div>
           </PageHeader>
 
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search objectives, key results..."
-                className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all"
-              />
+          {/* ── Bottom Metric Panel ─────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-wrap gap-4 md:gap-8 justify-around items-center mb-8">
+            <div className="flex flex-col items-center">
+              <span className="text-3xl font-black text-slate-800">{objectives.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Objectives</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <MdFilterList className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm" />
-                <select
-                  value={status}
-                  onChange={(e) =>
-                    setStatus(e.target.value as any)
-                  }
-                  className="appearance-none rounded-xl border border-slate-200 pl-9 pr-8 py-2.5 text-sm bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 outline-none transition-all cursor-pointer"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                  <option value="closed">Closed</option>
-                </select>
-                <MdChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" />
-              </div>
+            <div className="w-px h-10 bg-slate-100 hidden md:block" />
+            <div className="flex flex-col items-center">
+              <span className="text-3xl font-black text-slate-800">{stats.totalKRs}</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Key Results</span>
+            </div>
+            <div className="w-px h-10 bg-slate-100 hidden md:block" />
+            <div className="flex flex-col items-center">
+              <span className="text-3xl font-black text-primary">{stats.avgProgress}%</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Avg Progress</span>
+            </div>
+            <div className="w-px h-10 bg-slate-100 hidden md:block" />
+            <div className="flex flex-col items-center">
+              <span className="text-3xl font-black text-emerald-500">{stats.onTrack}</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">On Track</span>
             </div>
           </div>
-
-          {loading ? (
-            <div className="flex flex-col gap-4">
-              <LoadingSkeleton variant="card" count={3} />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50/30 px-8 py-20 text-center flex flex-col items-center">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-slate-100">
-                <MdWarningAmber className="text-3xl text-slate-300" />
+          
+          {/* ── Company Objectives Section ──────────────────────────────────────── */}
+          <section>
+            <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-2">
+              <MdOutlineFlag className="text-primary" />
+              Company Objectives
+            </h2>
+            
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <LoadingSkeleton variant="card" count={3} />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-1 capitalize">No matches found</h3>
-              <p className="text-sm text-slate-400">Try adjusting your search or filters.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5">
-              {filtered.map((o) => (
-                <ObjectiveCard
-                  key={o.id}
-                  id={`CO-${o.id}`}
-                  title={o.title}
-                  status={o.status}
-                  progress={o.progress}
-                  krCount={o.keyResults.length}
-                  expandable={o.keyResults.length > 0}
-                  headerContext={o.description ? <p className="line-clamp-2">{o.description}</p> : undefined}
-                >
-                  <div className="flex flex-col gap-4 mt-2">
-                    {o.keyResults.map((k, idx) => (
-                      <KeyResultListItem
-                        key={k.id}
-                        title={k.title}
-                        index={idx}
-                        progress={k.progress}
-                        status={k.status}
-                        targetString={`${formatOkrNumber(Number(k.progress * (Number(k.target) || 0) / 100))} / ${formatOkrNumber(Number(k.target ?? 0))}${k.unit ? (k.unit === "%" ? "%" : ` ${k.unit}`) : ""}`}
-                        metricTypeString={k.isFinancial ? "Financial" : undefined}
-                        subtitle={
-                          <span className="flex items-center gap-2">
-                            <span className="w-1 h-1 rounded-full bg-slate-300" />
-                            {k.departmentObjectives.length} Linked Departments
-                          </span>
-                        }
-                      />
-                    ))}
-                  </div>
-                </ObjectiveCard>
-              ))}
-            </div>
-          )}
+            ) : objectives.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
+                No company objectives available for this cycle.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {objectives.map((o) => (
+                  <CompanyObjectiveSummaryCard key={o.id} title={o.title} progress={o.progress} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* ── Departmental Breakdown Section ──────────────────────────────────────── */}
+          <section>
+            <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-2">
+              <MdBusiness className="text-primary" />
+              Departmental Breakdown
+            </h2>
+            
+            {loading ? (
+              <div className="flex flex-col gap-4">
+                <LoadingSkeleton variant="card" count={2} />
+              </div>
+            ) : departments.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
+                No department data available.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {departments.map((dept) => (
+                  <DepartmentAccordion 
+                    key={dept.id} 
+                    dept={dept} 
+                    deptObjectives={departmentObjectivesMap.get(dept.departmentId) || []} 
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
         </div>
       </div>
     </AdminLayout>

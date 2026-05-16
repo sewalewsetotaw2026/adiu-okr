@@ -8,6 +8,7 @@ import {
   fetchMetricDefinitions,
   fetchMonthlyAvailableWeight,
   fetchManagerMonthlyPlans,
+  checkManagerPlanExists,
 } from "../../../services/okr-execution.api";
 import BulletTextarea from "../../../components/common/BulletTextarea";
 import {
@@ -121,6 +122,8 @@ export default function AddMonthlyPlanModal({
     Record<number, MonthlyPlan[]>
   >({});
   const [loadingManagerPlans, setLoadingManagerPlans] = useState(false);
+  const [managerHasPlan, setManagerHasPlan] = useState<Record<number, boolean>>({});
+  const [checkingManagerPlan, setCheckingManagerPlan] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -234,6 +237,33 @@ export default function AddMonthlyPlanModal({
       .finally(() => setLoadingManagerPlans(false));
   }, [isOpen, cycleId, selectedKrId]);
 
+  // Check if manager has plans for each month (for required alignment validation)
+  useEffect(() => {
+    if (!isOpen || !cycleId || !selectedKrId) {
+      setManagerHasPlan({});
+      return;
+    }
+    setCheckingManagerPlan(true);
+    Promise.all(
+      [1, 2, 3].map((monthNumber) =>
+        checkManagerPlanExists({
+          cadence: "monthly",
+          cycleId,
+          monthNumber,
+          krId: selectedKrId,
+        }).catch(() => ({ exists: false, managerPlans: [] })),
+      ),
+    )
+      .then((results) => {
+        setManagerHasPlan({
+          1: results[0].exists,
+          2: results[1].exists,
+          3: results[2].exists,
+        });
+      })
+      .finally(() => setCheckingManagerPlan(false));
+  }, [isOpen, cycleId, selectedKrId]);
+
   const updateSubtask = (id: string, patch: Partial<SubtaskForm>) =>
     setSubtasks((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -257,6 +287,12 @@ export default function AddMonthlyPlanModal({
       const w = Number(st.weight);
       if (!Number.isFinite(w) || w <= 0)
         errs[`${p}weight`] = "Enter weight > 0.";
+
+      // Check alignment is required when manager has a plan
+      const monthNum = st.monthNumber as number;
+      if (monthNum && managerHasPlan[monthNum] && !st.alignedManagerPlanId) {
+        errs[`${p}alignment`] = "Please select your manager's plan to align with.";
+      }
 
       if (selectedKr && st.targetValue !== "") {
         const tv = Number(st.targetValue);
@@ -449,6 +485,8 @@ export default function AddMonthlyPlanModal({
               selectedAW={selectedAW}
               managerPlans={managerPlans}
               loadingManagerPlans={loadingManagerPlans}
+              managerHasPlan={managerHasPlan}
+              checkingManagerPlan={checkingManagerPlan}
               userRoleLevel={userRoleLevel}
             />
           ) : (
@@ -488,6 +526,8 @@ export default function AddMonthlyPlanModal({
                   selectedAW={selectedAW}
                   managerPlans={managerPlans}
                   loadingManagerPlans={loadingManagerPlans}
+                  managerHasPlan={managerHasPlan}
+                  checkingManagerPlan={checkingManagerPlan}
                   userRoleLevel={userRoleLevel}
                   levelConfig={levelConfig}
                 />
@@ -681,6 +721,8 @@ function ConfigurePanel({
   selectedAW,
   managerPlans,
   loadingManagerPlans,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -700,6 +742,8 @@ function ConfigurePanel({
   selectedAW?: AvailableWeight | null;
   managerPlans: Record<number, MonthlyPlan[]>;
   loadingManagerPlans: boolean;
+  managerHasPlan?: Record<number, boolean>;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: Record<
     string,
@@ -773,6 +817,8 @@ function ConfigurePanel({
               st.monthNumber ? managerPlans[st.monthNumber as number] || [] : []
             }
             loadingManagerPlans={loadingManagerPlans}
+            managerHasPlan={st.monthNumber ? managerHasPlan?.[st.monthNumber as number] : false}
+            checkingManagerPlan={checkingManagerPlan}
             userRoleLevel={userRoleLevel}
             levelConfig={levelConfig}
           />
@@ -824,6 +870,8 @@ function SubtaskCard({
   selectedAW,
   managerPlans,
   loadingManagerPlans,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -840,6 +888,8 @@ function SubtaskCard({
   selectedAW?: AvailableWeight | null;
   managerPlans: MonthlyPlan[];
   loadingManagerPlans: boolean;
+  managerHasPlan?: boolean;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: Record<
     string,
@@ -953,7 +1003,7 @@ function SubtaskCard({
       </Field>
 
       <Field
-        label="Align with Manager Plan"
+        label={`Align with Manager Plan${managerHasPlan ? " *" : ""}`}
         error={fieldErrors[`${p}alignment`]}
       >
         {(() => {
@@ -979,7 +1029,7 @@ function SubtaskCard({
             ? managerCadence.allow_monthly
             : true;
 
-          if (loadingManagerPlans) {
+          if (loadingManagerPlans || checkingManagerPlan) {
             return (
               <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
             );
@@ -1006,24 +1056,32 @@ function SubtaskCard({
           }
           if (managerPlans && managerPlans.length > 0) {
             return (
-              <select
-                value={subtask.alignedManagerPlanId}
-                onChange={(e) =>
-                  onUpdate({ alignedManagerPlanId: e.target.value })
-                }
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">Select manager plan to align…</option>
-                {managerPlans.map((mp: MonthlyPlan) => (
-                  <option key={mp.id} value={mp.id}>
-                    {mp.title} ({mp.target_value}
-                    {mp.metricDefinition?.unit
-                      ? ` ${mp.metricDefinition.unit}`
-                      : ""}
-                    )
-                  </option>
-                ))}
-              </select>
+              <>
+                {managerHasPlan && (
+                  <p className="text-[10px] text-amber-600 mb-1.5">
+                    Your manager has a Monthly plan. You must align with it.
+                  </p>
+                )}
+                <select
+                  value={subtask.alignedManagerPlanId}
+                  onChange={(e) =>
+                    onUpdate({ alignedManagerPlanId: e.target.value })
+                  }
+                  className={`w-full bg-white border rounded-xl px-3 py-2.5 text-sm font-medium outline-none focus:ring-2 ${fieldErrors[`${p}alignment`] ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:border-primary focus:ring-primary/20"}`}
+                  required={managerHasPlan}
+                >
+                  <option value="">{managerHasPlan ? "Required: Select manager plan…" : "Select manager plan to align…"}</option>
+                  {managerPlans.map((mp: MonthlyPlan) => (
+                    <option key={mp.id} value={mp.id}>
+                      {mp.title} ({mp.target_value}
+                      {mp.metricDefinition?.unit
+                        ? ` ${mp.metricDefinition.unit}`
+                        : ""}
+                      )
+                    </option>
+                  ))}
+                </select>
+              </>
             );
           }
           return (
@@ -1192,6 +1250,8 @@ function FullViewLayout({
   selectedAW,
   managerPlans,
   loadingManagerPlans,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -1218,6 +1278,8 @@ function FullViewLayout({
   selectedAW: AvailableWeight | null;
   managerPlans: Record<number, MonthlyPlan[]>;
   loadingManagerPlans: boolean;
+  managerHasPlan?: Record<number, boolean>;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: Record<
     string,
@@ -1290,6 +1352,8 @@ function FullViewLayout({
                 selectedAW={selectedAW}
                 managerPlans={managerPlans}
                 loadingManagerPlans={loadingManagerPlans}
+                managerHasPlan={managerHasPlan}
+                checkingManagerPlan={checkingManagerPlan}
                 userRoleLevel={userRoleLevel}
                 levelConfig={levelConfig}
               />

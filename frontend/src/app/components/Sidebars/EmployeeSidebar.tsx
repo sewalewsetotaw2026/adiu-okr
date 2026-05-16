@@ -16,6 +16,7 @@ import {
   MdCheckCircle,
   MdTrackChanges,
   MdFactCheck,
+  MdSwapVert,
 } from "react-icons/md";
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -35,6 +36,15 @@ import { selectAuthUser } from "../../slice/authSlice/selectors";
 import { usePermission } from "../../hooks/usePermission";
 import { routeConstants } from "../../../utils/constants";
 
+interface NavItem {
+  path: string;
+  label: string;
+  icon: any;
+  visible?: boolean;
+  indicator?: boolean;
+  badge?: number | string;
+}
+
 export default function EmployeeSidebar() {
   const { isOpen, toggle, isMobileOpen, closeMobile } = useSidebar();
   const location = useLocation();
@@ -44,7 +54,11 @@ export default function EmployeeSidebar() {
   const isManager = useSelector(selectIsManager);
   const user = useSelector(selectAuthUser);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [isOkrNavOpen, setIsOkrNavOpen] = useState(false);
+  const [isOkrNavOpen, setIsOkrNavOpen] = useState(
+    location.pathname.startsWith("/employee/execution") ||
+    location.pathname.startsWith("/manager/okr") ||
+    location.pathname.startsWith("/okr/")
+  );
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [hasUnsubmittedPlans, setHasUnsubmittedPlans] = useState(false);
 
@@ -52,6 +66,16 @@ export default function EmployeeSidebar() {
   useEffect(() => {
     dispatch(managerActions.checkIsManager());
   }, [dispatch, managerActions]);
+
+  useEffect(() => {
+    const isOkrActive =
+      location.pathname.startsWith("/employee/execution") ||
+      location.pathname.startsWith("/manager/okr") ||
+      location.pathname.startsWith("/okr/");
+    if (isOkrActive) {
+      setIsOkrNavOpen(true);
+    }
+  }, [location.pathname]);
 
 
   useEffect(() => {
@@ -117,7 +141,7 @@ export default function EmployeeSidebar() {
 
   const { hasPermission } = usePermission();
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       path: "/employee/dashboard",
       label: "Dashboard",
@@ -159,7 +183,7 @@ export default function EmployeeSidebar() {
     // },
   ].filter((item: any) => item.visible !== false);
 
-  const managerOkrItems = [
+  const managerOkrItems: NavItem[] = [
     {
       path: routeConstants.okrContributorAssignment,
       label: "Contributors",
@@ -189,7 +213,7 @@ export default function EmployeeSidebar() {
     },
   ].filter((item) => item.visible !== false);
 
-  const okrNavItems = [
+  const okrNavItems: NavItem[] = [
     {
       path: routeConstants.okrMyExecution,
       label: "My Execution",
@@ -197,6 +221,12 @@ export default function EmployeeSidebar() {
       visible: true,
     },
     ...(isManager ? managerOkrItems : []),
+    {
+      path: routeConstants.okrImportExport,
+      label: "Import / Export",
+      icon: MdSwapVert,
+      visible: true,
+    },
   ].filter((item) => item.visible !== false);
 
   const isOkrSectionActive =

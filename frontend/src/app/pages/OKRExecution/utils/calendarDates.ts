@@ -83,6 +83,137 @@ export const getPlannedDailyDate = (
   return planned;
 };
 
+/**
+ * Returns which month-slot (1, 2, or 3) within a 3-month cycle the given
+ * date falls into, based on the cycle's start date.
+ * Returns null if the date is before the cycle start or after cycle end.
+ */
+export const getCurrentCycleMonth = (
+  cycleStartDate: string,
+  cycleEndDate: string,
+  today: Date = new Date(),
+): 1 | 2 | 3 | null => {
+  const start = parseLocalDate(cycleStartDate);
+  const end = parseLocalDate(cycleEndDate);
+  if (!start || !end) return null;
+
+  const todayMidnight = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    12,
+    0,
+    0,
+    0,
+  );
+  if (todayMidnight < start || todayMidnight > end) return null;
+
+  // Compute the total duration and split into 3 equal months
+  const totalMs = end.getTime() - start.getTime();
+  const monthMs = totalMs / 3;
+  const elapsed = todayMidnight.getTime() - start.getTime();
+
+  if (elapsed < monthMs) return 1;
+  if (elapsed < monthMs * 2) return 2;
+  return 3;
+};
+
+/**
+ * Returns which week-slot (1–5) within the cycle the given date falls into,
+ * using the Monday-aligned week grid from getCycleWeekRange.
+ * Returns null if the date is outside the cycle.
+ */
+export const getCurrentCycleWeek = (
+  cycleStartDate: string,
+  cycleEndDate: string,
+  today: Date = new Date(),
+): number | null => {
+  const start = parseLocalDate(cycleStartDate);
+  const end = parseLocalDate(cycleEndDate);
+  if (!start || !end) return null;
+
+  // Align to Monday of the week containing the cycle start
+  const day = start.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const mondayOfFirstWeek = new Date(start);
+  mondayOfFirstWeek.setDate(start.getDate() + diffToMonday);
+
+  const todayMidnight = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    12,
+    0,
+    0,
+    0,
+  );
+
+  if (todayMidnight > end) return null;
+  if (todayMidnight < start) return null;
+
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+  const elapsed = todayMidnight.getTime() - mondayOfFirstWeek.getTime();
+  const weekSlot = Math.floor(elapsed / msPerWeek) + 1;
+  return Math.max(1, Math.min(5, weekSlot));
+};
+
+/**
+ * Determines availability state of a period (month or week slot).
+ *   "current"  → fully interactive
+ *   "past"     → read-only
+ *   "future"   → greyed-out / hidden
+ *   "no-cycle" → cycle dates unavailable; treat everything as accessible
+ */
+export type PeriodAvailability = "current" | "past" | "future" | "no-cycle";
+
+export const getMonthAvailability = (
+  monthNumber: 1 | 2 | 3,
+  cycleStartDate?: string | null,
+  cycleEndDate?: string | null,
+): PeriodAvailability => {
+  if (!cycleStartDate || !cycleEndDate) return "no-cycle";
+  const currentMonth = getCurrentCycleMonth(cycleStartDate, cycleEndDate);
+  if (currentMonth === null) return "no-cycle";
+  if (monthNumber === currentMonth) return "current";
+  if (monthNumber < currentMonth) return "past";
+  return "future";
+};
+
+export const getWeekAvailability = (
+  weekNumber: number,
+  cycleStartDate?: string | null,
+  cycleEndDate?: string | null,
+): PeriodAvailability => {
+  if (!cycleStartDate || !cycleEndDate) return "no-cycle";
+  const currentWeek = getCurrentCycleWeek(cycleStartDate, cycleEndDate);
+  if (currentWeek === null) return "no-cycle";
+  if (weekNumber === currentWeek) return "current";
+  if (weekNumber < currentWeek) return "past";
+  return "future";
+};
+
+/**
+ * Returns the start/end Date for a given month slot (1, 2 or 3) within a cycle.
+ * The cycle is divided into 3 equal thirds.
+ */
+export const getCycleMonthRange = (
+  cycleStartDate: string,
+  cycleEndDate: string,
+  monthNumber: 1 | 2 | 3,
+): { start: Date; end: Date } | null => {
+  const start = parseLocalDate(cycleStartDate);
+  const end = parseLocalDate(cycleEndDate);
+  if (!start || !end) return null;
+  const totalMs = end.getTime() - start.getTime();
+  const slotMs = totalMs / 3;
+  const slotStart = new Date(start.getTime() + slotMs * (monthNumber - 1));
+  const slotEnd =
+    monthNumber === 3
+      ? end
+      : new Date(start.getTime() + slotMs * monthNumber - 1);
+  return { start: slotStart, end: slotEnd };
+};
+
 export const formatConciseDateRange = (
   startStr?: string | null,
   endStr?: string | null,

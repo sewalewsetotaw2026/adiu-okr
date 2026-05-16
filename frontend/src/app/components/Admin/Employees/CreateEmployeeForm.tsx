@@ -62,7 +62,7 @@ export default function CreateEmployeeForm({
 
   useEffect(() => {
     if (error) {
-      ToastService.error(error);
+      ToastService.error(error as string);
     }
   }, [error]);
 
@@ -156,7 +156,7 @@ export default function CreateEmployeeForm({
         <Button variant="secondary" onClick={onCancel} type="button">
           Cancel
         </Button>
-        <Button type="submit" loading={isLoading}>
+        <Button type="submit" loading={isLoading as boolean}>
           Create Employee
         </Button>
       </div>

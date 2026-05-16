@@ -5,12 +5,16 @@ import {
   MdLock,
   MdEditDocument,
   MdExpandMore,
+  MdAccountTree,
 } from "react-icons/md";
 import type { MonthlyPlan } from "../../../../types/okr.types";
 import Button from "../../../components/Core/ui/Button";
 import PlanStatusBadge from "./PlanStatusBadge";
 import FeedbackBanner from "./FeedbackBanner";
 import { formatOkrNumber } from "../../../utils/okrNumber";
+import ConfidenceBadge from "../../../components/common/ConfidenceBadge";
+import { resolveConfidenceLevel } from "../../../utils/okrApi";
+import type { ConfidenceLevel } from "../../../constants/themeConstants";
 
 const EDITABLE_STATUSES = new Set(["DRAFT", "REJECTED"]);
 
@@ -21,6 +25,8 @@ export interface MonthlyPlanCardProps {
   onPostPublishEdit?: (plan: MonthlyPlan) => void;
   onDelete?: (plan: MonthlyPlan) => void;
   onUpdateProgress?: (plan: MonthlyPlan) => void;
+  /** Pre-computed confidence level. If not provided, derived from plan.progress_pct. */
+  confidenceLevel?: ConfidenceLevel;
 }
 
 export default function MonthlyPlanCard({
@@ -30,6 +36,7 @@ export default function MonthlyPlanCard({
   onPostPublishEdit,
   onDelete,
   onUpdateProgress,
+  confidenceLevel: confidenceLevelProp,
 }: MonthlyPlanCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTitleExpanded, setIsTitleExpanded] = useState(false);
@@ -48,6 +55,11 @@ export default function MonthlyPlanCard({
   const target = Number(plan.target_value ?? 0);
   const current = Number(plan.current_value ?? 0);
   const u = unit || plan.parent_key_result?.unit || "";
+  // Derive confidence from progress if not explicitly provided
+  const confidenceLevel =
+    confidenceLevelProp !== undefined
+      ? confidenceLevelProp
+      : resolveConfidenceLevel(progress);
 
   return (
     <div
@@ -56,7 +68,7 @@ export default function MonthlyPlanCard({
       className={`group relative bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-primary/30 transition-all duration-300 cursor-pointer overflow-hidden ${isExpanded ? "p-6" : "p-5"}`}
     >
       {/* Background Gradient Effect */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/0 to-primary/[0.02] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-br from-primary/0 to-primary/2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
       {/* Lock badge for non-editable statuses */}
 
@@ -70,13 +82,14 @@ export default function MonthlyPlanCard({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 pr-12">
         {/* LEFT SECTION */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             {!editable && (
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-1 ring-slate-200">
                 <MdLock className="text-xs" />
               </span>
             )}
             <PlanStatusBadge status={plan.plan_status} size="xs" />
+            <ConfidenceBadge level={confidenceLevel} size="xs" />
           </div>
 
           <div className="relative">
@@ -133,7 +146,7 @@ export default function MonthlyPlanCard({
         <div className="flex items-center gap-5 shrink-0">
 
         {/* DIRECT */}
-        <div className="text-center min-w-[60px]">
+        <div className="text-center min-w-15">
           <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase block mb-0.5">
             Direct
           </span>
@@ -147,7 +160,7 @@ export default function MonthlyPlanCard({
 
         {/* INDIRECT */}
         {indirectProgress > 0 && (
-          <div className="text-center min-w-[60px]">
+          <div className="text-center min-w-15">
             <span className="text-[9px] font-bold tracking-widest text-slate-400 uppercase block mb-0.5">
               Indirect
             </span>
@@ -164,7 +177,7 @@ export default function MonthlyPlanCard({
         <div className="h-7 w-px bg-slate-100" />
 
         {/* CURRENT / TARGET (NEW STRUCTURE) */}
-        <div className="text-right min-w-[110px]">
+        <div className="text-right min-w-27.5">
           <span className="text-[9px] font-bold tracking-widest text-primary/60 uppercase block mb-0.5">
             Progress (Current / Target)
           </span>
@@ -252,6 +265,17 @@ export default function MonthlyPlanCard({
               {u ? ` ${u}` : ""}
             </div>
           </div>
+
+          {/* Aligned manager plan */}
+          {plan.aligned_manager_plan_title && (
+            <div className="flex items-start gap-2 rounded-xl bg-primary/5 border border-primary/10 px-3 py-2 mt-1">
+              <MdAccountTree className="text-primary/60 shrink-0 mt-0.5" style={{ fontSize: 14 }} />
+              <div className="min-w-0">
+                <span className="text-[9px] font-black tracking-widest uppercase text-primary/50 block mb-0.5">Aligned Manager Plan</span>
+                <span className="text-xs font-semibold text-slate-700 truncate block">{plan.aligned_manager_plan_title}</span>
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">

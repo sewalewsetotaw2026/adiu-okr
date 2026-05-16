@@ -15,13 +15,12 @@ import {
   MdExpandMore,
   MdChevronRight as MdChevronRightSmall,
   MdInsights,
-  MdCompareArrows,
   MdCollectionsBookmark,
   MdArchive,
-  MdPerson,
-  MdPublishedWithChanges,
   MdFactCheck,
   MdCheckCircle,
+  MdAssessment,
+  MdAccountBalanceWallet,
 } from "react-icons/md";
 import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -39,6 +38,17 @@ import makeCall from "../../API";
 import apiRoutes from "../../API/apiRoutes";
 import * as okrExecutionApi from "../../services/okr-execution.api";
 
+interface NavItem {
+  path?: string;
+  to?: string;
+  label?: string;
+  title?: string;
+  icon: any;
+  visible?: boolean;
+  exact?: boolean;
+  badge?: number | string;
+}
+
 export default function AdminSidebar() {
   const { isOpen, toggle, isMobileOpen, closeMobile } = useSidebar();
   const location = useLocation();
@@ -48,12 +58,23 @@ export default function AdminSidebar() {
   const { actions: managerActions } = useManagerSlice();
   const isManager = useSelector(selectIsManager);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
-  const [isOkrExpanded, setIsOkrExpanded] = useState(false);
+  const isOkrActive =
+    location.pathname.startsWith("/admin/okr") ||
+    location.pathname.startsWith("/manager/okr") ||
+    location.pathname.startsWith("/admin/financial-rollup");
+
+  const [isOkrExpanded, setIsOkrExpanded] = useState(isOkrActive);
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   useEffect(() => {
     dispatch(managerActions.checkIsManager());
   }, [dispatch, managerActions]);
+
+  useEffect(() => {
+    if (isOkrActive) {
+      setIsOkrExpanded(true);
+    }
+  }, [isOkrActive]);
 
   useEffect(() => {
     if (isManager) {
@@ -111,7 +132,7 @@ export default function AdminSidebar() {
 
   const { hasPermission } = usePermission();
 
-  const navItems = [
+  const navItems: NavItem[] = [
     {
       path: "/admin/dashboard",
       label: "Dashboard",
@@ -184,7 +205,7 @@ export default function AdminSidebar() {
   );
 
   const filteredNavItems = navItems.filter((item) => item.visible !== false);
-  const okrLinks = [
+  const okrLinks: NavItem[] = [
     {
       to: routeConstants.okr,
       label: "Overview",
@@ -229,25 +250,29 @@ export default function AdminSidebar() {
       label: "Configuration",
       icon: MdSettings,
     },
-    // {
-    //   to: routeConstants.okrDepartmentComparison,
-    //   label: "Compare",
-    //   icon: MdCompareArrows,
-    // },
     {
       to: routeConstants.okrCompanyGallery,
       label: "Gallery",
       icon: MdCollectionsBookmark,
     },
-    // { to: routeConstants.okrAuditLogs, label: "Audit", icon: MdOutlineHistory },
     {
       to: routeConstants.okrArchiveManagement,
       label: "Archive",
       icon: MdArchive,
     },
+    {
+      to: routeConstants.okrAnnualReporting,
+      label: "Annual Report",
+      icon: MdAssessment,
+    },
+    {
+      to: routeConstants.financialRollup,
+      label: "Financial Roll-up",
+      icon: MdAccountBalanceWallet,
+    },
   ];
   const normalNavItems = filteredNavItems.filter(
-    (item) => !item.path.startsWith("/admin/okr"),
+    (item) => !item.path!.startsWith("/admin/okr"),
   );
   const leavesIndex = normalNavItems.findIndex(
     (item) => item.path === "/admin/leaves",
@@ -336,7 +361,7 @@ export default function AdminSidebar() {
                       className={`
                         group w-full flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors cursor-pointer
                         ${isOpen || isMobileOpen ? "" : "justify-center"}
-                        ${location.pathname.startsWith("/admin/okr")
+                        ${isOkrActive
                           ? "bg-primary text-white"
                           : "text-gray-500 hover:bg-primary-light hover:text-primary"
                         }
@@ -371,7 +396,7 @@ export default function AdminSidebar() {
                           return (
                             <Link
                               key={link.to}
-                              to={link.to}
+                              to={link.to!}
                               onClick={closeMobile}
                               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active
                                   ? "bg-primary/10 text-primary"
@@ -398,11 +423,11 @@ export default function AdminSidebar() {
             return (
               <Link
                 key={item.path}
-                to={item.path}
+                to={item.path!}
                 className={`
                   group flex items-center gap-4 p-3.5 rounded-2xl font-medium transition-colors
                   ${isOpen || isMobileOpen ? "" : "justify-center"}
-                  ${isActive(item.path)
+                  ${isActive(item.path!)
                     ? "bg-primary text-white"
                     : "text-gray-500 hover:bg-primary-light hover:text-primary"
                   }

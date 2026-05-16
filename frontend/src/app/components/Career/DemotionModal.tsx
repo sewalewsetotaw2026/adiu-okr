@@ -9,7 +9,7 @@ import ToastService from "../../../utils/ToastService";
 import { selectAllJobTitles } from "../../pages/Admin/Settings/JobTitles/slice/selectors";
 import { useJobTitlesSlice } from "../../pages/Admin/Settings/JobTitles/slice";
 import DynamicAutocomplete from "../Core/ui/FormAutocomplete";
-import CreateItemModal from "../common/CreateItemModal";
+
 import adminService, { AllowanceType } from "../../services/adminService";
 
 interface DemotionModalProps {
@@ -37,16 +37,6 @@ export default function DemotionModal({
 
   const [loading, setLoading] = useState(false);
   const [allowanceTypes, setAllowanceTypes] = useState<AllowanceType[]>([]);
-  const [createModalState, setCreateModalState] = useState<{
-    isOpen: boolean;
-    type: "allowance" | null;
-    initialValue: string;
-    targetIndex?: number;
-  }>({
-    isOpen: false,
-    type: null,
-    initialValue: "",
-  });
 
   const [form, setForm] = useState({
     new_job_title_id: "",
@@ -78,38 +68,7 @@ export default function DemotionModal({
       .map((a) => a.name);
   };
 
-  const handleOpenCreateModal = (value: string, index: number) => {
-    setCreateModalState({
-      isOpen: true,
-      type: "allowance",
-      initialValue: value,
-      targetIndex: index,
-    });
-  };
 
-  const handleCreateSubmit = async (values: Record<string, any>) => {
-    try {
-      const isTaxable = values.is_taxable === true || values.is_taxable === "true";
-      const newAllowance = await adminService.createAllowanceType({
-        name: values.name,
-        description: values.description,
-        is_taxable: isTaxable,
-      });
-      setAllowanceTypes((prev) => [...prev, newAllowance]);
-
-      if (typeof createModalState.targetIndex === "number") {
-        const newAllowances = [...form.allowances];
-        newAllowances[createModalState.targetIndex] = {
-          ...newAllowances[createModalState.targetIndex],
-          name: newAllowance.name,
-        };
-        setForm((prev) => ({ ...prev, allowances: newAllowances }));
-      }
-      ToastService.success(`Allowance Type "${newAllowance.name}" created.`);
-    } catch (err: any) {
-      ToastService.error(err.message || "Failed to create allowance type.");
-    }
-  };
 
   const handleFieldChange = (field: string, value: any) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -280,7 +239,6 @@ export default function DemotionModal({
                       handleFieldChange("allowances", newAllowances);
                     }}
                     fetchSuggestionsFn={filterAllowanceTypes}
-                    onCreateNew={(val) => handleOpenCreateModal(val, index)}
                     placeholder="e.g. Transport"
                     containerClassName="w-full"
                     required

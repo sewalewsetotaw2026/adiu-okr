@@ -5,6 +5,7 @@ export const routeConstants = {
   resetPassword: "/reset-password",
   setupAccount: "/setup-account/:token",
   dashboard: "/admin/dashboard",
+  financialRollup: "/admin/financial-rollup",
 
   // =========================
   // OKR MODULE
@@ -37,6 +38,7 @@ export const routeConstants = {
   okrConfiguration: "/admin/okr/configuration",
   okrArchiveManagement: "/admin/okr/archive",
   okrArchiveDetail: "/admin/okr/archive/:archiveId",
+  okrAnnualReporting: "/admin/okr/annual-report",
   okrAuditLogs: "/admin/okr/audit/logs",
   okrConfigSnapshotDetail: "/admin/okr/audit/snapshots/:snapshotId",
   okrDepartmentApprovalQueue: "/admin/okr/approvals",
@@ -50,6 +52,7 @@ export const routeConstants = {
   okrReviews: "/okr/reviews",
   okrReviewDetail: "/okr/reviews/:planId",
   okrPlanningCompliance: "/manager/okr/planning-compliance",
+  okrImportExport: "/employee/execution/import-export",
 
   createUser: "/admin/users/create",
   assignManager: "/admin/managers/assign",

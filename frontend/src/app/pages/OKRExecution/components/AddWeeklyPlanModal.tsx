@@ -9,6 +9,7 @@ import {
   fetchWeeklyAvailableWeight,
   fetchMonthlyPlans,
   fetchManagerWeeklyPlans,
+  checkManagerPlanExists,
 } from "../../../services/okr-execution.api";
 import {
   APPROVAL_GUARD_MESSAGE,
@@ -109,6 +110,8 @@ export default function AddWeeklyPlanModal({
     [],
   );
   const [loadingManagerWeekly, setLoadingManagerWeekly] = useState(false);
+  const [managerHasPlan, setManagerHasPlan] = useState(false);
+  const [checkingManagerPlan, setCheckingManagerPlan] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -228,6 +231,25 @@ export default function AddWeeklyPlanModal({
       .finally(() => setLoadingManagerWeekly(false));
   }, [isOpen, selectedPlan?.aligned_manager_plan_id]);
 
+  // Check if manager has weekly plans (for required alignment validation)
+  useEffect(() => {
+    if (!isOpen || !selectedPlan?.id || !preselectedWeekNumber) {
+      setManagerHasPlan(false);
+      return;
+    }
+    setCheckingManagerPlan(true);
+    checkManagerPlanExists({
+      cadence: "weekly",
+      monthlyPlanId: String(selectedPlan.id),
+      weekNumber: Number(preselectedWeekNumber),
+    })
+      .then((result) => {
+        setManagerHasPlan(result.exists);
+      })
+      .catch(() => setManagerHasPlan(false))
+      .finally(() => setCheckingManagerPlan(false));
+  }, [isOpen, selectedPlan?.id, preselectedWeekNumber]);
+
   const updateSubtask = (id: string, patch: Partial<SubtaskForm>) =>
     setSubtasks((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -251,6 +273,11 @@ export default function AddWeeklyPlanModal({
       const w = Number(st.weight);
       if (!Number.isFinite(w) || w <= 0)
         errs[`${pfx}weight`] = "Enter weight > 0.";
+
+      // Check alignment is required when manager has a weekly plan
+      if (managerHasPlan && !st.alignedManagerPlanId) {
+        errs[`${pfx}alignment`] = "Please select your manager's weekly plan to align with.";
+      }
 
       if (selectedPlan && st.targetValue !== "") {
         const tv = Number(st.targetValue);
@@ -440,6 +467,8 @@ export default function AddWeeklyPlanModal({
               selectedAW={selectedAW}
               managerWeeklyPlans={managerWeeklyPlans}
               loadingManagerWeekly={loadingManagerWeekly}
+              managerHasPlan={managerHasPlan}
+              checkingManagerPlan={checkingManagerPlan}
               userRoleLevel={userRoleLevel}
               levelConfig={levelConfig}
               setStep={setStep}
@@ -481,6 +510,8 @@ export default function AddWeeklyPlanModal({
                     selectedAW={selectedAW}
                     managerWeeklyPlans={managerWeeklyPlans}
                     loadingManagerWeekly={loadingManagerWeekly}
+                    managerHasPlan={managerHasPlan}
+                    checkingManagerPlan={checkingManagerPlan}
                     userRoleLevel={userRoleLevel}
                     levelConfig={levelConfig}
                   />
@@ -670,6 +701,8 @@ function ConfigurePanel({
   selectedAW,
   managerWeeklyPlans,
   loadingManagerWeekly,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -689,6 +722,8 @@ function ConfigurePanel({
   selectedAW?: AvailableWeight | null;
   managerWeeklyPlans: WeeklyPlan[];
   loadingManagerWeekly: boolean;
+  managerHasPlan?: boolean;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: Record<
     string,
@@ -769,6 +804,8 @@ function ConfigurePanel({
                 : []
             }
             loadingManagerWeekly={loadingManagerWeekly}
+            managerHasPlan={managerHasPlan}
+            checkingManagerPlan={checkingManagerPlan}
             userRoleLevel={userRoleLevel}
             levelConfig={levelConfig}
           />
@@ -820,6 +857,8 @@ function SubtaskCard({
   selectedAW,
   managerWeeklyPlans,
   loadingManagerWeekly,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -836,6 +875,8 @@ function SubtaskCard({
   selectedAW?: any;
   managerWeeklyPlans?: any[];
   loadingManagerWeekly?: boolean;
+  managerHasPlan?: boolean;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: any;
 }) {
@@ -938,7 +979,7 @@ function SubtaskCard({
       </Field>
 
       <Field
-        label="Align with Manager Weekly Plan"
+        label={`Align with Manager Weekly Plan${managerHasPlan ? " *" : ""}`}
         error={fieldErrors[`${pfx}alignment`]}
       >
         {(() => {
@@ -964,7 +1005,7 @@ function SubtaskCard({
             ? managerCadence.allow_weekly
             : true;
 
-          if (loadingManagerWeekly) {
+          if (loadingManagerWeekly || checkingManagerPlan) {
             return (
               <div className="animate-pulse h-10 bg-slate-100 rounded-xl" />
             );
@@ -1000,20 +1041,28 @@ function SubtaskCard({
           }
           if (managerWeeklyPlans && managerWeeklyPlans.length > 0) {
             return (
-              <select
-                value={subtask.alignedManagerPlanId}
-                onChange={(e) =>
-                  onUpdate({ alignedManagerPlanId: e.target.value })
-                }
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary"
-              >
-                <option value="">Align to manager…</option>
-                {managerWeeklyPlans.map((wp: any) => (
-                  <option key={wp.id} value={wp.id}>
-                    {wp.title}
-                  </option>
-                ))}
-              </select>
+              <>
+                {managerHasPlan && (
+                  <p className="text-[10px] text-amber-600 mb-1.5">
+                    Your manager has a Weekly plan. You must align with it.
+                  </p>
+                )}
+                <select
+                  value={subtask.alignedManagerPlanId}
+                  onChange={(e) =>
+                    onUpdate({ alignedManagerPlanId: e.target.value })
+                  }
+                  className={`w-full bg-white border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 ${fieldErrors[`${pfx}alignment`] ? "border-rose-300 focus:ring-rose-100" : "border-slate-200 focus:border-primary focus:ring-primary/20"}`}
+                  required={managerHasPlan}
+                >
+                  <option value="">{managerHasPlan ? "Required: Select manager plan…" : "Align to manager…"}</option>
+                  {managerWeeklyPlans.map((wp: any) => (
+                    <option key={wp.id} value={wp.id}>
+                      {wp.title}
+                    </option>
+                  ))}
+                </select>
+              </>
             );
           }
           return (
@@ -1134,6 +1183,8 @@ function FullViewLayout({
   selectedAW,
   managerWeeklyPlans,
   loadingManagerWeekly,
+  managerHasPlan,
+  checkingManagerPlan,
   userRoleLevel,
   levelConfig,
 }: {
@@ -1159,6 +1210,8 @@ function FullViewLayout({
   selectedAW: AvailableWeight | null;
   managerWeeklyPlans: WeeklyPlan[];
   loadingManagerWeekly: boolean;
+  managerHasPlan?: boolean;
+  checkingManagerPlan?: boolean;
   userRoleLevel?: string;
   levelConfig?: Record<
     string,
@@ -1228,6 +1281,8 @@ function FullViewLayout({
                 selectedAW={selectedAW}
                 managerWeeklyPlans={managerWeeklyPlans}
                 loadingManagerWeekly={loadingManagerWeekly}
+                managerHasPlan={managerHasPlan}
+                checkingManagerPlan={checkingManagerPlan}
                 userRoleLevel={userRoleLevel}
                 levelConfig={levelConfig}
               />

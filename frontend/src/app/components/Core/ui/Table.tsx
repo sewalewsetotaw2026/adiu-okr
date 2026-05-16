@@ -68,7 +68,7 @@ function Table<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {data.map((item, rowIndex) => (
+            {data.map((item) => (
               <tr
                 key={keyExtractor(item)}
                 onClick={() => onRowClick && onRowClick(item)}

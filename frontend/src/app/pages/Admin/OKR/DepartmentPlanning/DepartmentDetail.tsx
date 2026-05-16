@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
 import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
@@ -10,16 +10,14 @@ import { routeConstants } from "../../../../../utils/constants";
 import {
   MdChevronLeft,
   MdBusiness,
-  MdInfoOutline,
   MdWarning,
   MdTrendingUp,
 } from "react-icons/md";
 import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
-import { okrUnwrap } from "../../../../utils/okrApi";
+import { okrUnwrap, resolveConfidenceLevel } from "../../../../utils/okrApi";
 import ToastService from "../../../../../utils/ToastService";
 import DepartmentInsightsDashboard from "./components/DepartmentInsightsDashboard";
-import EmployeeContributionTable from "./components/EmployeeContributionTable";
 import ObjectiveCard from "../../../../components/common/ObjectiveCard";
 
 type DepartmentData = {
@@ -93,6 +91,46 @@ export default function DepartmentDetail() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Calculate aggregate metrics from planning insights and objectives
+  const metrics = useMemo(() => {
+    const totalObjectives = departmentObjectives.length;
+    const avgProgress =
+      totalObjectives > 0
+        ? Math.round(
+          departmentObjectives.reduce(
+            (acc, obj) => acc + Number(obj.final_score || 0),
+            0,
+          ) / totalObjectives,
+        )
+        : 0;
+
+    const atRiskCount = departmentObjectives.filter(
+      (obj) => resolveConfidenceLevel(Number(obj.final_score || 0)) === "AT_RISK",
+    ).length;
+
+    const onTrackCount = totalObjectives - atRiskCount;
+
+    return {
+      totalObjectives,
+      totalKRs: departmentObjectives.reduce(
+        (acc, obj) => acc + (obj._count?.keyResults || 0),
+        0,
+      ),
+      totalEmployees: planningInsights?.totals?.members || 0,
+      averageProgress: avgProgress,
+      atRiskCount,
+      onTrackCount,
+      missingPlansCount:
+        planningInsights?.highlights?.missing_monthly_plan?.length || 0,
+      missingSetsCount:
+        planningInsights?.highlights?.missing_monthly_plan?.length || 0,
+      completedPlansCount:
+        (planningInsights?.totals?.monthly_plans || 0) +
+        (planningInsights?.totals?.weekly_plans || 0) +
+        (planningInsights?.totals?.daily_plans || 0),
+    };
+  }, [planningInsights, departmentObjectives]);
+
   // Fetch department data and planning insights
   const fetchData = async () => {
     if (!departmentId || !authUser) return;
@@ -157,7 +195,8 @@ export default function DepartmentDetail() {
         );
 
         if (objectivesResponse?.data) {
-          setDepartmentObjectives(objectivesResponse.data);
+          const rawObjectives = okrUnwrap(objectivesResponse);
+          setDepartmentObjectives(Array.isArray(rawObjectives) ? rawObjectives : []);
         }
       } catch (insightsError) {
         console.error("Could not fetch planning insights:", insightsError);
@@ -180,12 +219,12 @@ export default function DepartmentDetail() {
     setRefreshing(false);
   };
 
-  if (loading) {
-    return (
-      <AdminLayout>
-        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-            <div className="space-y-4">
+  return (
+    <AdminLayout>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
+          {loading ? (
+            <div className="space-y-4 pt-8">
               <div className="h-20 bg-slate-200 rounded-2xl animate-pulse" />
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 {[1, 2, 3, 4].map((i) => (
@@ -196,18 +235,8 @@ export default function DepartmentDetail() {
                 ))}
               </div>
             </div>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  if (!department) {
-    return (
-      <AdminLayout>
-        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-            <div className="text-center py-12">
+          ) : !department ? (
+            <div className="text-center py-24">
               <MdWarning className="mx-auto text-4xl text-amber-600 mb-4" />
               <h2 className="text-2xl font-black text-slate-900 mb-2">
                 Department Not Found
@@ -221,215 +250,103 @@ export default function DepartmentDetail() {
                 Back to Departments
               </Button>
             </div>
-          </div>
-        </div>
-      </AdminLayout>
-    );
-  }
-
-  // Calculate aggregate metrics from planning insights
-  const metrics = planningInsights
-    ? {
-      totalObjectives: planningInsights.totals?.objectives || 0,
-      totalKRs: planningInsights.totals?.krs || 0,
-      totalEmployees: planningInsights.totals?.members || 0,
-      averageProgress: Number(planningInsights.totals?.avg_progress || 0),
-      atRiskCount: Number(planningInsights.totals?.at_risk_kr_count || 0),
-      onTrackCount: Number(planningInsights.totals?.on_track_kr_count || 0),
-      missingPlansCount:
-        planningInsights.highlights?.missing_monthly_plan?.length || 0,
-      missingSetsCount:
-        planningInsights.highlights?.missing_monthly_plan?.length || 0,
-      completedPlansCount:
-        (planningInsights.totals?.monthly_plans || 0) +
-        (planningInsights.totals?.weekly_plans || 0) +
-        (planningInsights.totals?.daily_plans || 0),
-    }
-    : {
-      totalObjectives: 0,
-      totalKRs: 0,
-      totalEmployees: 0,
-      averageProgress: 0,
-      atRiskCount: 0,
-      onTrackCount: 0,
-      missingPlansCount: 0,
-      missingSetsCount: 0,
-      completedPlansCount: 0,
-    };
-
-
-  return (
-    <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-16 space-y-8 pt-2">
-          {/* Breadcrumb & Header */}
-          <div className="space-y-4">
-            <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate(routeConstants.okrDepartmentPlanning)}
-                className="text-gray-500 hover:text-gray-800 transition-colors p-0 h-auto font-normal flex items-center gap-1"
-              >
-                <MdChevronLeft className="text-lg" />
-                Departments
-              </Button>
-              <span className="text-gray-300">/</span>
-              <span className="text-gray-800 font-medium text-xs uppercase tracking-widest font-space">
-                {department.name} Planning
-              </span>
-            </nav>
-
-            <PageHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
-                    <MdBusiness className="text-3xl text-white" />
-                  </div>
-                  <div className="text-white">
-                    <h1 className="text-2xl font-black tracking-tighter capitalize">
-                      {department.name}
-                    </h1>
-                    <p className="text-white/60 text-[10px] font-black uppercase tracking-widest font-space mt-1">
-                      Planning Insights & Team Overview
-                    </p>
-                  </div>
-                </div>
-
-                <div className="shrink-0">
-                  <RefreshButton onClick={handleRefresh} loading={refreshing} />
-                </div>
-              </div>
-            </PageHeader>
-          </div>
-
-          {/* Insights Dashboard */}
-          <div className="space-y-2 mb-4">
-            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <MdTrendingUp className="text-primary" />
-              Department Overview
-            </h2>
-          </div>
-
-          <DepartmentInsightsDashboard
-            departmentName={department.name}
-            metrics={metrics}
-            loading={loading}
-          />
-
-          {/* Employee Contribution Roster */}
-          {/* <div className="mt-12 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <MdInfoOutline className="text-primary" />
-                Team Member Progress & Contribution
-              </h2>
-              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                {planningInsights?.members.length || 0} members
-              </span>
-            </div>
-
-            <EmployeeContributionTable
-              employees={
-                planningInsights?.members.map((member) => ({
-                  employeeId: member.employee_id,
-                  employeeName: member.employee_name,
-                  profilePictureUrl: undefined, // Can be added from employee data if available
-                  objectiveCount: member.objective_count,
-                  krCount: member.kr_count,
-                  monthlyPlansCount: member.monthly_plan_count,
-                  weeklyPlansCount: member.weekly_plan_count,
-                  dailyPlansCount: member.daily_plan_count,
-                  progressUpdateCount: member.progress_update_count,
-                  hasSetMonthlyPlan: member.has_set_monthly_plan,
-                  hasSetWeeklyPlan: member.has_set_weekly_plan,
-                  hasSetDailyPlan: member.has_set_daily_plan,
-                  hasUpdatedProgress: member.has_updated_progress,
-                  lastProgressAt: member.last_progress_at,
-                  objectiveStatus: member.objective_status,
-                })) || []
-              }
-              loading={loading}
-            />
-          </div> */}
-
-          {/* Departmental Execution Section */}
-          {/* <div className="mt-12 space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <MdTrendingUp className="text-primary" />
-                Departmental Execution
-              </h2>
-              <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-space">
-                {departmentObjectives.length} Objectives
-              </span>
-            </div>
-
-            {departmentObjectives.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6">
-                {departmentObjectives.map((obj) => (
-                  <ObjectiveCard
-                    key={obj.id}
-                    objective={{
-                      id: obj.id,
-                      title: obj.title,
-                      description: obj.description,
-                      status: obj.status_code || "draft",
-                      progress: Number(obj.final_score || 0),
-                      indirectProgress: Number(obj.indirect_score || 0),
-                      krCount: obj._count?.keyResults || 0,
-                    }}
-                    keyResults={obj.keyResults}
-                    expandable={true}
-                    parentKrTitle={obj.parentCompanyKr?.title}
-                    variant="admin"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <MdBusiness className="text-3xl text-slate-300" />
-                </div>
-                <h3 className="text-base font-black text-slate-900 mb-1">
-                  No execution data found
-                </h3>
-                <p className="text-sm text-slate-500 max-w-xs mx-auto">
-                  This department hasn't started executing any objectives for the current cycle yet.
-                </p>
-              </div>
-            )}
-          </div> */}
-
-          {/* Call to Action */}
-          {/* <div className="mt-12 rounded-xl bg-gradient-to-r from-primary/10 to-blue-50 border border-primary/20 p-6">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-white rounded-lg shrink-0">
-                <MdTrendingUp className="text-2xl text-primary" />
-              </div>
-              <div>
-                <h3 className="text-base font-black text-slate-900 mb-2">
-                  Next Steps
-                </h3>
-                <p className="text-sm text-slate-600 mb-4">
-                  Use this insights dashboard to monitor your department's
-                  planning progress. Click on individual team members to view
-                  their detailed OKR execution or navigate back to the executive
-                  dashboard for company-wide visibility.
-                </p>
-                <div className="flex gap-3 flex-wrap">
+          ) : (
+            <>
+              {/* Breadcrumb & Header */}
+              <div className="space-y-4">
+                <nav className="flex flex-wrap items-center gap-2 text-sm pt-4">
                   <Button
-                    onClick={() => navigate(routeConstants.okr)}
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
+                    onClick={() => navigate(routeConstants.okrDepartmentPlanning)}
+                    className="text-gray-500 hover:text-gray-800 transition-colors p-0 h-auto font-normal flex items-center gap-1"
                   >
-                    Go to OKR Dashboard
+                    <MdChevronLeft className="text-lg" />
+                    Departments
                   </Button>
-                </div>
-              </div>
-            </div>
-          </div> */}
+                  <span className="text-gray-300">/</span>
+                  <span className="text-gray-800 font-medium text-xs uppercase tracking-widest font-space">
+                    {department.name} Planning
+                  </span>
+                </nav>
 
+                <PageHeader>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-white/10 rounded-2xl ring-1 ring-white/20 shadow-inner">
+                        <MdBusiness className="text-3xl text-white" />
+                      </div>
+                      <div className="text-white">
+                        <h1 className="text-2xl font-black tracking-tighter capitalize">
+                          {department.name}
+                        </h1>
+                        <p className="text-white/60 text-[10px] font-black uppercase tracking-widest font-space mt-1">
+                          Planning Insights & Team Overview
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      <RefreshButton onClick={handleRefresh} loading={refreshing} />
+                    </div>
+                  </div>
+                </PageHeader>
+              </div>
+
+              {/* Insights Dashboard */}
+              <div className="space-y-2 mb-4">
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <MdTrendingUp className="text-primary" />
+                  Department Overview
+                </h2>
+              </div>
+
+              <DepartmentInsightsDashboard
+                departmentName={department.name}
+                metrics={metrics}
+              />
+
+              {/* Departmental Execution Section — Quarterly Plan OKRs */}
+              {departmentObjectives.length > 0 && (
+                <div className="mt-10 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                      <MdTrendingUp className="text-primary" />
+                      Departmental Execution
+                    </h2>
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full font-space">
+                      {departmentObjectives.length} Objective
+                      {departmentObjectives.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6">
+                    {departmentObjectives.map((obj) => (
+                      <ObjectiveCard
+                        key={obj.id}
+                        objective={{
+                          id: obj.id,
+                          title: obj.title,
+                          description: obj.description,
+                          status: obj.status_code || "draft",
+                          progress: Number(obj.final_score || 0),
+                          indirectProgress: Number(obj.indirect_score || 0),
+                          krCount: obj._count?.keyResults || 0,
+                        }}
+                        keyResults={obj.keyResults}
+                        expandable={true}
+                        parentKrTitle={obj.parentCompanyKr?.title}
+                        variant="admin"
+                        confidenceLevel={resolveConfidenceLevel(
+                          Number(obj.final_score || 0),
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </AdminLayout>

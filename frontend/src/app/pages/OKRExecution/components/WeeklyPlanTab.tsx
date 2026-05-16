@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
+import { selectAuthUser } from "../../../slice/authSlice/selectors";
 import {
   MdAdd,
   MdChevronRight,
   MdSend,
   MdPublish,
-  MdLock,
-  MdLockOpen,
   MdCheckCircle,
   MdPlayCircle,
+  MdHistory,
+  MdSchedule,
 } from "react-icons/md";
 import Button from "../../../components/Core/ui/Button";
 import ConfirmationModal from "../../../components/common/ConfirmationModal";
@@ -34,7 +36,12 @@ import WeeklyPlanCard from "./WeeklyPlanCard";
 import EditOkrChangeRequestModal from "../../Admin/OKR/components/modals/EditOkrChangeRequestModal";
 import RealignmentBanner from "../../Admin/OKR/components/RealignmentBanner";
 import WeeklyPlanProgressModal from "./modals/WeeklyPlanProgressModal";
-import { formatReadableDate } from "../utils/calendarDates";
+import {
+  formatReadableDate,
+  getWeekAvailability,
+  getCycleWeekRange,
+  type PeriodAvailability,
+} from "../utils/calendarDates";
 
 const NON_DRAFT_LIFECYCLE = new Set([
   "SUBMITTED",
@@ -115,6 +122,12 @@ export default function WeeklyPlanTab({
   onPostPublishEdit,
   allowUpdateProgress = false,
 }: WeeklyPlanTabProps) {
+  const authUser = useSelector(selectAuthUser);
+  const currentUserId = authUser?.employee_id
+    ? String(authUser.employee_id)
+    : authUser?.id
+      ? String(authUser.id)
+      : null;
   const [monthlyPlans, setMonthlyPlans] = useState<MonthlyPlan[]>([]);
   const [plans, setPlans] = useState<WeeklyPlan[]>([]);
   const [allocations, setAllocations] = useState<
@@ -527,43 +540,29 @@ export default function WeeklyPlanTab({
     [plans],
   );
 
-  // A week is locked when the previous week has no plans that are APPROVED or PUBLISHED.
-  // Week 1 is always unlocked (it's the starting point).
-  const weekLocked = useMemo<Record<number, boolean>>(() => {
-    const isWeekApprovedOrPublished = (w: number) =>
-      (plansByWeek[w] ?? []).some(
-        (p) => p.plan_status === "APPROVED" || p.plan_status === "PUBLISHED",
-      );
-    const out: Record<number, boolean> = {};
+  // Calendar-driven availability per week slot.
+  const weekAvailability = useMemo<Record<number, PeriodAvailability>>(() => {
+    const out: Record<number, PeriodAvailability> = {};
     for (const w of slots) {
-      out[w] = w === 1 ? false : !isWeekApprovedOrPublished(w - 1);
+      out[w] = getWeekAvailability(w, cycleStartDate, cycleEndDate);
     }
     return out;
-  }, [plansByWeek, slots]);
+  }, [slots, cycleStartDate, cycleEndDate]);
 
-  // Active week = the last week that has at least one plan (regardless of status).
-  // Falls back to week 1.
+  // Active week = the current calendar week within the cycle.
+  // Falls back to last week with plans, then first slot.
   const activeWeek = useMemo(() => {
     if (initialExpandWeek) return initialExpandWeek;
+    const current = slots.find((w) => weekAvailability[w] === "current");
+    if (current) return current;
     for (const w of [...slots].reverse()) {
       if ((plansByWeek[w] ?? []).length > 0) return w;
     }
     return slots[0] ?? 1;
-  }, [initialExpandWeek, plansByWeek, slots]);
+  }, [initialExpandWeek, weekAvailability, plansByWeek, slots]);
 
-  // The next unlocked week = first unlocked week with zero plans (ready to start).
-  const nextUnlockedWeek = useMemo<number | null>(() => {
-    for (const w of slots) {
-      if (
-        !weekLocked[w] &&
-        (plansByWeek[w] ?? []).length === 0 &&
-        w !== activeWeek
-      ) {
-        return w;
-      }
-    }
-    return null;
-  }, [weekLocked, plansByWeek, slots, activeWeek]);
+  // No longer needed — future weeks greyed out automatically.
+  const nextUnlockedWeek = null;
 
   // Auto-expand the active week whenever it changes (driven by plan data).
   useEffect(() => {
@@ -704,9 +703,16 @@ export default function WeeklyPlanTab({
             expanded={!!expanded[w]}
             isActive={w === activeWeek}
             isNextUnlocked={w === nextUnlockedWeek}
-            isLocked={!!weekLocked[w]}
+            availability={weekAvailability[w]}
+            dateRange={(() => {
+              if (!cycleStartDate || !cycleEndDate) return undefined;
+              const range = getCycleWeekRange(cycleStartDate, w);
+              if (!range) return undefined;
+              const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+              return `${fmt(range.start)} – ${fmt(range.end)}`;
+            })()}
             onToggle={() => {
-              if (weekLocked[w]) return;
+              if (weekAvailability[w] === "future") return;
               setExpanded((prev) => ({ ...prev, [w]: !prev[w] }));
             }}
             onAdd={() => setAddForWeek(w)}
@@ -724,7 +730,15 @@ export default function WeeklyPlanTab({
               }
             }}
             allowAdd={allowAdd}
-            onUpdateProgress={allowUpdateProgress ? setProgressPlan : undefined}
+            onUpdateProgress={
+              allowUpdateProgress
+                ? (plan) => {
+                    const ownerId = String(plan.owner_id ?? "");
+                    if (!currentUserId || ownerId !== currentUserId) return;
+                    setProgressPlan(plan);
+                  }
+                : undefined
+            }
           />
         ))
       )}
@@ -835,9 +849,10 @@ function WeekSection({
   plans,
   meta,
   expanded,
-  isActive,
-  isNextUnlocked,
-  isLocked,
+  isActive: _isActive,
+  isNextUnlocked: _isNextUnlocked,
+  availability,
+  dateRange,
   onToggle,
   onAdd,
   onEdit,
@@ -854,7 +869,8 @@ function WeekSection({
   expanded: boolean;
   isActive: boolean;
   isNextUnlocked: boolean;
-  isLocked: boolean;
+  availability: PeriodAvailability;
+  dateRange?: string;
   onToggle: () => void;
   onAdd: () => void;
   onEdit: (plan: WeeklyPlan) => void;
@@ -867,54 +883,59 @@ function WeekSection({
 }) {
   const isCompleted =
     meta.bannerStatus === "PUBLISHED" || meta.bannerStatus === "APPROVED";
+  const isFuture = availability === "future";
+  const isPast = availability === "past";
+  const isCurrent = availability === "current" || availability === "no-cycle";
 
-  const cardBorder = isLocked
-    ? "border-slate-200"
-    : isActive
+  const cardBorder = isFuture
+    ? "border-slate-100"
+    : isCurrent
       ? "border-primary/50 ring-2 ring-primary/15"
       : isCompleted
         ? "border-emerald-300"
-        : isNextUnlocked
-          ? "border-primary/30"
+        : isPast
+          ? "border-slate-300"
           : "border-slate-200";
 
-  const headerBg = isLocked
-    ? "bg-slate-50"
-    : isActive
+  const headerBg = isFuture
+    ? "bg-slate-50/60"
+    : isCurrent
       ? "bg-gradient-to-r from-primary/5 to-primary/10"
       : isCompleted
         ? "bg-gradient-to-r from-emerald-50 to-emerald-50/60"
-        : "bg-white";
+        : isPast
+          ? "bg-slate-50"
+          : "bg-white";
 
-  const badgeBg = isLocked
-    ? "bg-slate-200 text-slate-400"
-    : isActive
+  const badgeBg = isFuture
+    ? "bg-slate-100 text-slate-300"
+    : isCurrent
       ? "bg-primary text-white shadow-md shadow-primary/30"
       : isCompleted
         ? "bg-emerald-500 text-white"
-        : isNextUnlocked
-          ? "bg-primary/10 text-primary"
+        : isPast
+          ? "bg-slate-200 text-slate-500"
           : "bg-slate-100 text-slate-500";
 
   return (
     <section
       className={`rounded-3xl border-2 bg-white overflow-hidden transition-all duration-200 ${
-        isLocked ? "opacity-70" : "shadow-md hover:shadow-lg"
+        isFuture ? "opacity-50" : "shadow-md hover:shadow-lg"
       } ${cardBorder}`}
     >
       {/* Card Header */}
       <div
         role="button"
-        tabIndex={isLocked ? -1 : 0}
+        tabIndex={isFuture ? -1 : 0}
         onClick={onToggle}
         onKeyDown={(e) => {
-          if (!isLocked && (e.key === "Enter" || e.key === " ")) {
+          if (!isFuture && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             onToggle();
           }
         }}
         className={`w-full flex items-center justify-between gap-4 px-6 py-5 text-left transition-colors ${
-          isLocked ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
+          isFuture ? "cursor-not-allowed" : "hover:bg-black/2 cursor-pointer"
         } ${headerBg}`}
       >
         {/* Left: badge + title */}
@@ -930,7 +951,12 @@ function WeekSection({
               <span className="text-base font-bold text-slate-800">
                 Week {weekNumber}
               </span>
-              {isActive && !isLocked && (
+              {dateRange && (
+                <span className="text-[10px] font-semibold text-slate-400 tabular-nums">
+                  {dateRange}
+                </span>
+              )}
+              {isCurrent && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary text-white text-[10px] font-bold uppercase tracking-wide">
                   <MdPlayCircle className="text-xs" />
                   Active
@@ -942,77 +968,61 @@ function WeekSection({
                   {meta.bannerStatus === "PUBLISHED" ? "Published" : "Approved"}
                 </span>
               )}
-              {isNextUnlocked && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wide">
-                  <MdLockOpen className="text-xs" />
-                  Ready
+              {isPast && !isCompleted && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold uppercase tracking-wide">
+                  <MdHistory className="text-xs" />
+                  Past
                 </span>
               )}
-              {isLocked && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide">
-                  Locked
+              {isFuture && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wide">
+                  <MdSchedule className="text-xs" />
+                  Upcoming
                 </span>
               )}
             </div>
             <div className="text-xs text-slate-500 mt-0.5">
-              {isLocked
-                ? `Unlocks after Week ${weekNumber - 1} plan is approved`
-                : isNextUnlocked
-                  ? "Unlocked — add your first plan to start"
+              {isFuture
+                ? "Not yet available — becomes active when this week begins"
+                : isPast && plans.length === 0
+                  ? "No plans were created for this period"
                   : plans.length === 0
                     ? "No plans yet — click Add to start"
-                    : `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${meta.isSubmitted ? "Submitted" : "In progress"}`}
+                    : `${plans.length} plan${plans.length === 1 ? "" : "s"} · ${meta.isSubmitted ? "Submitted" : isPast ? "Past" : "In progress"}`}
             </div>
           </div>
         </div>
 
-        {/* Right: lock icon + actions */}
+        {/* Right: actions */}
         <div className="flex items-center gap-3 shrink-0">
-          {isLocked ? (
-            <div className="flex flex-col items-center gap-1">
-              <MdLock className="text-slate-400" style={{ fontSize: 32 }} />
-              <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
-                Locked
-              </span>
-            </div>
+          {isFuture ? (
+            <span className="text-xs text-slate-400 font-medium">Not yet available</span>
           ) : (
             <>
-              <div className="flex flex-col items-center gap-1">
-                <MdLockOpen
-                  className={
-                    isActive || isNextUnlocked
-                      ? "text-primary"
-                      : "text-emerald-500"
+              {isCurrent && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={MdAdd}
+                  disabled={!allowAdd}
+                  title={
+                    !allowAdd
+                      ? "Weekly plans are not enabled for your role"
+                      : undefined
                   }
-                  style={{ fontSize: 28 }}
-                />
-                <span
-                  className={`text-[9px] font-semibold uppercase tracking-wider ${
-                    isActive || isNextUnlocked
-                      ? "text-primary"
-                      : "text-emerald-500"
-                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAdd();
+                  }}
                 >
-                  Unlocked
+                  Add
+                </Button>
+              )}
+              {isPast && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-semibold uppercase tracking-wide">
+                  Read-only
                 </span>
-              </div>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={MdAdd}
-                disabled={!allowAdd}
-                title={
-                  !allowAdd
-                    ? "Weekly plans are not enabled for your role"
-                    : undefined
-                }
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAdd();
-                }}
-              >
-                Add
-              </Button>
+              )}
               <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
                 {expanded ? "Collapse" : "Expand"}
                 <MdChevronRight
@@ -1024,26 +1034,33 @@ function WeekSection({
         </div>
       </div>
 
-      {/* Locked overlay message */}
-      {isLocked && (
-        <div className="px-6 py-6 border-t border-slate-100 bg-slate-50/80">
+      {/* Future period overlay */}
+      {isFuture && (
+        <div className="px-6 py-6 border-t border-slate-100 bg-slate-50/60">
           <div className="flex flex-col items-center justify-center gap-3 py-4">
-            <MdLock className="text-slate-300" style={{ fontSize: 48 }} />
+            <MdSchedule className="text-slate-300" style={{ fontSize: 48 }} />
             <div className="text-center">
-              <p className="text-sm font-semibold text-slate-500">
-                Week {weekNumber} is locked
+              <p className="text-sm font-semibold text-slate-400">
+                Week {weekNumber} hasn't started yet
               </p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                Complete and get Week {weekNumber - 1} approved before planning
-                Week {weekNumber}.
+                This period will become available when the current calendar week begins.
               </p>
             </div>
           </div>
         </div>
       )}
+      {/* Past period read-only notice */}
+      {isPast && !expanded && plans.length > 0 && (
+        <div className="px-6 py-2 border-t border-slate-100 bg-amber-50/40">
+          <p className="text-xs text-amber-700 font-medium">
+            This period has ended. Plans are read-only.
+          </p>
+        </div>
+      )}
 
       {/* Expanded content */}
-      {!isLocked && expanded && (
+      {!isFuture && expanded && (
         <div className="border-t border-slate-100 p-6 space-y-4 bg-slate-50/30">
           {(meta.isSubmitted || meta.feedbackNote) && (
             <PlanStatusBanner
@@ -1087,7 +1104,7 @@ function WeekSection({
             </div>
           )}
 
-          {meta.canShowSubmit && (
+          {meta.canShowSubmit && isCurrent && (
             <div className="flex items-center justify-end pt-2">
               <Button
                 variant="secondary"

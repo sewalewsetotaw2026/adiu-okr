@@ -20,6 +20,7 @@ import {
   MdAdd,
   MdEditDocument,
   MdFactCheck,
+  MdFileDownload,
   MdFlag,
   MdPublish,
   MdSend,
@@ -36,6 +37,7 @@ import {
   okrErrorMessage,
   okrListRows,
   okrUnwrap,
+  resolveConfidenceLevel,
 } from "../../../utils/okrApi";
 import ToastService from "../../../../utils/ToastService";
 import { useSelector } from "react-redux";
@@ -365,11 +367,11 @@ export default function MyExecutionDashboardPage() {
           r.department_kr?.description ||
           r.departmentKr?.description ||
           "",
-        requiredTarget:
+        required_target:
           r.required_target != null ? Number(r.required_target) : null,
-        weightPercent:
+        weight_percent:
           r.weight_percent != null ? Number(r.weight_percent) : null,
-        unitOfMeasure:
+        unit_of_measure:
           r.company_kr?.unit_of_measure ||
           r.companyKr?.unit_of_measure ||
           r.employee_kr?.unit_of_measure ||
@@ -1018,6 +1020,17 @@ export default function MyExecutionDashboardPage() {
                 <Button
                   variant="white"
                   size="sm"
+                  icon={MdFileDownload}
+                  onClick={() => navigate(routeConstants.okrImportExport)}
+                  className="shadow-xs"
+                >
+                  Import / Export
+                </Button>
+              )}
+              {activeTab === "quarterly" && (
+                <Button
+                  variant="white"
+                  size="sm"
                   icon={MdAdd}
                   onClick={handleNewObjectiveClick}
                   disabled={objectiveLimitReached}
@@ -1204,6 +1217,7 @@ export default function MyExecutionDashboardPage() {
                         expandable={c.keyResults && c.keyResults.length > 0}
                         onClick={() => goDetail(c.id)}
                         parentKrTitle={c.parentKr || undefined}
+                        confidenceLevel={resolveConfidenceLevel(c.progress)}
                         actions={
                           <div className="flex flex-wrap items-center gap-2 justify-end flex-1">
                             <Button

@@ -12,6 +12,8 @@ import type { DailyPlan, DailyStatus } from "../../../../types/okr.types";
 import ActionMenu from "../../../components/common/ActionMenu";
 import ConfirmationModal from "../../../components/common/ConfirmationModal";
 import { formatOkrNumber } from "../../../utils/okrNumber";
+import ConfidenceBadge from "../../../components/common/ConfidenceBadge";
+import { resolveConfidenceLevel } from "../../../utils/okrApi";
 
 interface DailyTaskCardProps {
   plan: DailyPlan & { _weeklyPlanTitle?: string; _plannedDate?: string };
@@ -93,6 +95,7 @@ export default function DailyTaskCard({
                 Week {weeklyNumber}
               </span>
             )}
+            <ConfidenceBadge level={resolveConfidenceLevel(progressPct)} size="xs" />
           </div>
 
           <ActionMenu

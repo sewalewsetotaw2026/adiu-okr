@@ -2,7 +2,6 @@ import FormInput from "../../../Core/ui/FormInput";
 import FormAutocomplete from "../../../Core/ui/FormAutocomplete";
 import FormSelect from "../../../Core/ui/FormSelect";
 import Button from "../../../Core/ui/Button";
-import Checkbox from "../../../Core/ui/Checkbox";
 import FileUpload from "../../../Core/ui/FileUpload";
 import { MdAdd, MdDelete, MdWork } from "react-icons/md";
 

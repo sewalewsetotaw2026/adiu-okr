@@ -27,7 +27,7 @@ export default function ManagerialPie({
     { name: "Non-Managerial", value: nonManagerial },
   ];
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  
 
   const total = managerial + nonManagerial;
   const percentage = Math.round((managerial / total) * 100);

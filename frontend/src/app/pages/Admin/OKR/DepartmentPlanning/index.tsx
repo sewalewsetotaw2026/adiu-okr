@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import AdminLayout from "../../../../components/DefaultLayout/AdminLayout";
 import PageHeader from "../../../../components/common/PageHeader";
 import RefreshButton from "../../../../components/common/RefreshButton";
@@ -21,7 +21,6 @@ import makeCall from "../../../../API";
 import apiRoutes from "../../../../API/apiRoutes";
 import { useSelector as useAppSelector } from "react-redux";
 import { selectAuthUser } from "../../../../slice/authSlice/selectors";
-import ToastService from "../../../../../utils/ToastService";
 
 /**
  * Hub at /admin/okr/departments — pick a department for execution planning
@@ -49,7 +48,7 @@ export default function DepartmentPlanningList() {
       }
     >
   >(new Map());
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [, setLoadingMetrics] = useState(false);
 
   useEffect(() => {
     dispatch(actions.fetchDepartmentsStart({ page: 1, limit: 100 }));
@@ -225,7 +224,6 @@ export default function DepartmentPlanningList() {
                       krCount={metrics.krCount}
                       progressPercent={metrics.progressPercent}
                       employeeCount={metrics.employeeCount}
-                      atRiskCount={metrics.atRiskCount}
                       onNavigate={goToDepartment}
                     />
                   );
