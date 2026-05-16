@@ -10,7 +10,7 @@ export default function AnnualSummaryCards({ annualStats }: Props) {
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-5">
       {[
         {
-          label: "Average Score",
+          label: "Avg Score",
           value: annualStats.avgScore != null ? annualStats.avgScore.toFixed(1) : "—",
           sub: `${annualStats.quarters} quarter${annualStats.quarters !== 1 ? "s" : ""}`,
           icon: <MdBarChart size={20} />,
@@ -18,7 +18,7 @@ export default function AnnualSummaryCards({ annualStats }: Props) {
           trend: annualStats.trend,
         },
         {
-          label: "Average Completion",
+          label: "Avg Completion",
           value: annualStats.avgCompletion != null ? `${annualStats.avgCompletion.toFixed(1)}%` : "—",
           sub: "Across all quarters",
           icon: <MdAssessment size={20} />,

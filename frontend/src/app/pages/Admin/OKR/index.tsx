@@ -357,7 +357,7 @@ export default function OKRDashboard() {
                         {currentCycleId ? `${companySummary.avgProgress}%` : "—"}
                       </p>
                       <p className="text-xs text-white/60 font-medium mb-1 uppercase tracking-tighter">
-                        Average Completion
+                        Avg Completion
                       </p>
                     </div>
                   )}

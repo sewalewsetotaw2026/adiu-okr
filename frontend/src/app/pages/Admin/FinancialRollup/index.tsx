@@ -266,11 +266,11 @@ export default function FinancialRollup() {
 
       // ── Summary stat cards ───────────────────────────────────────────────
       const cards = [
-        { label: "Financial Key Results", value: String(data.financial.count) },
+        { label: "Financial KRs", value: String(data.financial.count) },
         { label: "Total Financial Value", value: asCurrency(data.financial.totalValue) },
-        { label: "Average Score", value: `${data.financial.avgScore.toFixed(1)}%` },
-        { label: "Achieved Key Results", value: String(summaryStats.achievedKRs) },
-        { label: "On Track Key Results", value: String(summaryStats.onTrackKRs) },
+        { label: "Avg Score", value: `${data.financial.avgScore.toFixed(1)}%` },
+        { label: "Achieved KRs", value: String(summaryStats.achievedKRs) },
+        { label: "On Track KRs", value: String(summaryStats.onTrackKRs) },
       ];
       const cardW = (colW - 4 * 4) / 5;
       cards.forEach((card, i) => {
@@ -346,7 +346,7 @@ export default function FinancialRollup() {
         y += 6;
       };
 
-      // ── Financial Key Results table ──────────────────────────────────────────────
+      // ── Financial KRs table ──────────────────────────────────────────────
       if (data.financial.items.length > 0) {
         const fHeaders = ["Key Result", "Objective", "Score", "Actual Value", "Target Value", "Unit"];
         const fWidths = [70, 60, 30, 35, 35, 20];
@@ -361,7 +361,7 @@ export default function FinancialRollup() {
         drawTable(`Financial Key Results (${data.financial.items.length})`, fHeaders, fWidths, fRows);
       }
 
-      // ── Non-Financial Key Results table ──────────────────────────────────────────
+      // ── Non-Financial KRs table ──────────────────────────────────────────
       if (data.nonFinancial.items.length > 0) {
         const nHeaders = ["Key Result", "Objective", "Score"];
         const nWidths = [110, 100, 40];
