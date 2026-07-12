@@ -185,9 +185,7 @@ export async function getUserPermissionMatrix(roleId: number): Promise<Record<st
 
   if (!role) return {};
 
-  const allResources = await prisma.appResource.findMany({
-    where: { code: { not: "COMPANY" } },
-  });
+  const allResources = await prisma.appResource.findMany();
 
   const matrix: Record<string, Record<string, string>> = {};
 
