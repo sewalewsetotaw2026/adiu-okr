@@ -12,6 +12,7 @@ import {
   assignManager,
   activateEmployee,
   getTabCounts,
+  getEmployeeSyncReport,
 } from "src/controllers/employeeController";
 import { generateExperienceLetter } from "src/controllers/experienceLetterController";
 import { exportEmployees } from "src/controllers/exportController";
@@ -94,6 +95,13 @@ router.get(
   "/me",
   getMe,
 );
+
+router.get(
+  "/sync-report",
+  verifyAccessControl(Resources.EMPLOYEE, ActionTypes.READ_ANY),
+  getEmployeeSyncReport,
+);
+
 
 router.get(
   "/:id",

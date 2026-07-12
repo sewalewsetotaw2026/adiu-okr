@@ -2581,3 +2581,109 @@ export const activateEmployee = async (
     next(error);
   }
 };
+
+
+export const getEmployeeSyncReport = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const companyId = req.user?.company_id;
+    if (!companyId) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Company ID not found in user session",
+      });
+    }
+
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `
+      WITH latest_career_event AS (
+        SELECT employee_id, MAX(effective_date) AS latest_event_date
+        FROM employee_career_event
+        WHERE event_type IN ('Promotion', 'Demotion', 'Transfer')
+        GROUP BY employee_id
+      ),
+      aggregated_allowances AS (
+        SELECT
+          ea.employment_id,
+          SUM(CASE WHEN LOWER(at.name) LIKE '%transport%' THEN ea.amount ELSE 0 END) AS transportation_allowance,
+          SUM(CASE WHEN LOWER(at.name) LIKE '%telephone%' OR LOWER(at.name) LIKE '%phone%' THEN ea.amount ELSE 0 END) AS telephone_allowance,
+          SUM(CASE WHEN LOWER(at.name) LIKE '%representation%' THEN ea.amount ELSE 0 END) AS representation_allowance,
+          SUM(CASE WHEN LOWER(at.name) LIKE '%housing%' THEN ea.amount ELSE 0 END) AS housing_allowance,
+          SUM(CASE WHEN LOWER(at.name) LIKE '%meal%' THEN ea.amount ELSE 0 END) AS meal_allowance,
+          SUM(CASE WHEN at.is_taxable = true THEN ea.amount ELSE 0 END) AS total_taxable_allowances,
+          SUM(CASE
+            WHEN LOWER(at.name) NOT LIKE '%transport%'
+             AND LOWER(at.name) NOT LIKE '%telephone%'
+             AND LOWER(at.name) NOT LIKE '%phone%'
+             AND LOWER(at.name) NOT LIKE '%representation%'
+             AND LOWER(at.name) NOT LIKE '%housing%'
+             AND LOWER(at.name) NOT LIKE '%meal%'
+            THEN ea.amount ELSE 0
+          END) AS other_payments
+        FROM employee_allowance ea
+        JOIN allowance_type at ON ea.allowance_type_id = at.id
+        WHERE ea.is_active = true
+        GROUP BY ea.employment_id
+      ),
+      active_cost_sharing AS (
+        SELECT employee_id, SUM(declared_total_cost) AS remaining_cost_sharing
+        FROM employee_cost_sharing
+        WHERE status IN ('VERIFIED', 'DECLARED')
+        GROUP BY employee_id
+      )
+      SELECT
+        e.id AS employee_id,
+        e.full_name AS employee_name,
+        e.tin_number,
+        e.pension_number,
+        e.gender,
+        e.date_of_birth,
+        e.place_of_work,
+        jt.title AS job_position,
+        dept.name AS department_name,
+        fd.account_number,
+        emp.start_date AS employment_date,
+        emp.end_date AS employment_end_date,
+        emp.probation_end_date,
+        emp.employment_type,
+        emp.contract_reference,
+        emp.basic_salary,
+        emp.basic_salary AS basic_earning,
+        emp.gross_salary,
+        emp.basic_salary + COALESCE(alw.total_taxable_allowances, 0) AS taxable_remuneration,
+        COALESCE(alw.transportation_allowance, 0) AS transportation_allowance,
+        COALESCE(alw.telephone_allowance, 0) AS telephone_allowance,
+        COALESCE(alw.representation_allowance, 0) AS representation_allowance,
+        COALESCE(alw.housing_allowance, 0) AS housing_allowance,
+        COALESCE(alw.meal_allowance, 0) AS meal_allowance,
+        COALESCE(alw.other_payments, 0) AS other_payments,
+        COALESCE(cs.remaining_cost_sharing, 0) AS cost_sharing_balance,
+        au.email,
+        m.full_name AS manager_name
+      FROM employee e
+      JOIN employment emp ON emp.employee_id = e.id AND emp.is_active = true
+      LEFT JOIN department dept ON emp.department_id = dept.id
+      LEFT JOIN job_title jt ON emp.job_title_id = jt.id
+      LEFT JOIN latest_career_event lce ON lce.employee_id = e.id
+      LEFT JOIN aggregated_allowances alw ON alw.employment_id = emp.id
+      LEFT JOIN active_cost_sharing cs ON cs.employee_id = e.id
+      LEFT JOIN financial_detail fd ON fd.employee_id = e.id AND fd.is_primary = true
+      LEFT JOIN app_user au ON au.employee_id = e.id AND au.company_id = e.company_id AND au.is_active = true
+      LEFT JOIN employee m ON m.id = emp.manager_id
+      WHERE e.company_id = $1
+      ORDER BY e.id ASC
+      `,
+      companyId,
+    );
+
+    res.status(200).json({
+      status: "success",
+      data: rows,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
