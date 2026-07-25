@@ -594,9 +594,7 @@ export const fetchAllEmployments = async (
     // Probation status filter
     const today = new Date();
     const probationThresholdDate = new Date();
-    probationThresholdDate.setDate(
-      probationThresholdDate.getDate() - probationDays,
-    );
+    probationThresholdDate.setDate(probationThresholdDate.getDate() - probationDays);
 
     if (probationStatus === "active") {
       where.OR = [
@@ -604,9 +602,9 @@ export const fetchAllEmployments = async (
         {
           AND: [
             { probation_end_date: null },
-            { start_date: { gte: probationThresholdDate } },
-          ],
-        },
+            { start_date: { gte: probationThresholdDate } }
+          ]
+        }
       ];
     } else if (probationStatus === "completed") {
       where.OR = [
@@ -614,9 +612,9 @@ export const fetchAllEmployments = async (
         {
           AND: [
             { probation_end_date: null },
-            { start_date: { lt: probationThresholdDate } },
-          ],
-        },
+            { start_date: { lt: probationThresholdDate } }
+          ]
+        }
       ];
     } else if (probationStatus === "none") {
       where.probation_end_date = null;
@@ -662,16 +660,9 @@ export const fetchAllEmployments = async (
       prisma.employment.count({ where }),
     ]);
 
-    const transformedEmployments = employments.map((emp) => ({
+    const transformedEmployments = employments.map(emp => ({
       ...emp,
-      probation_end_date:
-        emp.probation_end_date ||
-        (emp.start_date
-          ? new Date(
-              new Date(emp.start_date).getTime() +
-                probationDays * 24 * 60 * 60 * 1000,
-            )
-          : null),
+      probation_end_date: emp.probation_end_date || (emp.start_date ? new Date(new Date(emp.start_date).getTime() + probationDays * 24 * 60 * 60 * 1000) : null),
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -756,14 +747,7 @@ export const fetchEmployment = async (
 
     const transformedEmployment = {
       ...employment,
-      probation_end_date:
-        employment.probation_end_date ||
-        (employment.start_date
-          ? new Date(
-              new Date(employment.start_date).getTime() +
-                probationDays * 24 * 60 * 60 * 1000,
-            )
-          : null),
+      probation_end_date: employment.probation_end_date || (employment.start_date ? new Date(new Date(employment.start_date).getTime() + probationDays * 24 * 60 * 60 * 1000) : null),
     };
 
     res.status(200).json({
@@ -827,14 +811,7 @@ export const getLatestEmployment = async (
 
     const transformedEmployment = {
       ...employment,
-      probation_end_date:
-        employment.probation_end_date ||
-        (employment.start_date
-          ? new Date(
-              new Date(employment.start_date).getTime() +
-                probationDays * 24 * 60 * 60 * 1000,
-            )
-          : null),
+      probation_end_date: employment.probation_end_date || (employment.start_date ? new Date(new Date(employment.start_date).getTime() + probationDays * 24 * 60 * 60 * 1000) : null),
     };
 
     res.status(200).json({
@@ -1461,14 +1438,14 @@ export const updateEmployment = async (
           create:
             req.body.allowances && Array.isArray(req.body.allowances)
               ? req.body.allowances.map((a: any) => ({
-                  amount: parseFloat(a.amount),
-                  allowanceType: {
-                    connectOrCreate: {
-                      where: { name: a.name },
-                      create: { name: a.name },
-                    },
+                amount: parseFloat(a.amount),
+                allowanceType: {
+                  connectOrCreate: {
+                    where: { name: a.name },
+                    create: { name: a.name },
                   },
-                }))
+                },
+              }))
               : [],
         },
       },
@@ -1764,20 +1741,6 @@ export const promoteEmployee = async (
         );
       }
 
-      const settings = await tx.employeeSettings.findUnique({
-        where: { company_id: companyId },
-        select: { probation_period_days: true },
-      });
-      const probationDays = settings?.probation_period_days ?? 90;
-      const carriedProbationEndDate =
-        currentEmployment.probation_end_date ||
-        (currentEmployment.start_date
-          ? new Date(
-              new Date(currentEmployment.start_date).getTime() +
-                probationDays * 24 * 60 * 60 * 1000,
-            )
-          : null);
-
       // Handle Job Title resolution (Upsert if name/level provided)
       let resolvedJobTitleId =
         new_job_title_id && !isNaN(Number(new_job_title_id))
@@ -1868,7 +1831,7 @@ export const promoteEmployee = async (
           contract_reference: currentEmployment.contract_reference,
           cost_sharing_status: currentEmployment.cost_sharing_status,
           cost_sharing_amount: currentEmployment.cost_sharing_amount,
-          probation_end_date: carriedProbationEndDate,
+          probation_end_date: currentEmployment.probation_end_date,
         },
       });
 
@@ -1951,8 +1914,8 @@ export const promoteEmployee = async (
       const [previousJobTitle, newJobTitle] = await Promise.all([
         result.careerEvent.previous_job_title_id
           ? prisma.jobTitle.findUnique({
-              where: { id: result.careerEvent.previous_job_title_id },
-            })
+            where: { id: result.careerEvent.previous_job_title_id },
+          })
           : null,
         prisma.jobTitle.findUnique({
           where: { id: result.careerEvent.new_job_title_id! },
@@ -2067,11 +2030,11 @@ export const promoteEmployee = async (
 
         const prevTitle = result.careerEvent.previous_job_title_id
           ? (
-              await prisma.jobTitle.findUnique({
-                where: { id: result.careerEvent.previous_job_title_id },
-                select: { title: true },
-              })
-            )?.title || "Previous Position"
+            await prisma.jobTitle.findUnique({
+              where: { id: result.careerEvent.previous_job_title_id },
+              select: { title: true },
+            })
+          )?.title || "Previous Position"
           : "Previous Position";
 
         const newTitle =
@@ -2253,8 +2216,8 @@ export const replaceEmployeeEmploymentDetails = async (
           ...(employment_type && { employment_type }),
           ...(parsedStartDate &&
             !isNaN(parsedStartDate.getTime()) && {
-              start_date: parsedStartDate,
-            }),
+            start_date: parsedStartDate,
+          }),
           ...(probation_end_date !== undefined && {
             probation_end_date: probation_end_date
               ? new Date(probation_end_date)

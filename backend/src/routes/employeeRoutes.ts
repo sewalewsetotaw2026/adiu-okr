@@ -12,7 +12,7 @@ import {
   assignManager,
   activateEmployee,
   getTabCounts,
-  getEmployeeSyncReport,
+  getSyncReport,
 } from "src/controllers/employeeController";
 import { generateExperienceLetter } from "src/controllers/experienceLetterController";
 import { exportEmployees } from "src/controllers/exportController";
@@ -92,16 +92,15 @@ router.get(
 
 
 router.get(
-  "/me",
-  getMe,
+  "/sync-report",
+  restrictTo("Admin", "ADMIN", "Super Admin", "SUPER_ADMIN", "HR", "HR Generalist", "HR CS Manager", "HR CS Director"),
+  getSyncReport,
 );
 
 router.get(
-  "/sync-report",
-  verifyAccessControl(Resources.EMPLOYEE, ActionTypes.READ_ANY),
-  getEmployeeSyncReport,
+  "/me",
+  getMe,
 );
-
 
 router.get(
   "/:id",

@@ -7,11 +7,13 @@ import { sendEmail } from "src/utils/email";
 import { UserService } from "src/services/userService";
 import { getUserPermissionMatrix } from "src/utils/permissionUtils";
 import { redisService } from "src/services/redisService";
+import { publishEmployeeCreated, publishEmployeeDeleted, publishEmployeeUpdated } from "src/integration/events/publishers";
+import { EdmUserUpdatedEvent } from "solarios";
 
 export const countUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -28,7 +30,7 @@ export const countUsers = async (
     return res.status(200).json({
       status: "success",
       data: { count },
-    });
+    }); 
   } catch (error) {
     next(error);
   }
@@ -37,7 +39,7 @@ export const countUsers = async (
 export const fetchAllUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -138,7 +140,7 @@ export const fetchAllUsers = async (
 export const fetchUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
@@ -160,8 +162,6 @@ export const fetchUser = async (
       },
       select: {
         id: true,
-        employee_id: true,
-        company_id: true,
         email: true,
         role_id: true,
         is_active: true,
@@ -195,10 +195,6 @@ export const fetchUser = async (
             company_code: true,
           },
         },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
-        },
       },
     });
 
@@ -209,27 +205,14 @@ export const fetchUser = async (
       });
     }
 
-    // Check if user is a manager (has direct reports)
-    const directReportCount = await prisma.employment.count({
-      where: {
-        manager_id: user.employee_id || "",
-        company_id: companyId,
-        is_active: true,
-      },
-    });
-    const isManager = directReportCount > 0;
-
     res.status(200).json({
       status: "success",
       message: "User fetched successfully",
       data: {
         user: {
           ...user,
-          company_code: user.company?.company_code,
-          is_department_head: (user as any).headedDepartments?.length > 0,
-          headed_department_id: (user as any).headedDepartments?.[0]?.id,
-          is_manager: isManager,
-        },
+          company_code: user.company?.company_code
+        }
       },
     });
   } catch (error) {
@@ -240,7 +223,7 @@ export const fetchUser = async (
 export const createUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -266,7 +249,7 @@ export const createUser = async (
     const rawEmployee = pick<any>(
       req.body?.employee,
       req.body?.employeeData,
-      req.body?.employee_data,
+      req.body?.employee_data
     );
 
     const rawEmployment = pick<any>(
@@ -275,30 +258,30 @@ export const createUser = async (
       rawEmployee?.employmentDetails,
       req.body?.employment,
       req.body?.employment_details,
-      req.body?.employmentDetails,
+      req.body?.employmentDetails
     );
 
     const rawAllowances = pick<any>(
       req.body?.allowances,
       rawEmployee?.allowances,
-      rawEmployment?.allowances,
+      rawEmployment?.allowances
     );
 
     // Build allowances in the format expected by the service (ignore effective_date from frontend payload)
     const normalizedAllowances:
       | Array<{
-          allowance_type_id: number | string;
-          amount: number;
-          currency?: string;
-        }>
+        allowance_type_id: number | string;
+        amount: number;
+        currency?: string;
+      }>
       | undefined = Array.isArray(rawAllowances)
-      ? rawAllowances
+        ? rawAllowances
           .filter(Boolean)
           .map((a: any) => {
             const allowance_type_id = pick<number | string>(
               a.allowance_type_id,
               a.allowanceTypeId,
-              a.allowance_type?.id,
+              a.allowance_type?.id
             );
             const amount = Number(a.amount);
             const currency = pick<string>(a.currency);
@@ -306,31 +289,31 @@ export const createUser = async (
           })
           .filter(
             (a) =>
-              a.allowance_type_id !== undefined && Number.isFinite(a.amount),
+              a.allowance_type_id !== undefined && Number.isFinite(a.amount)
           )
           .map((a) => ({
             allowance_type_id: a.allowance_type_id as number | string,
             amount: Number(a.amount),
             ...(a.currency ? { currency: a.currency } : {}),
           }))
-      : undefined;
+        : undefined;
 
     // Build employee payload in the format expected by the service
     let normalizedEmployee:
       | {
-          employeeId?: string;
-          fullName: string;
-          employment?: {
-            departmentId?: number | string;
-            jobTitleId?: number | string;
-            jobLevel?: string;
-            managerId?: string;
-            employmentType?: string;
-            startDate?: string;
-            grossSalary?: number;
-            basicSalary?: number;
-          };
-        }
+        employeeId?: string;
+        fullName: string;
+        employment?: {
+          departmentId?: number | string;
+          jobTitleId?: number | string;
+          jobLevel?: string;
+          managerId?: string;
+          employmentType?: string;
+          startDate?: string;
+          grossSalary?: number;
+          basicSalary?: number;
+        };
+      }
       | undefined;
 
     if (rawEmployee) {
@@ -338,7 +321,7 @@ export const createUser = async (
         rawEmployee.fullName,
         rawEmployee.full_name,
         req.body?.fullName,
-        req.body?.full_name,
+        req.body?.full_name
       );
       if (!fullName) {
         return res.status(400).json({
@@ -351,57 +334,57 @@ export const createUser = async (
         employeeId: pick<string>(
           rawEmployee.employeeId,
           rawEmployee.employee_id,
-          employee_id,
+          employee_id
         ),
         fullName,
         employment: rawEmployment
           ? {
-              departmentId: pick<number | string>(
-                rawEmployment.departmentId,
-                rawEmployment.department_id,
-              ),
-              jobTitleId: pick<number | string>(
-                rawEmployment.jobTitleId,
-                rawEmployment.job_title_id,
-              ),
-              jobLevel: pick<string>(
-                rawEmployment.jobLevel,
-                rawEmployment.job_level,
-                rawEmployment.level,
-              ),
-              managerId: pick<string>(
-                rawEmployment.managerId,
-                rawEmployment.manager_id,
-              ),
-              employmentType: pick<string>(
-                rawEmployment.employmentType,
-                rawEmployment.employment_type,
-              ),
-              startDate: pick<string>(
-                rawEmployment.startDate,
-                rawEmployment.start_date,
-              ),
-              grossSalary:
-                rawEmployment.grossSalary === undefined &&
+            departmentId: pick<number | string>(
+              rawEmployment.departmentId,
+              rawEmployment.department_id
+            ),
+            jobTitleId: pick<number | string>(
+              rawEmployment.jobTitleId,
+              rawEmployment.job_title_id
+            ),
+            jobLevel: pick<string>(
+              rawEmployment.jobLevel,
+              rawEmployment.job_level,
+              rawEmployment.level
+            ),
+            managerId: pick<string>(
+              rawEmployment.managerId,
+              rawEmployment.manager_id
+            ),
+            employmentType: pick<string>(
+              rawEmployment.employmentType,
+              rawEmployment.employment_type
+            ),
+            startDate: pick<string>(
+              rawEmployment.startDate,
+              rawEmployment.start_date
+            ),
+            grossSalary:
+              rawEmployment.grossSalary === undefined &&
                 rawEmployment.gross_salary === undefined
-                  ? undefined
-                  : Number(
-                      pick<any>(
-                        rawEmployment.grossSalary,
-                        rawEmployment.gross_salary,
-                      ),
-                    ),
-              basicSalary:
-                rawEmployment.basicSalary === undefined &&
+                ? undefined
+                : Number(
+                  pick<any>(
+                    rawEmployment.grossSalary,
+                    rawEmployment.gross_salary
+                  )
+                ),
+            basicSalary:
+              rawEmployment.basicSalary === undefined &&
                 rawEmployment.basic_salary === undefined
-                  ? undefined
-                  : Number(
-                      pick<any>(
-                        rawEmployment.basicSalary,
-                        rawEmployment.basic_salary,
-                      ),
-                    ),
-            }
+                ? undefined
+                : Number(
+                  pick<any>(
+                    rawEmployment.basicSalary,
+                    rawEmployment.basic_salary
+                  )
+                ),
+          }
           : undefined,
       };
     }
@@ -477,29 +460,27 @@ export const createUser = async (
     if ((result as any).employment) {
       response.data.employment = (result as any).employment;
     }
-
+    if ((result as any).employment) {
+      response.data.employment = (result as any).employment;
+    }
+    publishEmployeeCreated({
+      userId: result.user.id,
+      companyId: String(companyId),
+      email: result.user.email,
+      password: result.passwordHash.passwordHash,   // ← from service, never goes to HTTP response
+      role: result.user.role.name,
+      roleId: result.user.role_id,
+      onboarding_status: result.user.onboarding_status,
+      createdAt: new Date().toISOString(),
+    });
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     res.status(201).json(response);
   } catch (error: any) {
@@ -524,7 +505,7 @@ export const createUser = async (
 export const listPendingUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -550,7 +531,7 @@ export const listPendingUsers = async (
 export const listSubmittedUsers = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -562,8 +543,9 @@ export const listSubmittedUsers = async (
       });
     }
 
-    const pendingApprovalUsers =
-      await UserService.getPendingApprovalUsers(companyId);
+    const pendingApprovalUsers = await UserService.getPendingApprovalUsers(
+      companyId
+    );
 
     return res.status(200).json({
       status: "success",
@@ -577,7 +559,7 @@ export const listSubmittedUsers = async (
 export const getMe = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -607,8 +589,8 @@ export const getMe = async (
             company_code: true,
             primary_color: true,
             secondary_color: true,
-            logo_url: true,
-          },
+            logo_url: true
+          }
         },
         role: { select: { id: true, name: true } },
         employee: {
@@ -629,7 +611,6 @@ export const getMe = async (
             employments: {
               where: { is_active: true },
               select: {
-                department_id: true,
                 manager: {
                   select: { full_name: true },
                 },
@@ -637,10 +618,6 @@ export const getMe = async (
               take: 1,
             },
           },
-        },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
         },
       },
     });
@@ -652,51 +629,31 @@ export const getMe = async (
       });
     }
 
-    const primaryDeptId =
-      user.employee?.employments?.[0]?.department_id || null;
-
-    // Check if user is a manager (has direct reports)
-    const directReportCount = await prisma.employment.count({
-      where: {
-        manager_id: user.employee_id || "",
-        company_id: companyId,
-        is_active: true,
-      },
-    });
-    const isManager = directReportCount > 0;
-
     return res.status(200).json({
       status: "success",
       data: {
         user: {
           ...user,
-          department_id: primaryDeptId,
-          is_department_head: user.headedDepartments?.length > 0,
-          headed_department_id: user.headedDepartments?.[0]?.id,
-          is_manager: isManager,
-          employee: user.employee
-            ? {
-                ...user.employee,
-                signature_url: user.employee.signature_url || "",
-                documents: user.employee.documents || {
-                  cv: [],
-                  certificates: [],
-                  photo: [],
-                  experienceLetters: [],
-                  taxForms: [],
-                  pensionForms: [],
-                  guarantee_letter: [],
-                  medical_certificate: [],
-                  national_id: [],
-                  police_certificate: [],
-                  attendance_logs: [],
-                },
-              }
-            : null,
+          employee: user.employee ? {
+            ...user.employee,
+            signature_url: user.employee.signature_url || "",
+            documents: user.employee.documents || {
+              cv: [],
+              certificates: [],
+              photo: [],
+              experienceLetters: [],
+              taxForms: [],
+              pensionForms: [],
+              guarantee_letter: [],
+              medical_certificate: [],
+              national_id: [],
+              police_certificate: [],
+            }
+          } : null,
           company_code: (user as any).company?.company_code,
           company: (user as any).company,
-          permissions: await getUserPermissionMatrix(user.role_id),
-        },
+          permissions: await getUserPermissionMatrix(user.role_id)
+        }
       },
     });
   } catch (error) {
@@ -707,7 +664,7 @@ export const getMe = async (
 export const updateMe = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -864,27 +821,13 @@ export const updateMe = async (
     });
 
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -902,7 +845,7 @@ export const updateMe = async (
 export const submitOnboarding = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const userId = req.user?.user_id;
@@ -1004,27 +947,13 @@ export const submitOnboarding = async (
     });
 
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -1042,7 +971,7 @@ export const submitOnboarding = async (
 export const approvePendingUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
@@ -1058,27 +987,13 @@ export const approvePendingUser = async (
     const updatedUser = await UserService.approveUser(companyId, id);
 
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -1093,7 +1008,7 @@ export const approvePendingUser = async (
 export const updatePendingUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
@@ -1117,31 +1032,17 @@ export const updatePendingUser = async (
     const updatedEmployee = await UserService.updatePendingUser(
       companyId,
       Number(id),
-      req.body,
+      req.body
     );
 
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     return res.status(200).json({
       status: "success",
@@ -1156,7 +1057,7 @@ export const updatePendingUser = async (
 export const updateUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
@@ -1271,6 +1172,10 @@ export const updateUser = async (
       }
     }
 
+    const before = await prisma.appUser.findUnique({
+         where: { id: parseInt(id) },
+         select: { email: true, role_id: true, is_active: true },
+       });
     // Update user
     const updatedUser = await prisma.appUser.update({
       where: {
@@ -1286,6 +1191,7 @@ export const updateUser = async (
         email: true,
         role_id: true,
         is_active: true,
+        onboarding_status: true, 
         employee: {
           select: {
             id: true,
@@ -1301,28 +1207,45 @@ export const updateUser = async (
       },
     });
 
+    // ── Publish only the fields that actually changed ────────────────────────
+      const updatedFields: EdmUserUpdatedEvent["updatedFields"] = {};
+  
+      if (email !== undefined && email !== before?.email) {
+        updatedFields.email = email;
+      }
+      if (resolvedRoleId !== undefined && resolvedRoleId !== before?.role_id) {
+        updatedFields.roleId = String(resolvedRoleId);
+        updatedFields.role  = updatedUser.role?.name ?? undefined;
+      }
+      // is_active maps to your AUTH onboarding_status semantics if you treat
+      // deactivation as a status change — otherwise leave this out and let
+      // deleteUser (soft-delete) own that transition exclusively.
+      if (
+        updatedUser.onboarding_status !== undefined &&
+        Object.keys(req.body).includes("onboarding_status")
+      ) {
+        updatedFields.onboarding_status = updatedUser.onboarding_status;
+      }
+  
+      if (Object.keys(updatedFields).length > 0) {
+        publishEmployeeUpdated({
+          userId:        String(updatedUser.id),
+          companyId:     String(companyId),
+          updatedFields,
+          updatedAt:     new Date().toISOString(),
+        });
+      }
+      // ──────────────────────────────────────────────────────────────────────────
+
+
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     res.status(200).json({
       status: "success",
@@ -1339,7 +1262,7 @@ export const updateUser = async (
 export const deleteUser = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
@@ -1385,28 +1308,23 @@ export const deleteUser = async (
       },
     });
 
+
+    // ── Notify Auth this account is gone — deactivate login access ──────────
+        publishEmployeeDeleted({
+          userId:    String(existingUser.id),
+          companyId: String(companyId),
+          deletedAt: new Date().toISOString(),
+        });
+        // ──────────────────────────────────────────────────────────────────────────
+
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:employees:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:managers:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:teams:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_member:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:team_members_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:employees_search:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:analytics:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:managers:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:teams:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_member:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:team_members_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:employees_search:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:analytics:*`).catch(console.error);
 
     res.status(200).json({
       status: "success",
@@ -1420,13 +1338,15 @@ export const deleteUser = async (
 export const changePassword = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const { id } = req.params;
     const companyId = req.user?.company_id;
+    const changerUserId = req.user?.user_id;   // the logged-in user
 
-    if (!companyId) {
+    if (!companyId || !changerUserId) {
+
       return res.status(400).json({
         status: "fail",
         message: "Company ID not found in user session",
@@ -1478,6 +1398,17 @@ export const changePassword = async (
       },
     });
 
+    // ── Sync the new hash to Auth so login uses the same credential ─────────
+       publishEmployeeUpdated({
+         userId:    String(existingUser.id),
+         companyId: String(companyId),
+         updatedFields: {
+           password: hashedPassword, // already bcrypt-hashed — Auth stores as-is
+         },
+         updatedAt: new Date().toISOString(),
+       });
+       // ──────────────────────────────────────────────────────────────────────────
+
     res.status(200).json({
       status: "success",
       message: "Password changed successfully",
@@ -1486,6 +1417,7 @@ export const changePassword = async (
     next(error);
   }
 };
+
 /**
  * Search users specifically for role mapping
  * Returns top 5 by default or searches by name/email
@@ -1493,7 +1425,7 @@ export const changePassword = async (
 export const searchUsersForMapping = async (
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ) => {
   try {
     const companyId = req.user?.company_id;
@@ -1515,9 +1447,9 @@ export const searchUsersForMapping = async (
         { email: { contains: query, mode: "insensitive" } },
         {
           employee: {
-            full_name: { contains: query, mode: "insensitive" },
-          },
-        },
+            full_name: { contains: query, mode: "insensitive" }
+          }
+        }
       ];
     }
 
@@ -1531,20 +1463,20 @@ export const searchUsersForMapping = async (
           select: {
             id: true,
             name: true,
-          },
+          }
         },
         employee: {
           select: {
             id: true,
             full_name: true,
-          },
-        },
+          }
+        }
       },
       orderBy: {
         employee: {
-          full_name: "asc",
-        },
-      },
+          full_name: 'asc'
+        }
+      }
     });
 
     res.status(200).json({

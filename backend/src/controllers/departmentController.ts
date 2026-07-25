@@ -78,20 +78,25 @@ export const createDepartment = async (
     }
 
     // Generate Department Code
-    const lastDepartment = await prisma.department.findFirst({
-      where: { company_id: companyId },
-      orderBy: { id: "desc" },
+    const lastDepartments = await prisma.department.findMany({
+      where: {
+        company_id: companyId,
+        department_code: { startsWith: "DEP-" },
+      },
+      select: { department_code: true },
     });
 
-    let newCode = "DEP-001";
-    if (lastDepartment && lastDepartment.department_code) {
-      const lastCodeNum = parseInt(
-        lastDepartment.department_code.split("-")[1],
-      );
-      if (!isNaN(lastCodeNum)) {
-        newCode = `DEP-${String(lastCodeNum + 1).padStart(3, "0")}`;
+    let maxCodeNum = 0;
+    lastDepartments.forEach((dept) => {
+      if (dept.department_code) {
+        const num = parseInt(dept.department_code.split("-")[1], 10);
+        if (!isNaN(num) && num > maxCodeNum) {
+          maxCodeNum = num;
+        }
       }
-    }
+    });
+
+    const newCode = `DEP-${String(maxCodeNum + 1).padStart(3, "0")}`;
 
     department = await prisma.department.create({
       data: {
@@ -157,17 +162,7 @@ export const getDepartments = async (
           name: true,
           company_id: true,
           department_code: true,
-          head_user_id: true,
-          head: {
-            select: {
-              id: true,
-              employee: {
-                select: { full_name: true },
-              },
-            },
-          },
         },
-
         orderBy: { id: "desc" },
       }),
       prisma.department.count({ where: whereClause }),
@@ -185,71 +180,6 @@ export const getDepartments = async (
           totalPages: Math.ceil(total / limit),
         },
       },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getDepartmentById = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const companyId = req.user?.company_id;
-    const { id } = req.params;
-
-    if (!companyId) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Company ID not found in user session",
-      });
-    }
-
-    const parsedId = Number(id);
-    if (isNaN(parsedId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Invalid department ID",
-      });
-    }
-
-    const department = await prisma.department.findFirst({
-      where: {
-        id: parsedId,
-        company_id: companyId,
-      },
-      select: {
-        id: true,
-        name: true,
-        company_id: true,
-        department_code: true,
-        head_user_id: true,
-        head: {
-          select: {
-            id: true,
-            employee: {
-              select: {
-                id: true,
-                full_name: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (!department) {
-      return res.status(404).json({
-        status: "fail",
-        message: "Department not found",
-      });
-    }
-
-    res.status(200).json({
-      status: "success",
-      data: department,
     });
   } catch (error) {
     next(error);
@@ -280,16 +210,8 @@ export const updateDepartment = async (
       });
     }
 
-    const parsedId = Number(id);
-    if (isNaN(parsedId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Invalid department ID",
-      });
-    }
-
     const existing = await prisma.department.findFirst({
-      where: { id: parsedId, company_id: companyId },
+      where: { id: Number(id), company_id: companyId },
     });
 
     if (!existing) {
@@ -344,16 +266,8 @@ export const deleteDepartment = async (
       });
     }
 
-    const parsedId = Number(id);
-    if (isNaN(parsedId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Invalid department ID",
-      });
-    }
-
     const existing = await prisma.department.findFirst({
-      where: { id: parsedId, company_id: companyId },
+      where: { id: Number(id), company_id: companyId },
     });
 
     if (!existing) {
@@ -518,21 +432,7 @@ export const getDepartmentTree = async (
             },
           }),
       },
-      select: {
-        id: true,
-        name: true,
-        department_code: true,
-        head_user_id: true,
-        head: {
-          select: {
-            id: true,
-            employee: {
-              select: { full_name: true },
-            },
-          },
-        },
-      },
-
+      select: { id: true, name: true, department_code: true },
     });
 
     // Format for frontend (React Flow / Dagre friendly)
@@ -561,206 +461,3 @@ export const getDepartmentTree = async (
     next(error);
   }
 };
-
-export const assignDepartmentHead = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    const companyId = req.user?.company_id;
-    const { id: departmentId } = req.params;
-    const { head_user_id } = req.body;
-
-    if (!companyId) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Company ID not found in user session",
-      });
-    }
-
-    if (!head_user_id) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Please provide head_user_id",
-      });
-    }
-
-    const parsedId = Number(departmentId);
-    if (isNaN(parsedId)) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Invalid department ID",
-      });
-    }
-
-    // 1. Verify Department exists in company
-    const department = await prisma.department.findFirst({
-      where: { id: parsedId, company_id: companyId },
-    });
-
-    if (!department) {
-      return res.status(404).json({
-        status: "fail",
-        message: "Department not found",
-      });
-    }
-
-    // 2. Verify User belongs to this department
-    const user = await prisma.appUser.findFirst({
-      where: { id: Number(head_user_id), company_id: companyId },
-      include: {
-        role: true,
-        employee: {
-          include: {
-            employments: {
-              where: { is_active: true },
-            },
-          },
-        },
-      },
-    });
-
-    if (!user || !user.employee) {
-      return res.status(404).json({
-        status: "fail",
-        message: "User not found or has no employee profile",
-      });
-    }
-
-    const isMember = user.employee.employments.some(
-      (emp) => emp.department_id === parsedId,
-    );
-
-    if (!isMember) {
-      return res.status(400).json({
-        status: "fail",
-        message: "The selected user must be a member of this department.",
-      });
-    }
-
-    // 3. Verify User is not already heading another department
-    const existingHeading = await prisma.department.findFirst({
-      where: { head_user_id: Number(head_user_id), id: { not: parsedId } },
-    });
-
-    if (existingHeading) {
-      return res.status(400).json({
-        status: "fail",
-        message: `This user is already the head of the "${existingHeading.name}" department.`,
-      });
-    }
-
-    // 4. Perform assignment and subordinate updates in a transaction
-    const updatedDepartment = await prisma.$transaction(async (tx) => {
-      // a. Promote user to Manager role if they are just an Employee
-      const managerRole = await tx.appRole.findFirst({
-        where: { name: "Manager" },
-      });
-
-      if (managerRole && user.role?.name === RoleNames.EMPLOYEE) {
-        await tx.appUser.update({
-          where: { id: user.id },
-          data: { role_id: managerRole.id },
-        });
-      }
-
-      // b. Update Department Head
-      const dept = await tx.department.update({
-        where: { id: parsedId },
-        data: { head_user_id: Number(head_user_id) },
-        include: {
-          head: {
-            select: {
-              id: true,
-              employee: {
-                select: { id: true, full_name: true },
-              },
-            },
-          },
-        },
-      });
-
-      // c. Bulk update subordinates' manager_id
-      // Assign everyone in this department to report to the new head
-      if (dept.head?.employee?.id) {
-        await tx.employment.updateMany({
-          where: {
-            department_id: parsedId,
-            company_id: companyId,
-            is_active: true,
-            employee_id: { not: dept.head.employee.id },
-          },
-          data: {
-            manager_id: dept.head.employee.id,
-          },
-        });
-      }
-
-      // d. Retroactively create krContributor records for the new department head
-      // for any CompanyKrDepartment entries where no contributor record exists yet.
-      if (dept.head?.employee?.id) {
-        const newHeadEmployeeId = dept.head.employee.id;
-
-        const deptKrAssignments = await tx.companyKrDepartment.findMany({
-          where: {
-            department_id: parsedId,
-            company_id: companyId,
-          },
-          select: {
-            company_kr_id: true,
-            companyKr: { select: { created_by: true } },
-          },
-        });
-
-        for (const dka of deptKrAssignments) {
-          const existing = await tx.krContributor.findFirst({
-            where: {
-              company_kr_id: dka.company_kr_id,
-              company_id: companyId,
-              user_id: newHeadEmployeeId,
-            },
-          });
-
-          if (!existing) {
-            await tx.krContributor.create({
-              data: {
-                company_id: companyId,
-                company_kr_id: dka.company_kr_id,
-                user_id: newHeadEmployeeId,
-                role_type: "DEPARTMENT_HEAD",
-                status_code: "assigned",
-                assigned_by: dka.companyKr?.created_by ?? newHeadEmployeeId,
-              },
-            });
-          }
-        }
-      }
-
-      return dept;
-    });
-
-    // Invalidate Cache rigorously
-    const patterns = [
-      `company:${companyId}:employees:*`,
-      `company:${companyId}:managers:*`,
-      `company:${companyId}:teams:*`,
-      `company:${companyId}:analytics:*`,
-      `company:${companyId}:team_member:*`,
-      `company:${companyId}:team_members_list:*`,
-      `company:${companyId}:employees_search:*`,
-    ];
-    Promise.all(patterns.map((p) => redisService.delByPattern(p))).catch(
-      console.error,
-    );
-
-    res.status(200).json({
-      status: "success",
-      message: "Department head assigned and team structure updated successfully",
-      data: { department: updatedDepartment },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-

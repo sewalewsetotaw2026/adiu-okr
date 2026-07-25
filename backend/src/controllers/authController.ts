@@ -13,6 +13,8 @@ import {
 } from "src/utils/auth";
 import { getUserPermissionMatrix } from "src/utils/permissionUtils";
 import crypto from "crypto";
+import { buildAuthSuccessResponse } from "src/utils/buildAuthSuccessResponse";
+import { AuthServiceUnavailableError, exchangeCodeWithAuth, InvalidCodeError } from "src/integration/http/auth.exchange.client";
 
 export const login = async (
   req: Request,
@@ -67,7 +69,6 @@ export const login = async (
             employments: {
               where: { is_active: true },
               select: {
-                department_id: true,
                 manager: {
                   select: { full_name: true },
                 },
@@ -75,10 +76,6 @@ export const login = async (
               take: 1,
             },
           },
-        },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
         },
       },
     });
@@ -105,47 +102,97 @@ export const login = async (
     }
 
     // generate token
-    const token = generateToken(
-      String(user.id),
-      String(user.company_id),
-      String(user.role_id)
-    );
-
-    res.status(200).json({
-      status: "success",
-      token,
-      data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          company_id: user.company_id,
-          company_code: (user as any).company.company_code,
-          company: {
-            company_code: (user as any).company.company_code,
-            primary_color: (user as any).company.primary_color,
-            secondary_color: (user as any).company.secondary_color,
-            logo_url: (user as any).company.logo_url
-          },
-          role_id: user.role_id,
-          role: (user as any).role,
-          employee_id: user.employee_id,
-          employee: (user as any).employee,
-          is_department_head: (user as any).headedDepartments?.length > 0,
-          headed_department_id: (user as any).headedDepartments?.[0]?.id,
-          is_manager: await prisma.employment.count({
-            where: {
-              manager_id: user.employee_id || "",
-              company_id: user.company_id,
-              is_active: true,
-            },
-          }) > 0,
-          onboarding_status: user.onboarding_status,
-          permissions: await getUserPermissionMatrix(user.role_id),
-        },
-      },
-    });
+    // Password verified — build the same response every auth path produces
+      try {
+        const response = await buildAuthSuccessResponse(user.id);
+        return res.status(200).json(response);
+      } catch (err: any) {
+        const status = err.code === "user_not_found" ? 404 : 401;
+        return res.status(status).json({
+          status: "fail",
+          message:
+            err.code === "account_deactivated"
+              ? "Your account has been deactivated. Please contact HR."
+              : err.code === "company_deactivated"
+                ? "Your company account has been deactivated or removed. Please contact support."
+                : "Incorrect email or password",
+        });
+      }
   } catch (error) {
     next(error);
+  }
+};
+
+
+/**
+ * GET /auth/callback?code=xxx
+ * Hit directly by the browser after Auth's 302 redirect.
+ * Does NOT exchange the code itself — only hands it to the EDM
+ * frontend, which has its own React/Redux app to dispatch into.
+ */
+export const ssoCallback = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const { code } = req.query;
+
+  
+
+  if (!code || typeof code !== "string") {
+    return res.redirect(302, `${process.env.EDM_FRONTEND_URL}/login`);
+  }
+  
+  return res.redirect(
+    302,
+    `${process.env.EDM_FRONTEND_URL}/auth/sso-callback?code=${encodeURIComponent(code)}`
+  );
+};
+
+/**
+ * POST /auth/sso-exchange
+ * Called by the EDM frontend's SsoCallback page via axios — never
+ * hit directly by a browser redirect. Exchanges the code with Auth,
+ * then returns the exact same shape login() returns.
+ */
+export const ssoExchange = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { code } = req.body;
+ 
+    if (!code) {
+      return res.status(400).json({ status: "fail", message: "Missing code" });
+    }
+    
+
+    const { user_id } = await exchangeCodeWithAuth(code);
+    const userId=Number(user_id)
+   
+    const response = await buildAuthSuccessResponse(userId);
+    return res.status(200).json(response);
+
+    
+
+  } catch (err: any) {
+    if (err instanceof InvalidCodeError) {
+      return res.status(401).json({ status: "fail", message: "Sign-in link expired or already used" });
+    }
+    if (err instanceof AuthServiceUnavailableError) {
+      return res.status(503).json({ status: "fail", message: "Authentication service unavailable" });
+    }
+    if (err.code === "user_not_found") {
+      return res.status(404).json({ status: "fail", message: "No matching EDM account found" });
+    }
+    if (err.code === "account_deactivated") {
+      return res.status(401).json({ status: "fail", message: "Your account has been deactivated. Please contact HR." });
+    }
+    if (err.code === "company_deactivated") {
+      return res.status(401).json({ status: "fail", message: "Your company account has been deactivated or removed." });
+    }
+    return res.status(401).json({ status: "fail", message: "Sign-in failed" });
   }
 };
 
@@ -248,6 +295,60 @@ export const forgotPassword = async (
   }
 };
 
+export const verifyResetToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { token } = req.params;
+
+    if (!token) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Reset token is required",
+      });
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const resetRecord = await prisma.passwordReset.findFirst({
+      where: {
+        token_hash: hashedToken,
+      },
+    });
+
+    if (!resetRecord) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Token is invalid.",
+      });
+    }
+
+    if (resetRecord.used) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Token has already been used.",
+        isUsed: true,
+      });
+    }
+
+    if (resetRecord.expires_at < new Date()) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Token has expired.",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Token is valid.",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const resetPassword = async (
   req: Request,
   res: Response,
@@ -285,17 +386,7 @@ export const resetPassword = async (
           include: {
             company: true,
             employee: {
-              include: {
-                employments: {
-                  where: { is_active: true },
-                  select: { department_id: true },
-                  take: 1,
-                },
-              },
-            },
-            headedDepartments: {
-              select: { id: true },
-              take: 1,
+              select: { full_name: true },
             },
           },
         },
@@ -352,8 +443,6 @@ export const resetPassword = async (
       String(resetRecord.user.role_id)
     );
 
-    const primaryDeptId = resetRecord.user.employee?.employments?.[0]?.department_id || null;
-
     res.status(200).json({
       status: "success",
       token: tokenJWT,
@@ -365,10 +454,6 @@ export const resetPassword = async (
           role_id: resetRecord.user.role_id,
           employee_id: resetRecord.user.employee_id,
           onboarding_status: resetRecord.user.onboarding_status,
-          department_id: primaryDeptId,
-          employee: resetRecord.user.employee,
-          is_department_head: (resetRecord.user as any).headedDepartments?.length > 0,
-          headed_department_id: (resetRecord.user as any).headedDepartments?.[0]?.id,
           permissions: await getUserPermissionMatrix(resetRecord.user.role_id),
         },
       },
@@ -387,21 +472,6 @@ export const updatePassword = async (
     // get user
     const user = await prisma.appUser.findUnique({
       where: { id: parseInt(req.user!.user_id) },
-      include: {
-        employee: {
-          include: {
-            employments: {
-              where: { is_active: true },
-              select: { department_id: true },
-              take: 1,
-            },
-          },
-        },
-        headedDepartments: {
-          select: { id: true },
-          take: 1,
-        },
-      },
     });
 
     if (!user) {
@@ -415,7 +485,7 @@ export const updatePassword = async (
     const { currentPassword, newPassword } = req.body;
     if (!(await comparePassword(currentPassword, user.password_hash))) {
       return res.status(401).json({
-        status: "fail",
+        status: "fail", 
         message: "Your current password is wrong",
       });
     }
@@ -430,6 +500,16 @@ export const updatePassword = async (
       },
     });
 
+    await prisma.passwordChangeLog.create({
+      data: {
+        target_user_id: user.id,
+        changed_by_id: user.id, // same user changing own password
+        company_id: user.company_id,
+        // ip_address: req.ip,
+        // user_agent: req.headers["user-agent"] as string,
+      },
+    });
+
     // log user in with send JWT
     const token = generateToken(
       String(user.id),
@@ -437,8 +517,7 @@ export const updatePassword = async (
       String(user.role_id)
     );
 
-    const primaryDeptId = user.employee?.employments?.[0]?.department_id || null;
-
+    
     res.status(200).json({
       status: "success",
       token,
@@ -450,10 +529,6 @@ export const updatePassword = async (
           role_id: user.role_id,
           employee_id: user.employee_id,
           onboarding_status: user.onboarding_status,
-          department_id: primaryDeptId,
-          employee: user.employee,
-          is_department_head: (user as any).headedDepartments?.length > 0,
-          headed_department_id: (user as any).headedDepartments?.[0]?.id,
           permissions: await getUserPermissionMatrix(user.role_id),
         },
       },
@@ -488,19 +563,8 @@ export const updateEmail = async (
     }
 
     // 1. Get user
-    const user = await prisma.appUser.findFirst({
+    const user = await prisma.appUser.findUnique({
       where: { id: parseInt(userId) },
-      include: {
-        employee: {
-          include: {
-            employments: {
-              where: { is_active: true },
-              select: { department_id: true },
-              take: 1,
-            },
-          },
-        },
-      },
     });
 
     if (!user) {
@@ -540,6 +604,87 @@ export const updateEmail = async (
       status: "success",
       message: "Email updated successfully",
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCompanyPasswordAudit = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const companyId = req.user?.company_id;
+    if (!companyId) {
+      return res.status(400).json({ status: "fail", message: "Company ID missing" });
+    }
+
+    const { startDate, endDate, employeeId } = req.query;
+
+    // Build the raw SQL query dynamically
+    let sql = `
+      SELECT
+        pcl.id,
+        pcl.changed_at,
+        pcl.user_agent,
+        target.id as target_user_id,
+        target.email as target_email,
+        target_emp.full_name as target_full_name,
+        target_emp.id as target_employee_id,
+        changer.id as changer_user_id,
+        changer.email as changer_email,
+        changer_emp.full_name as changer_full_name
+      FROM password_change_log pcl
+      LEFT JOIN app_user target ON pcl.target_user_id = target.id
+      LEFT JOIN employee target_emp ON target.employee_id = target_emp.id
+      LEFT JOIN app_user changer ON pcl.changed_by_id = changer.id
+      LEFT JOIN employee changer_emp ON changer.employee_id = changer_emp.id
+      WHERE pcl.company_id = $1
+    `;
+    const params: any[] = [companyId];
+    let paramIndex = 2;
+
+    if (employeeId) {
+      sql += ` AND pcl.target_user_id = $${paramIndex++}`;
+      params.push(Number(employeeId));
+    }
+    if (startDate) {
+      sql += ` AND pcl.changed_at >= $${paramIndex++}`;
+      params.push(new Date(startDate as string));
+    }
+    if (endDate) {
+      sql += ` AND pcl.changed_at <= $${paramIndex++}`;
+      params.push(new Date(endDate as string));
+    }
+
+    sql += ` ORDER BY pcl.changed_at DESC`;
+
+    const rawLogs: any[] = await prisma.$queryRawUnsafe(sql, ...params);
+
+    // Transform to match the frontend’s expected shape (nested target_user / changed_by)
+    const logs = rawLogs.map(log => ({
+      id: log.id,
+      changed_at: log.changed_at,
+      user_agent: log.user_agent,
+      target_user: {
+        id: log.target_user_id,
+        email: log.target_email,
+        employee: log.target_employee_id ? {
+          id: log.target_employee_id,
+          full_name: log.target_full_name,
+        } : null,
+      },
+      changed_by: {
+        id: log.changer_user_id,
+        email: log.changer_email,
+        employee: log.changer_full_name ? {
+          full_name: log.changer_full_name,
+        } : null,
+      },
+    }));
+
+    res.status(200).json({ status: "success", data: logs });
   } catch (error) {
     next(error);
   }

@@ -48,6 +48,10 @@ import financialDetailRoutes from "src/routes/financialDetailRoutes";
 import profilePictureRoutes from "src/routes/profilePictureRoutes";
 import documentSignerConfigRoutes from "src/routes/documentSignerConfigRoutes";
 
+//upload file
+import bulkUploadRoutes from "src/routes/bulkUploadRoutes";
+
+
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -94,6 +98,8 @@ router.use("/resignation-letter", resignationLetterRoutes);
 router.use("/notifications", notificationRoutes);
 router.use("/manager", managerRoutes);
 
+
+
 router.use("/emergency-contacts", emergencyContactRoutes);
 router.use("/banks", bankRoutes);
 router.use("/financial-details", financialDetailRoutes);
@@ -108,41 +114,7 @@ router.use("/celebrations", celebrationRoutes);
 import platformRoutes from "src/routes/platformRoutes";
 router.use("/platform", platformRoutes);
 
-// OKR Module
-import okrCycleRoutes from "src/routes/okrCycleRoutes";
-import okrCompanyRoutes from "src/routes/okrCompanyRoutes";
-import okrDepartmentRoutes from "src/routes/okrDepartmentRoutes";
-import okrContributorRoutes from "src/routes/okrContributorRoutes";
-import okrEmployeeRoutes from "src/routes/okrEmployeeRoutes";
-import okrManagerRoutes from "src/routes/okrManagerRoutes";
-import okrManagerPlanRoutes from "src/routes/okrManagerPlanRoutes";
-import okrMetricRoutes from "src/routes/okrMetricRoutes";
-import okrAuditRoutes from "src/routes/okrAuditRoutes";
-import okrDashboardRoutes from "src/routes/okrDashboardRoutes";
-import okrArchiveRoutes from "src/routes/okrArchiveRoutes";
-import okrConfigRoutes from "src/routes/okrConfigRoutes";
-import okrApprovalRoutes from "src/routes/okrApprovalRoutes";
-import okrPlanningRoutes from "src/routes/okrPlanningRoutes";
-import okrChangeRequestRoutes from "src/routes/okrChangeRequestRoutes";
-import okrImportExportRoutes from "src/routes/okrImportExportRoutes";
-
-router.use("/okr/approvals", okrApprovalRoutes);
-router.use("/okr/change-requests", okrChangeRequestRoutes);
-// New corrected planning hierarchy (monthly/weekly/daily). Must mount BEFORE
-// /okr/employee so its child paths take precedence over any legacy routes.
-router.use("/okr/contributors", okrContributorRoutes);
-router.use("/okr/cycles", okrCycleRoutes);
-router.use("/okr/company", okrCompanyRoutes);
-router.use("/okr/department", okrDepartmentRoutes);
-router.use("/okr/employee", okrEmployeeRoutes);
-router.use("/okr/manager", okrManagerRoutes);
-router.use("/okr/manager-plans", okrManagerPlanRoutes);
-router.use("/okr/metrics", okrMetricRoutes);
-router.use("/okr/configurations", okrConfigRoutes);
-router.use("/okr/audit", okrAuditRoutes);
-router.use("/okr/dashboard", okrDashboardRoutes);
-router.use("/okr", okrImportExportRoutes);
-router.use("/okr", okrArchiveRoutes);
-router.use("/okr", okrPlanningRoutes);
+//upload files
+router.use("/bulk-upload", bulkUploadRoutes);
 
 export default router;

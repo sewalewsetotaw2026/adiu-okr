@@ -209,6 +209,7 @@ export class UserService {
     let createdEmployee: any = null;
     let createdEmployment: any = null;
     let newUser: any = null;
+    let passwordHash: any = hashPassword;
     let finalEmployeeId: string | undefined = desiredEmployeeId;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -503,6 +504,7 @@ export class UserService {
                 id: true,
                 email: true,
                 role_id: true,
+                onboarding_status: true,  // added to send it to the auth service
                 is_active: true,
                 employee: {
                   select: {
@@ -529,6 +531,7 @@ export class UserService {
 
             return {
               user: txUser,
+              passwordHash: hashedPassword,   // added to send it to the auth service
               employee: txEmployee,
               employment: txEmployment,
               jobTitleName: resolvedJobTitleName, // Return resolved data
@@ -542,6 +545,7 @@ export class UserService {
         newUser = result.user;
         createdEmployee = result.employee;
         createdEmployment = result.employment;
+        passwordHash=result
 
         // 6. Send Welcome / Offer Email
         const setupUrl = `${
@@ -617,6 +621,8 @@ export class UserService {
       user: newUser,
       employee: createdEmployee,
       employment: createdEmployment,
+      passwordHash
+      
     };
   }
 

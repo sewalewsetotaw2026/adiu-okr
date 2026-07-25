@@ -41,6 +41,28 @@ export const verifyAccessControl = (
         permissions[normalizedAction] || "n/a"
       ).toLowerCase();
 
+      // Special override for HR roles to read resources needed for payroll sync
+      const SYNC_ROLES = ["hr generalist", "hr cs manager", "hr cs director", "hr"];
+      // const SYNC_RESOURCES = [Resources.USER, Resources.ROLE, Resources.COMPANY, Resources.BANK];
+      const SYNC_RESOURCES = [
+          Resources.USER,
+          Resources.ROLE,
+          Resources.COMPANY,
+          Resources.BANK,
+          Resources.LEAVE_TYPE,
+          Resources.LEAVE_APPLICATION,
+          Resources.PUBLIC_HOLIDAY,
+          Resources.LEAVE_SETTINGS,
+        ];
+      if (
+        normalizedAction === "read" &&
+        user.role &&
+        SYNC_ROLES.includes(user.role.toLowerCase()) &&
+        SYNC_RESOURCES.includes(resourceCode)
+      ) {
+        return next();
+      }
+
       if (userScopeForAction === "n/a") {
         return res.status(403).json({
           status: "fail",

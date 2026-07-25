@@ -260,66 +260,40 @@ interface RoleHistory {
 function buildRoleHistory(employeeData: any): RoleHistory[] {
   const { employments = [], careerEvents = [] } = employeeData;
 
-  // Sort employments by start date
-  const sortedEmployments = [...employments].sort(
-    (a, b) =>
-      new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
-  );
-
-  // If we have career events, build roles from them
+  // ==============================
+  // 1. PRIMARY SOURCE: careerEvents
+  // ==============================
   if (careerEvents.length > 0) {
-    const roles: RoleHistory[] = [];
-
-    // First role from initial employment
-    const initial = sortedEmployments[0];
-    if (initial) {
-      const firstEventDate =
-        careerEvents.length > 0
-          ? new Date(careerEvents[0].effective_date)
-          : null;
-
-      roles.push({
-        title: initial.jobTitle?.title || "Employee",
-        level: initial.jobTitle?.level,
-        department: initial.department?.name,
-        startDate: formatDate(initial.start_date),
-        endDate: firstEventDate
-          ? formatDate(new Date(firstEventDate.getTime() - 86400000))
-          : null,
-        isCurrent: false,
-      });
-    }
-
-    // Build roles from career events
     const sortedEvents = [...careerEvents].sort(
       (a, b) =>
         new Date(a.effective_date).getTime() -
         new Date(b.effective_date).getTime(),
     );
 
-    sortedEvents.forEach((event, index) => {
+    const roles: RoleHistory[] = sortedEvents.map((event, index) => {
       const nextEvent = sortedEvents[index + 1];
-      const isCurrent = !nextEvent && employments.some((e: any) => e.is_active);
 
-      roles.push({
+      return {
         title: event.newJobTitle?.title || event.new_job_title || "Employee",
         level: event.newJobTitle?.level || event.new_level,
         department: event.newDepartment?.name || event.new_department,
         startDate: formatDate(event.effective_date),
         endDate: nextEvent
           ? formatDate(
-            new Date(new Date(nextEvent.effective_date).getTime() - 86400000),
-          )
+              new Date(new Date(nextEvent.effective_date).getTime() - 86400000),
+            )
           : null,
-        isCurrent,
-      });
+        isCurrent: !nextEvent && employments.some((e: any) => e.is_active),
+      };
     });
 
     return roles;
   }
 
-  // No career events - use employments directly
-  return sortedEmployments.map((emp, index) => ({
+  // ==============================
+  // 2. FALLBACK: employments only
+  // ==============================
+  return employments.map((emp: any) => ({
     title: emp.jobTitle?.title || "Employee",
     level: emp.jobTitle?.level,
     department: emp.department?.name,
@@ -328,7 +302,6 @@ function buildRoleHistory(employeeData: any): RoleHistory[] {
     isCurrent: emp.is_active === true,
   }));
 }
-
 // ============================================
 // TEMPLATE BUILDERS
 // ============================================

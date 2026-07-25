@@ -35,25 +35,28 @@ export const checkAndNotifyPensionMilestones = async (): Promise<void> => {
     const employees = await prisma.employee.findMany({
       where: {
         employments: {
-          some: { is_active: true }
-        }
+          some: { is_active: true },
+        },
       },
       select: {
         id: true,
         full_name: true,
         company_id: true,
         date_of_birth: true,
-      }
+      },
     });
 
-    console.log(`[PensionNotificationService] Checking ${employees.length} employees for retirement milestones.`);
+    // console.log(`[PensionNotificationService] Checking ${employees.length} employees for retirement milestones.`);
 
     // Cache for company settings to avoid redundant DB calls
-    const companySettingsMap = new Map<number, { pension_age: number, pension_notification_days: number }>();
+    const companySettingsMap = new Map<
+      number,
+      { pension_age: number; pension_notification_days: number }
+    >();
 
     for (const emp of employees) {
       if (!emp.date_of_birth) {
-        console.log(`[PensionNotificationService] Skipping ${emp.full_name} - DOB missing.`);
+        // console.log(`[PensionNotificationService] Skipping ${emp.full_name} - DOB missing.`);
         continue;
       }
       const companyId = emp.company_id;
@@ -65,7 +68,8 @@ export const checkAndNotifyPensionMilestones = async (): Promise<void> => {
         }) as any);
         settings = {
           pension_age: dbSettings?.pension_age ?? 60,
-          pension_notification_days: dbSettings?.pension_notification_days ?? 30,
+          pension_notification_days:
+            dbSettings?.pension_notification_days ?? 30,
         };
         companySettingsMap.set(companyId, settings);
       }
@@ -75,37 +79,58 @@ export const checkAndNotifyPensionMilestones = async (): Promise<void> => {
       pensionDate.setFullYear(dob.getFullYear() + settings.pension_age);
       pensionDate.setHours(0, 0, 0, 0);
 
-      const remainingDays = Math.ceil((pensionDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+      const remainingDays = Math.ceil(
+        (pensionDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
+      );
 
-      console.log(`[PensionNotificationService] ${emp.full_name}: Retirement in ${remainingDays} days (Age ${settings.pension_age}, Target: ${pensionDate.toDateString()})`);
+      // console.log(
+      //   `[PensionNotificationService] ${emp.full_name}: Retirement in ${remainingDays} days (Age ${settings.pension_age}, Target: ${pensionDate.toDateString()})`,
+      // );
 
       let milestoneReached = false;
       let milestoneLabel = "";
 
       // Trigger milestones: User-defined day, and some standard ones
       const milestones = [settings.pension_notification_days, 14, 7, 3, 1, 0];
-      console.log(`[PensionNotificationService] Checking milestones: ${milestones.join(", ")} against remainingDays: ${remainingDays}`);
+      // console.log(
+      //   `[PensionNotificationService] Checking milestones: ${milestones.join(", ")} against remainingDays: ${remainingDays}`,
+      // );
 
       if (milestones.includes(remainingDays)) {
         milestoneReached = true;
-        if (remainingDays === 0) milestoneLabel = "reaches retirement age today";
-        else if (remainingDays === 1) milestoneLabel = "is reaching retirement age tomorrow";
-        else milestoneLabel = `is reaching retirement age in ${remainingDays} days`;
-        console.log(`[PensionNotificationService] Milestone REACHED for ${emp.full_name}: ${milestoneLabel}`);
+        if (remainingDays === 0)
+          milestoneLabel = "reaches retirement age today";
+        else if (remainingDays === 1)
+          milestoneLabel = "is reaching retirement age tomorrow";
+        else
+          milestoneLabel = `is reaching retirement age in ${remainingDays} days`;
+        // console.log(
+        //   `[PensionNotificationService] Milestone REACHED for ${emp.full_name}: ${milestoneLabel}`,
+        // );
       }
 
       if (milestoneReached) {
         await notifyHRAndAdmins(emp, milestoneLabel, pensionDate, settings);
       } else {
-        console.log(`[PensionNotificationService] No milestone reached for ${emp.full_name}.`);
+        // console.log(
+        //   `[PensionNotificationService] No milestone reached for ${emp.full_name}.`,
+        // );
       }
     }
   } catch (error) {
-    console.error("[PensionNotificationService] Error in checkAndNotifyPensionMilestones:", error);
+    console.error(
+      "[PensionNotificationService] Error in checkAndNotifyPensionMilestones:",
+      error,
+    );
   }
 };
 
-const notifyHRAndAdmins = async (employee: any, milestoneLabel: string, pensionDate: Date, settings: any) => {
+const notifyHRAndAdmins = async (
+  employee: any,
+  milestoneLabel: string,
+  pensionDate: Date,
+  settings: any,
+) => {
   const companyId = employee.company_id;
   const employeeName = employee.full_name;
 
@@ -125,11 +150,17 @@ const notifyHRAndAdmins = async (employee: any, milestoneLabel: string, pensionD
     },
   });
 
-  const recipientMap = new Map<string, { employee_id: string; email: string | null }>();
+  const recipientMap = new Map<
+    string,
+    { employee_id: string; email: string | null }
+  >();
   roles.forEach((role) => {
     role.appUsers.forEach((user) => {
       if (user.employee_id) {
-        recipientMap.set(user.employee_id, { employee_id: user.employee_id, email: user.email });
+        recipientMap.set(user.employee_id, {
+          employee_id: user.employee_id,
+          email: user.email,
+        });
       }
     });
   });
@@ -163,7 +194,7 @@ const notifyHRAndAdmins = async (employee: any, milestoneLabel: string, pensionD
             <h2 style="color: ${branding.primaryColor};">${title}</h2>
             <p>${message}</p>
             <p>Please begin the necessary offboarding or transition procedures for this employee.</p>
-            <a href="${process.env.FRONTEND_URL}/admin/employees/${employee.id}" 
+            <a href="${process.env.FRONTEND_URL}/admin/employees/${employee.id}"
                style="display: inline-block; padding: 10px 20px; background-color: ${branding.primaryColor}; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">
                View Employee Profile
             </a>

@@ -4,6 +4,7 @@ import { sendEmail } from "src/utils/email";
 import {
   calculateWorkingDays,
   calculateReturnDate,
+  validateLeaveDates,
   datesOverlap,
   getLeaveStatistics,
   getFiscalYear,
@@ -872,12 +873,8 @@ export const createLeaveApplication = async (
 
     const leaveCode = (leaveType.code || "").toUpperCase();
     const isSickLeave = leaveCode === "SICK" || leaveCode.startsWith("SICK_");
-    const isAnnualLeave = leaveCode === "ANNUAL";
-    const isUnpaidLeave = leaveCode === "UNPAID";
 
     const now = new Date();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const probationEndDate = activeEmployment.probation_end_date
       ? new Date(activeEmployment.probation_end_date)
       : null;
@@ -887,36 +884,6 @@ export const createLeaveApplication = async (
         status: "fail",
         message: `You are currently in probation period until ${probationEndDate.toLocaleDateString("en-GB")}. Leave requests are not allowed during probation.`,
       });
-    }
-
-    // Leave start-date policy by leave type:
-    // - UNPAID: start date must be today or in the future
-    // - ANNUAL: start date must be within 4 days before today and 2 days after today
-    // - Others: can be backdated freely
-    const startDateOnly = new Date(startDateObj);
-    startDateOnly.setHours(0, 0, 0, 0);
-
-    if (isUnpaidLeave && startDateOnly < today) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Unpaid leave must start from today or a future date",
-      });
-    }
-
-    if (isAnnualLeave) {
-      const annualMinStart = new Date(today);
-      annualMinStart.setDate(annualMinStart.getDate() - 4);
-
-      const annualMaxStart = new Date(today);
-      annualMaxStart.setDate(annualMaxStart.getDate() + 2);
-
-      if (startDateOnly < annualMinStart || startDateOnly > annualMaxStart) {
-        return res.status(400).json({
-          status: "fail",
-          message:
-            "Annual leave start date must be between 4 days before today and 2 days after today",
-        });
-      }
     }
 
     // Normalize gender for comparison (handle "M"/"Male" and "F"/"Female")
@@ -971,18 +938,16 @@ export const createLeaveApplication = async (
     // Calculate return date
     const returnDate = await calculateReturnDate(endDateObj, companyId);
 
-    // Validate date ordering
-    if (endDateObj < startDateObj) {
+    // Validate dates
+    const dateValidation = validateLeaveDates(
+      startDateObj,
+      endDateObj,
+      returnDate,
+    );
+    if (!dateValidation.valid) {
       return res.status(400).json({
         status: "fail",
-        message: "End date must be after start date",
-      });
-    }
-
-    if (returnDate < endDateObj) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Return date must be after end date",
+        message: dateValidation.message,
       });
     }
 
@@ -1857,17 +1822,12 @@ export const cancelLeaveApplication = async (
       if (currentStatus === "APPROVED") {
         return res.status(400).json({
           status: "fail",
-          message:
-            "Approved leave cannot be cancelled directly. Please use the 'Request Cancellation' feature instead.",
+          message: "Approved leave cannot be cancelled directly. Please use the 'Request Cancellation' feature instead.",
         });
       }
 
       // If not approved, must be one of the pending statuses
-      if (
-        !["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"].includes(
-          currentStatus,
-        )
-      ) {
+      if (!["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"].includes(currentStatus)) {
         return res.status(400).json({
           status: "fail",
           message: `Cannot cancel leave with status: ${currentStatus.replace(/_/g, " ")}`,
@@ -1905,8 +1865,7 @@ export const cancelLeaveApplication = async (
         if (!["ADMIN", "HR", "SUPER ADMIN"].includes(userRole)) {
           return res.status(400).json({
             status: "fail",
-            message:
-              "Cannot cancel a leave that has already started. Please use the 'Request Early Return' feature instead.",
+            message: "Cannot cancel a leave that has already started. Please use the 'Request Early Return' feature instead.",
           });
         }
 
@@ -1982,9 +1941,7 @@ export const cancelLeaveApplication = async (
           .delByPattern(`company:${cancelCid}:leave_balance_my:*`)
           .catch(console.error);
         redisService
-          .delByPattern(
-            `leave_balance:${cancelCid}:${application.employee_id}:*`,
-          )
+          .delByPattern(`leave_balance:${cancelCid}:${application.employee_id}:*`)
           .catch(console.error);
 
         return res.status(200).json({
@@ -2380,16 +2337,11 @@ export const getLeaveManagementTabCounts = async (
 
     const employeeFilter: any = {};
     if (departmentId) {
-      employeeFilter.employments = {
-        some: { is_active: true, department_id: Number(departmentId) },
-      };
+      employeeFilter.employments = { some: { is_active: true, department_id: Number(departmentId) } };
     }
     if (jobTitleId) {
       employeeFilter.employments = {
-        some: {
-          ...(employeeFilter.employments?.some || { is_active: true }),
-          job_title_id: Number(jobTitleId),
-        },
+        some: { ...(employeeFilter.employments?.some || { is_active: true }), job_title_id: Number(jobTitleId) },
       };
     }
     if (gender) {
@@ -2405,10 +2357,7 @@ export const getLeaveManagementTabCounts = async (
     }
     if (managerId) {
       employeeFilter.employments = {
-        some: {
-          ...(employeeFilter.employments?.some || { is_active: true }),
-          manager_id: managerId,
-        },
+        some: { ...(employeeFilter.employments?.some || { is_active: true }), manager_id: managerId },
       };
     }
 
@@ -2418,11 +2367,11 @@ export const getLeaveManagementTabCounts = async (
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     const todayString = `${year}-${month}-${day}`;
-
+    
     // Force UTC comparison to avoid timezone shifts
     const today = new Date(`${todayString}T00:00:00.000Z`);
     const endOfDay = new Date(`${todayString}T23:59:59.999Z`);
-
+    
     const thresholdDate = new Date();
     const daysThreshold = Number(req.query.days_threshold) || 90;
     thresholdDate.setDate(now.getDate() + daysThreshold);
@@ -2437,54 +2386,32 @@ export const getLeaveManagementTabCounts = async (
     };
 
     // 2. Pending Approval Condition
-    const pendingWhere: any = {
+    const pendingWhere: any = { 
       company_id: companyId,
-      cancellation_status: null, // Exclude cancellations from normal pending
+      cancellation_status: null // Exclude cancellations from normal pending
     };
     if (userRole === RoleNames.HR) {
       pendingWhere.current_status = "PENDING_HR";
-    } else if (
-      ["CEO", "Managing Director", "General Manager"].includes(userRole || "")
-    ) {
+    } else if (["CEO", "Managing Director", "General Manager"].includes(userRole || "")) {
       pendingWhere.current_status = "PENDING_CEO";
-    } else if (
-      employeeId &&
-      ![RoleNames.ADMIN, RoleNames.SUPERADMIN, RoleNames.HR].includes(
-        userRole as any,
-      )
-    ) {
+    } else if (employeeId && ![RoleNames.ADMIN, RoleNames.SUPERADMIN, RoleNames.HR].includes(userRole as any)) {
       pendingWhere.current_status = "PENDING_SUPERVISOR";
-      pendingWhere.employee = {
-        employments: { some: { manager_id: employeeId, is_active: true } },
-      };
+      pendingWhere.employee = { employments: { some: { manager_id: employeeId, is_active: true } } };
     } else {
-      pendingWhere.current_status = {
-        in: ["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"],
-      };
+      pendingWhere.current_status = { in: ["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"] };
     }
 
     // 3. Cancellation Requests Condition
     const cancellationsWhere: any = { company_id: companyId };
     if (userRole === RoleNames.HR) {
       cancellationsWhere.cancellation_status = "PENDING_HR";
-    } else if (
-      ["CEO", "Managing Director", "General Manager"].includes(userRole || "")
-    ) {
+    } else if (["CEO", "Managing Director", "General Manager"].includes(userRole || "")) {
       cancellationsWhere.cancellation_status = "PENDING_CEO";
-    } else if (
-      employeeId &&
-      ![RoleNames.ADMIN, RoleNames.SUPERADMIN, RoleNames.HR].includes(
-        userRole as any,
-      )
-    ) {
+    } else if (employeeId && ![RoleNames.ADMIN, RoleNames.SUPERADMIN, RoleNames.HR].includes(userRole as any)) {
       cancellationsWhere.cancellation_status = "PENDING_SUPERVISOR";
-      cancellationsWhere.employee = {
-        employments: { some: { manager_id: employeeId, is_active: true } },
-      };
+      cancellationsWhere.employee = { employments: { some: { manager_id: employeeId, is_active: true } } };
     } else {
-      cancellationsWhere.cancellation_status = {
-        in: ["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"],
-      };
+      cancellationsWhere.cancellation_status = { in: ["PENDING_SUPERVISOR", "PENDING_HR", "PENDING_CEO"] };
     }
 
     // 4. Cash-Out Requests Condition
@@ -2495,9 +2422,9 @@ export const getLeaveManagementTabCounts = async (
       company_id: companyId,
       remaining_days: { gt: 0 },
       expiry_date: {
-        gte: new Date(new Date().setHours(0, 0, 0, 0)),
-        lte: thresholdDate,
-      },
+        gte: new Date(new Date().setHours(0,0,0,0)),
+        lte: thresholdDate
+      }
     };
 
     // Apply shared employee filters to all queries
@@ -2505,29 +2432,29 @@ export const getLeaveManagementTabCounts = async (
       onLeaveWhere.employee = employeeFilter;
       // For pending/cancellations, merge with existing employee filter if any (supervisor case)
       if (pendingWhere.employee?.employments) {
-        pendingWhere.employee = {
-          ...employeeFilter,
-          employments: {
-            some: {
-              ...employeeFilter.employments.some,
-              manager_id: employeeId,
-            },
-          },
-        };
+         pendingWhere.employee = { 
+           ...employeeFilter, 
+           employments: { 
+             some: { 
+               ...employeeFilter.employments.some,
+               manager_id: employeeId
+             } 
+           } 
+         };
       } else {
         pendingWhere.employee = employeeFilter;
       }
 
       if (cancellationsWhere.employee?.employments) {
-        cancellationsWhere.employee = {
-          ...employeeFilter,
-          employments: {
-            some: {
-              ...employeeFilter.employments.some,
-              manager_id: employeeId,
-            },
-          },
-        };
+         cancellationsWhere.employee = { 
+           ...employeeFilter, 
+           employments: { 
+             some: { 
+               ...employeeFilter.employments.some,
+               manager_id: employeeId
+             } 
+           } 
+         };
       } else {
         cancellationsWhere.employee = employeeFilter;
       }
@@ -2535,7 +2462,7 @@ export const getLeaveManagementTabCounts = async (
       cashOutWhere.employee = employeeFilter;
       expiringWhere.employee = employeeFilter;
     }
-
+    
     if (leaveTypeId) {
       const lid = Number(leaveTypeId);
       onLeaveWhere.leave_type_id = lid;
@@ -2545,14 +2472,13 @@ export const getLeaveManagementTabCounts = async (
       expiringWhere.leave_type_id = lid;
     }
 
-    const [on_leave, pending, cancellations, cash_out, expiring] =
-      await Promise.all([
-        prisma.leaveApplication.count({ where: onLeaveWhere }),
-        prisma.leaveApplication.count({ where: pendingWhere }),
-        prisma.leaveApplication.count({ where: cancellationsWhere }),
-        prisma.leaveCashOut.count({ where: cashOutWhere }),
-        prisma.leaveBalance.count({ where: expiringWhere }),
-      ]);
+    const [on_leave, pending, cancellations, cash_out, expiring] = await Promise.all([
+      prisma.leaveApplication.count({ where: onLeaveWhere }),
+      prisma.leaveApplication.count({ where: pendingWhere }),
+      prisma.leaveApplication.count({ where: cancellationsWhere }),
+      prisma.leaveCashOut.count({ where: cashOutWhere }),
+      prisma.leaveBalance.count({ where: expiringWhere }),
+    ]);
 
     res.status(200).json({
       status: "success",
@@ -2698,33 +2624,22 @@ export const requestLeaveCancellation = async (
 
     const applicationId = Number(id);
     const application = await prisma.leaveApplication.findFirst({
-      where: {
-        id: applicationId,
-        company_id: companyId,
-        employee_id: employeeId,
-      },
+      where: { id: applicationId, company_id: companyId, employee_id: employeeId },
       include: {
         employee: {
           include: {
-            employments: { where: { is_active: true }, take: 1 },
-          },
-        },
-      },
+            employments: { where: { is_active: true }, take: 1 }
+          }
+        }
+      }
     });
 
     if (!application) {
-      return res
-        .status(404)
-        .json({ status: "fail", message: "Leave application not found" });
+      return res.status(404).json({ status: "fail", message: "Leave application not found" });
     }
 
     if (application.current_status !== "APPROVED") {
-      return res
-        .status(400)
-        .json({
-          status: "fail",
-          message: "Only approved leave can be cancelled",
-        });
+      return res.status(400).json({ status: "fail", message: "Only approved leave can be cancelled" });
     }
 
     const today = new Date();
@@ -2734,18 +2649,15 @@ export const requestLeaveCancellation = async (
     const returnDateObj = new Date(requested_return_date);
 
     if (returnDateObj < today || returnDateObj > endDate) {
-      return res.status(400).json({
-        status: "fail",
-        message:
-          "Requested return date must be between today and the original end date",
+      return res.status(400).json({ 
+        status: "fail", 
+        message: "Requested return date must be between today and the original end date" 
       });
     }
 
     // Determine initial cancellation strategy (Manager -> HR)
     const employment = application.employee.employments[0];
-    const initialStatus = employment?.manager_id
-      ? "PENDING_SUPERVISOR"
-      : "PENDING_HR";
+    const initialStatus = employment?.manager_id ? "PENDING_SUPERVISOR" : "PENDING_HR";
 
     await prisma.leaveApplication.update({
       where: { id: applicationId },
@@ -2761,12 +2673,8 @@ export const requestLeaveCancellation = async (
     notifyLeaveCancellationRequested(application).catch(console.error);
 
     // Invalidate Cache
-    redisService
-      .delByPattern(`company:${companyId}:leave_list:*`)
-      .catch(console.error);
-    redisService
-      .delByPattern(`company:${companyId}:leave_my:*`)
-      .catch(console.error);
+    redisService.delByPattern(`company:${companyId}:leave_list:*`).catch(console.error);
+    redisService.delByPattern(`company:${companyId}:leave_my:*`).catch(console.error);
 
     const updatedWithIncludes = await prisma.leaveApplication.findUnique({
       where: { id: applicationId },
@@ -2776,21 +2684,21 @@ export const requestLeaveCancellation = async (
           include: {
             employments: {
               include: {
-                manager: true,
-              },
-            },
-          },
+                manager: true
+              }
+            }
+          }
         },
         reliefOfficer: true,
         approvalLogs: {
           include: {
-            approver: true,
+            approver: true
           },
           orderBy: {
-            action_date: "desc",
-          },
-        },
-      },
+            action_date: 'desc'
+          }
+        }
+      }
     });
 
     res.status(200).json({
@@ -2824,16 +2732,14 @@ export const approveLeaveCancellation = async (
       include: {
         employee: {
           include: {
-            employments: { where: { is_active: true }, take: 1 },
-          },
-        },
-      },
+            employments: { where: { is_active: true }, take: 1 }
+          }
+        }
+      }
     });
 
     if (!application || !(application as any).cancellation_status) {
-      return res
-        .status(404)
-        .json({ status: "fail", message: "Cancellation request not found" });
+      return res.status(404).json({ status: "fail", message: "Cancellation request not found" });
     }
 
     const currentCanStatus = (application as any).cancellation_status;
@@ -2844,56 +2750,29 @@ export const approveLeaveCancellation = async (
 
     if (currentCanStatus === "PENDING_SUPERVISOR") {
       if (!isAdmin && employment?.manager_id !== approverId) {
-        return res
-          .status(403)
-          .json({
-            status: "fail",
-            message: "Not authorized to approve this cancellation",
-          });
+        return res.status(403).json({ status: "fail", message: "Not authorized to approve this cancellation" });
       }
       nextStatus = "PENDING_HR";
     } else if (currentCanStatus === "PENDING_HR") {
       if (userRole !== RoleNames.HR && !isAdmin) {
-        return res
-          .status(403)
-          .json({
-            status: "fail",
-            message: "Only HR can approve at this stage",
-          });
+        return res.status(403).json({ status: "fail", message: "Only HR can approve at this stage" });
       }
       nextStatus = "APPROVED";
     } else {
-      return res
-        .status(400)
-        .json({
-          status: "fail",
-          message: "Invalid cancellation status for approval",
-        });
+      return res.status(400).json({ status: "fail", message: "Invalid cancellation status for approval" });
     }
 
     if (nextStatus === "APPROVED") {
       // FINAL APPROVAL: Update the application and balance
-      const requestedReturnDate = new Date(
-        (application as any).requested_return_date!,
-      );
+      const requestedReturnDate = new Date((application as any).requested_return_date!);
       const newEndDate = new Date(requestedReturnDate);
       newEndDate.setDate(newEndDate.getDate() - 1); // End date is the day before they return
       const startDate = new Date(application.start_date);
-
-      const actualRequestedDays = await calculateWorkingDays(
-        startDate,
-        newEndDate,
-        companyId!,
-      );
-      const daysToRestore = Math.max(
-        0,
-        Number(application.requested_days) - actualRequestedDays,
-      );
-
-      const appFiscalYear = await getFiscalYear(
-        companyId!,
-        application.start_date,
-      );
+      
+      const actualRequestedDays = await calculateWorkingDays(startDate, newEndDate, companyId!);
+      const daysToRestore = Math.max(0, Number(application.requested_days) - actualRequestedDays);
+      
+      const appFiscalYear = await getFiscalYear(companyId!, application.start_date);
 
       await prisma.$transaction([
         prisma.leaveApplication.update({
@@ -2922,22 +2801,18 @@ export const approveLeaveCancellation = async (
             application_id: applicationId,
             approver_id: approverId!,
             approver_company_id: companyId!,
-            approver_role: isAdmin
-              ? "Admin"
-              : userRole === RoleNames.HR
-                ? "HR"
-                : "Supervisor",
+            approver_role: isAdmin ? "Admin" : (userRole === RoleNames.HR ? "HR" : "Supervisor"),
             action: "CANCEL_APPROVED",
             comments: comments || "Cancellation approved",
-          },
-        }),
+          }
+        })
       ]);
     } else {
       await prisma.leaveApplication.update({
         where: { id: applicationId },
         data: { cancellation_status: nextStatus } as any,
       });
-
+      
       await prisma.leaveApprovalLog.create({
         data: {
           application_id: applicationId,
@@ -2946,29 +2821,19 @@ export const approveLeaveCancellation = async (
           approver_role: isAdmin ? "Admin" : "Supervisor",
           action: "CANCEL_SIGNED",
           comments: comments || "Cancellation signed",
-        },
+        }
       });
     }
 
     // Get approver name for notification
-    const approver = await prisma.employee.findUnique({
-      where: { id: approverId! },
-      select: { full_name: true },
-    });
-    notifyLeaveCancellationApproved(
-      application,
-      approver?.full_name || "Approver",
-      nextStatus === "APPROVED",
-    ).catch(console.error);
+    const approver = await prisma.employee.findUnique({ where: { id: approverId! }, select: { full_name: true } });
+    notifyLeaveCancellationApproved(application, approver?.full_name || "Approver", nextStatus === "APPROVED").catch(console.error);
 
     redisService.delByPattern(`company:${companyId}:*`).catch(console.error);
 
     res.status(200).json({
       status: "success",
-      message:
-        nextStatus === "APPROVED"
-          ? "Leave cancellation fully approved"
-          : "Leave cancellation approved and moved to HR",
+      message: nextStatus === "APPROVED" ? "Leave cancellation fully approved" : "Leave cancellation approved and moved to HR",
     });
   } catch (error) {
     next(error);
@@ -3006,31 +2871,20 @@ export const rejectLeaveCancellation = async (
           approver_role: "Approver",
           action: "CANCEL_REJECTED",
           comments: reason || "Cancellation rejected",
-        },
-      }),
+        }
+      })
     ]);
 
     // Notify employee
-    const approver = await prisma.employee.findUnique({
-      where: { id: approverId! },
-      select: { full_name: true },
-    });
-    const application = await prisma.leaveApplication.findUnique({
-      where: { id: applicationId },
-    });
+    const approver = await prisma.employee.findUnique({ where: { id: approverId! }, select: { full_name: true } });
+    const application = await prisma.leaveApplication.findUnique({ where: { id: applicationId } });
     if (application) {
-      notifyLeaveCancellationRejected(
-        application,
-        approver?.full_name || "Approver",
-        reason || "No reason provided",
-      ).catch(console.error);
+      notifyLeaveCancellationRejected(application, approver?.full_name || "Approver", reason || "No reason provided").catch(console.error);
     }
 
     redisService.delByPattern(`company:${companyId}:*`).catch(console.error);
 
-    res
-      .status(200)
-      .json({ status: "success", message: "Leave cancellation rejected" });
+    res.status(200).json({ status: "success", message: "Leave cancellation rejected" });
   } catch (error) {
     next(error);
   }

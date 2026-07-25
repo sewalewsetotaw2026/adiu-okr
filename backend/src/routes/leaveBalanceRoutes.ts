@@ -25,7 +25,7 @@ router.use(protect);
 router.get(
   "/me",
   verifyAccessControl(Resources.LEAVE_BALANCE, ActionTypes.READ_OWN),
-  cacheMiddleware("leave_balance_my", 3600, true),
+  cacheMiddleware("leave_balance_my", 3600,true),
   getMyLeaveBalance
 );
 
@@ -33,7 +33,7 @@ router.get(
 router.get(
   "/my-balance",
   verifyAccessControl(Resources.LEAVE_BALANCE, ActionTypes.READ_OWN),
-  cacheMiddleware("leave_balance_my", 3600, true),
+  cacheMiddleware("leave_balance_my", 3600,true),
   getMyLeaveBalance
 );
 
@@ -41,7 +41,7 @@ router.get(
 router.get(
   "/",
   verifyAccessControl(Resources.LEAVE_BALANCE, ActionTypes.READ_ANY),
-  cacheMiddleware("leave_balance_list", 3600),
+  cacheMiddleware("leave_balance_list", 3600,true),
   getAllEmployeesLeaveBalance
 );
 

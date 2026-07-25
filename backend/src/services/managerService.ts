@@ -35,25 +35,14 @@ export const isManager = async (
  */
 export const getTeamMembers = async (
   managerId: string,
-  companyId: number,
-  recursive = false, // Added recursive flag
+  companyId: number
 ): Promise<any[]> => {
   try {
-    let targetManagerIds = [managerId];
-
-    if (recursive) {
-      // Fetch all levels of subordinates
-      const allSubordinateIds = await getAllSubordinateIds(managerId, companyId);
-      targetManagerIds = [managerId, ...allSubordinateIds];
-    }
-
     const teamMembers = await prisma.employment.findMany({
       where: {
-        manager_id: { in: targetManagerIds },
+        manager_id: managerId,
         company_id: companyId,
         is_active: true,
-        // Exclude the manager themselves from the subordinates list
-        employee_id: { not: managerId },
         employee: {
           appUsers: {
             none: {
@@ -80,7 +69,7 @@ export const getTeamMembers = async (
               take: 1,
             },
             appUsers: {
-              select: { id: true, email: true },
+              select: { email: true },
               take: 1,
             },
           },
@@ -109,10 +98,7 @@ export const getTeamMembers = async (
       ...tm,
       employee: {
         ...tm.employee,
-        id: tm.employee.id,
-        user: tm.employee.appUsers?.[0] ? { id: tm.employee.appUsers[0].id } : null,
         email: tm.employee.appUsers?.[0]?.email || null,
-        user_id: tm.employee.appUsers?.[0]?.id || null,
         appUsers: undefined, // Create clean response
       },
     }));
@@ -121,37 +107,6 @@ export const getTeamMembers = async (
     throw error;
   }
 };
-
-/**
- * Helper to fetch all subordinate IDs recursively
- */
-export async function getAllSubordinateIds(
-  managerId: string,
-  companyId: number,
-  seen = new Set<string>(),
-): Promise<string[]> {
-  const directReports = await prisma.employment.findMany({
-    where: {
-      manager_id: managerId,
-      company_id: companyId,
-      is_active: true,
-    },
-    select: { employee_id: true },
-  });
-
-  const directIds = directReports
-    .map((dr) => dr.employee_id)
-    .filter((id) => !seen.has(id));
-
-  let allIds = [...directIds];
-  for (const id of directIds) {
-    seen.add(id);
-    const nested = await getAllSubordinateIds(id, companyId, seen);
-    allIds = [...allIds, ...nested];
-  }
-
-  return Array.from(new Set(allIds));
-}
 
 /**
  * Get team member details (read-only)

@@ -4,7 +4,6 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import path from "path";
 
 const app = express();
 
@@ -95,9 +94,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Public static exports/downloads
-app.use("/exports", express.static(path.join(process.cwd(), "exports")));
-
 // database client
 // database client
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
@@ -112,9 +108,12 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 import routes from "src/config/routes";
 import { protect } from "src/middleware/authMiddleware";
+import { ssoCallback } from "./controllers/authController";
 
+app.get("/auth/callback", ssoCallback);
 // routes
 app.use("/api/v1", routes);
+
 
 app.get("/", (req: Request, res: Response) => {
   res.json({ message: "Employee Management System API" });
@@ -128,76 +127,8 @@ app.get("/api/v1/protected", protect, (req: Request, res: Response) => {
   res.json({ message: "This is a protected route", user: req.user });
 });
 
-function classifyDomainErrorStatus(message: string): number {
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("invalid status transition")) {
-    return 403;
-  }
-
-  if (
-    normalized.includes("not authorized") ||
-    normalized.includes("forbidden")
-  ) {
-    return 403;
-  }
-
-  if (normalized.includes("not found")) {
-    return 404;
-  }
-
-  return 400;
-}
-
-function isDomainValidationError(message: string): boolean {
-  const normalized = message.toLowerCase();
-  const domainSignals = [
-    "not found",
-    "invalid status transition",
-    "not authorized",
-    "forbidden",
-    "is required",
-    "must be",
-    "cannot",
-    "only",
-    "already",
-    "mismatch",
-    "between",
-    "maximum",
-    "minimum",
-    "at least",
-    "at most",
-    "weight",
-    "confidence level",
-    "completion_day",
-    "does not match",
-    "please wait",
-    "not yet planned",
-  ];
-
-  return domainSignals.some((signal) => normalized.includes(signal));
-}
-
 // error handling middleware
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  // Body parser emits SyntaxError on malformed JSON payloads.
-  // Return 400 to avoid surfacing these client mistakes as server crashes.
-  if (err?.type === "entity.parse.failed" || err instanceof SyntaxError) {
-    return res.status(400).json({
-      status: "fail",
-      message: "Malformed JSON in request body",
-    });
-  }
-
-  const message = String(err?.message || "").trim();
-  if (message && isDomainValidationError(message)) {
-    const statusCode = classifyDomainErrorStatus(message);
-    return res.status(statusCode).json({
-      status: "fail",
-      message,
-    });
-  }
-
   process.stderr.write(`[Global Error] ${err.stack}\n`);
   console.error(err.stack);
   res.status(500).json({

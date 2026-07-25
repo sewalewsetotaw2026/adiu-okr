@@ -64,7 +64,7 @@ export const generateCertificateOfService = async (
             },
           },
           orderBy: {
-            effective_date: "asc",
+            effective_date: "desc",
           },
         },
         company: {

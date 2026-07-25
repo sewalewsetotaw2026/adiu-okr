@@ -12,6 +12,7 @@ import {
   transferEmployee,
   getEmployeeCareerEvents,
   getAllCareerEvents,
+  updateCareerEvent, 
 } from "src/controllers/careerController";
 
 import { ActionTypes, Resources } from "src/utils/constants";
@@ -72,4 +73,13 @@ router.get(
   getAllCareerEvents
 );
 
+/**
+ * PUT /api/v1/career/events/:employeeId
+ * Update a career event
+ */
+router.put(
+  "/events/:employeeId",
+  verifyAccessControl(Resources.CAREER_EVENT, ActionTypes.UPDATE_ANY),
+  updateCareerEvent
+);
 export default router;

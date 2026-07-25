@@ -24,7 +24,7 @@ router.get("/is-manager", checkIsManager);
 router.get(
   "/team",
   verifyAccessControl(Resources.EMPLOYEE, ActionTypes.READ_TEAM),
-  cacheMiddleware("teams", 3600, true),
+  cacheMiddleware("teams", 3600,true),
   getMyTeam
 );
 
@@ -32,7 +32,7 @@ router.get(
 router.get(
   "/team/:employeeId",
   verifyAccessControl(Resources.EMPLOYEE, ActionTypes.READ_TEAM),
-  cacheMiddleware("team_member", 3600, true),
+  cacheMiddleware("team_member", 3600,true),
   getTeamMember
 );
 
@@ -40,7 +40,7 @@ router.get(
 router.get(
   "/leave-applications",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_TEAM),
-  cacheMiddleware("team_leave", 1800, true),
+  cacheMiddleware("team_leave", 1800,true),
   getMyTeamLeaveApplications
 );
 
@@ -48,7 +48,7 @@ router.get(
 router.get(
   "/on-leave-today",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_TEAM),
-  cacheMiddleware("team_on_leave_today", 1800, true),
+  cacheMiddleware("team_on_leave_today", 1800,true),
   getMyTeamOnLeaveToday
 );
 

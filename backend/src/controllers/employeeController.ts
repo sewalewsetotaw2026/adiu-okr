@@ -7,13 +7,7 @@ import { sendEmail } from "src/utils/email";
 import { getOnboardingApprovedEmailHtml } from "src/utils/emailTemplates";
 import { fetchEducation } from "./educationController";
 import { redisService } from "src/services/redisService";
-
-const getProbationThresholdDate = (probationDays: number) => {
-  const threshold = new Date();
-  threshold.setHours(0, 0, 0, 0);
-  threshold.setDate(threshold.getDate() - probationDays);
-  return threshold;
-};
+import { publishEmployeeCreated } from "src/integration/events/publishers";
 
 export const countEmployees = async (
   req: Request,
@@ -74,7 +68,10 @@ export const getTabCounts = async (
       where: { company_id: companyId },
     });
     const probationDays = settings?.probation_period_days ?? 90;
-    const probationDateThreshold = getProbationThresholdDate(probationDays);
+    const probationMonths = Math.ceil(probationDays / 30);
+
+    const probationDateThreshold = new Date();
+    probationDateThreshold.setMonth(probationDateThreshold.getMonth() - probationMonths);
 
     const [active, pending, inprogress, inactive, probation] = await Promise.all([
       prisma.employee.count({
@@ -230,35 +227,6 @@ export const fetchAllEmployee = async (
         { full_name: { contains: search, mode: "insensitive" } },
         { id: { contains: search, mode: "insensitive" } },
         { tin_number: { contains: search, mode: "insensitive" } },
-        {
-          appUsers: {
-            some: { email: { contains: search, mode: "insensitive" } },
-          },
-        },
-        {
-          phones: {
-            some: { phone_number: { contains: search, mode: "insensitive" } },
-          },
-        },
-        {
-          employments: {
-            some: {
-              is_active: true,
-              OR: [
-                {
-                  department: {
-                    name: { contains: search, mode: "insensitive" },
-                  },
-                },
-                {
-                  jobTitle: {
-                    title: { contains: search, mode: "insensitive" },
-                  },
-                },
-              ],
-            },
-          },
-        },
       ];
     }
 
@@ -283,7 +251,7 @@ export const fetchAllEmployee = async (
       appUsersConditions.is_active = isActive;
     }
 
-    // Exclude Admin and SuperAdmin roles at the collection level unless explicitly requested
+    // Exclude Admin and SuperAdmin roles at the collection level
     const adminExclusion = {
       role: {
         name: {
@@ -292,15 +260,13 @@ export const fetchAllEmployee = async (
       },
     };
 
-    const includeAdmins = req.query.include_admins === "true";
-
     // Apply combined appUsers filter if any conditions exist
     if (Object.keys(appUsersConditions).length > 0) {
       where.appUsers = {
         some: appUsersConditions,
-        ...(includeAdmins ? {} : { none: adminExclusion }),
+        none: adminExclusion,
       };
-    } else if (!includeAdmins) {
+    } else {
       where.appUsers = {
         none: adminExclusion,
       };
@@ -371,7 +337,7 @@ export const fetchAllEmployee = async (
       where: { company_id: companyId },
     });
     const probationDays = settings?.probation_period_days ?? 90;
-    const probationThresholdDate = getProbationThresholdDate(probationDays);
+    const probationMonths = Math.ceil(probationDays / 30);
 
     // Probation status filter
     if (probationStatus) {
@@ -384,10 +350,9 @@ export const fetchAllEmployee = async (
           {
             AND: [
               { probation_end_date: null },
-              { start_date: { gte: probationThresholdDate } },
-              { newCareerEvents: { none: {} } },
-            ],
-          },
+              { start_date: { gte: new Date(new Date().setMonth(new Date().getMonth() - probationMonths)) } }
+            ]
+          }
         ];
       } else if (probationStatus === "completed") {
         employmentFilters.OR = [
@@ -395,21 +360,13 @@ export const fetchAllEmployee = async (
           {
             AND: [
               { probation_end_date: null },
-              {
-                OR: [
-                  { start_date: { lt: probationThresholdDate } },
-                  { newCareerEvents: { some: {} } },
-                ],
-              },
-            ],
-          },
+              { start_date: { lt: new Date(new Date().setMonth(new Date().getMonth() - probationMonths)) } }
+            ]
+          }
         ];
       } else if (probationStatus === "none") {
         employmentFilters.probation_end_date = null;
-        employmentFilters.OR = [
-          { start_date: { lt: probationThresholdDate } },
-          { newCareerEvents: { some: {} } },
-        ];
+        employmentFilters.start_date = { lt: new Date(new Date().setMonth(new Date().getMonth() - probationMonths)) };
       }
     }
 
@@ -458,7 +415,6 @@ export const fetchAllEmployee = async (
           phones: true,
           appUsers: {
             select: {
-              id: true,
               email: true,
               onboarding_status: true,
             },
@@ -513,9 +469,6 @@ export const fetchAllEmployee = async (
         fullName: emp.full_name,
         firstName: emp.full_name.split(" ")[0],
         lastName: emp.full_name.split(" ").slice(1).join(" "),
-        app_user_id: appUser?.id || null,
-        appUserId: appUser?.id || null,
-        user: appUser ? { id: appUser.id } : null,
         email: appUser?.email || "",
         onboarding_status: appUser?.onboarding_status || "N/A",
         phone: emp.phones.find((p) => p.is_primary)?.phone_number,
@@ -527,22 +480,15 @@ export const fetchAllEmployee = async (
         status: activeEmployment ? "Active" : "Inactive",
         manager: manager
           ? {
-              id: manager.id,
-              full_name: manager.full_name,
-              jobTitle: managerJobTitle,
-            }
+            id: manager.id,
+            full_name: manager.full_name,
+            jobTitle: managerJobTitle,
+          }
           : null,
         managerId: manager?.id,
         joinedDate: activeEmployment?.start_date,
         start_date: activeEmployment?.start_date,
-        probation_end_date:
-          activeEmployment?.probation_end_date ||
-          (activeEmployment?.start_date
-            ? new Date(
-                new Date(activeEmployment.start_date).getTime() +
-                  probationDays * 24 * 60 * 60 * 1000,
-              )
-            : null),
+        probation_end_date: activeEmployment?.probation_end_date || (activeEmployment?.start_date ? new Date(new Date(activeEmployment.start_date).getTime() + probationDays * 24 * 60 * 60 * 1000) : null),
         tin_number: emp.tin_number,
         pension_number: emp.pension_number,
         profile_picture: emp.profile_picture_url || null,
@@ -699,17 +645,9 @@ export const fetchEmployee = async (
     });
     const probationDays = settings?.probation_period_days ?? 90;
 
-    const activeEmployment =
-      employee.employments?.find((e: any) => e.is_active) ||
-      employee.employments?.[0];
+    const activeEmployment = employee.employments?.find((e: any) => e.is_active) || employee.employments?.[0];
     const startDate = activeEmployment?.start_date;
-    const probationEndDate =
-      activeEmployment?.probation_end_date ||
-      (startDate
-        ? new Date(
-            new Date(startDate).getTime() + probationDays * 24 * 60 * 60 * 1000,
-          )
-        : null);
+    const probationEndDate = activeEmployment?.probation_end_date || (startDate ? new Date(new Date(startDate).getTime() + (probationDays * 24 * 60 * 60 * 1000)) : null);
 
     const employeeForFrontend = {
       ...(employee as any),
@@ -740,7 +678,7 @@ export const fetchEmployee = async (
         costSharingDocument: e.cost_sharing_document_urls || [],
         costSharingDocumentUrl:
           e.cost_sharing_document_urls &&
-          e.cost_sharing_document_urls.length > 0
+            e.cost_sharing_document_urls.length > 0
             ? e.cost_sharing_document_urls[0]
             : null,
         costSharings: e.costSharing.map((cs: any) => ({
@@ -762,20 +700,13 @@ export const fetchEmployee = async (
 
         return {
           ...emp,
-          probation_end_date:
-            emp.probation_end_date ||
-            (emp.start_date
-              ? new Date(
-                  new Date(emp.start_date).getTime() +
-                    probationDays * 24 * 60 * 60 * 1000,
-                )
-              : null),
+          probation_end_date: emp.probation_end_date || (emp.start_date ? new Date(new Date(emp.start_date).getTime() + probationDays * 24 * 60 * 60 * 1000) : null),
           manager: manager
             ? {
-                id: manager.id,
-                full_name: manager.full_name,
-                jobTitle: managerJobTitle,
-              }
+              id: manager.id,
+              full_name: manager.full_name,
+              jobTitle: managerJobTitle,
+            }
             : null,
         };
       }),
@@ -811,9 +742,9 @@ export const fetchEmployee = async (
           effective_date: ce.effective_date,
           previousJobTitle: ce.previousJobTitle
             ? {
-                title: ce.previousJobTitle.title,
-                level: ce.previousJobTitle.level,
-              }
+              title: ce.previousJobTitle.title,
+              level: ce.previousJobTitle.level,
+            }
             : null,
           newJobTitle: ce.newJobTitle
             ? { title: ce.newJobTitle.title, level: ce.newJobTitle.level }
@@ -1018,7 +949,7 @@ export const createEmployee = async (
 
       return emp;
     });
-
+    
     // Invalidate Cache
     redisService
       .delByPattern(`company:${companyId}:employees:*`)
@@ -1537,10 +1468,10 @@ export const getPendingEmployees = async (
           ...employee,
           manager: manager
             ? {
-                id: manager.id,
-                full_name: manager.full_name,
-                jobTitle: managerJobTitle,
-              }
+              id: manager.id,
+              full_name: manager.full_name,
+              jobTitle: managerJobTitle,
+            }
             : null,
           educations: employee.educations.map((e) => ({
             id: e.id,
@@ -1681,10 +1612,10 @@ export const getSubmittedEmployees = async (
           ...employee,
           manager: manager
             ? {
-                id: manager.id,
-                full_name: manager.full_name,
-                jobTitle: managerJobTitle,
-              }
+              id: manager.id,
+              full_name: manager.full_name,
+              jobTitle: managerJobTitle,
+            }
             : null,
           educations: employee.educations.map((e: any) => ({
             id: e.id,
@@ -1827,10 +1758,10 @@ export const getCompletedEmployees = async (
           ...employee,
           manager: manager
             ? {
-                id: manager.id,
-                full_name: manager.full_name,
-                jobTitle: managerJobTitle,
-              }
+              id: manager.id,
+              full_name: manager.full_name,
+              jobTitle: managerJobTitle,
+            }
             : null,
           educations: employee.educations.map((e: any) => ({
             id: e.id,
@@ -1892,8 +1823,8 @@ export const approveEmployee = async (
     const numericId = Number(id);
     let user = Number.isFinite(numericId)
       ? await prisma.appUser.findFirst({
-          where: { id: numericId, company_id: companyId },
-        })
+        where: { id: numericId, company_id: companyId },
+      })
       : null;
 
     if (!user) {
@@ -1950,9 +1881,8 @@ export const approveEmployee = async (
     });
 
     if (approvedUser.employee_id) {
-      const loginUrl = `${
-        process.env.FRONTEND_URL || "http://localhost:5173"
-      }/login`;
+      const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"
+        }/login`;
       const employeeName = approvedUser.employee?.full_name || "Employee";
 
       const company = await prisma.company.findUnique({
@@ -2089,9 +2019,8 @@ export const approveOnboarding = async (
       return updatedUser;
     });
 
-    const loginUrl = `${
-      process.env.FRONTEND_URL || "http://localhost:5173"
-    }/login`;
+    const loginUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"
+      }/login`;
     const employeeName = result.employee?.full_name || "Employee";
 
     const company = await prisma.company.findUnique({
@@ -2582,107 +2511,98 @@ export const activateEmployee = async (
   }
 };
 
-
-export const getEmployeeSyncReport = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
+// ==========================================
+// SYNC REPORT
+// ==========================================
+export const getSyncReport = async (
+  req: any,
+  res: any,
+  next: any
 ) => {
   try {
     const companyId = req.user?.company_id;
     if (!companyId) {
-      return res.status(400).json({
-        status: "fail",
-        message: "Company ID not found in user session",
-      });
+      return res.status(400).json({ status: "fail", message: "Company ID required" });
     }
 
-    const rows: any[] = await prisma.$queryRawUnsafe(
-      `
-      WITH latest_career_event AS (
-        SELECT employee_id, MAX(effective_date) AS latest_event_date
-        FROM employee_career_event
-        WHERE event_type IN ('Promotion', 'Demotion', 'Transfer')
-        GROUP BY employee_id
-      ),
-      aggregated_allowances AS (
-        SELECT
-          ea.employment_id,
-          SUM(CASE WHEN LOWER(at.name) LIKE '%transport%' THEN ea.amount ELSE 0 END) AS transportation_allowance,
-          SUM(CASE WHEN LOWER(at.name) LIKE '%telephone%' OR LOWER(at.name) LIKE '%phone%' THEN ea.amount ELSE 0 END) AS telephone_allowance,
-          SUM(CASE WHEN LOWER(at.name) LIKE '%representation%' THEN ea.amount ELSE 0 END) AS representation_allowance,
-          SUM(CASE WHEN LOWER(at.name) LIKE '%housing%' THEN ea.amount ELSE 0 END) AS housing_allowance,
-          SUM(CASE WHEN LOWER(at.name) LIKE '%meal%' THEN ea.amount ELSE 0 END) AS meal_allowance,
-          SUM(CASE WHEN at.is_taxable = true THEN ea.amount ELSE 0 END) AS total_taxable_allowances,
-          SUM(CASE
-            WHEN LOWER(at.name) NOT LIKE '%transport%'
-             AND LOWER(at.name) NOT LIKE '%telephone%'
-             AND LOWER(at.name) NOT LIKE '%phone%'
-             AND LOWER(at.name) NOT LIKE '%representation%'
-             AND LOWER(at.name) NOT LIKE '%housing%'
-             AND LOWER(at.name) NOT LIKE '%meal%'
-            THEN ea.amount ELSE 0
-          END) AS other_payments
-        FROM employee_allowance ea
-        JOIN allowance_type at ON ea.allowance_type_id = at.id
-        WHERE ea.is_active = true
-        GROUP BY ea.employment_id
-      ),
-      active_cost_sharing AS (
-        SELECT employee_id, SUM(declared_total_cost) AS remaining_cost_sharing
-        FROM employee_cost_sharing
-        WHERE status IN ('VERIFIED', 'DECLARED')
-        GROUP BY employee_id
-      )
-      SELECT
-        e.id AS employee_id,
-        e.full_name AS employee_name,
-        e.tin_number,
-        e.pension_number,
-        e.gender,
-        e.date_of_birth,
-        e.place_of_work,
-        jt.title AS job_position,
-        dept.name AS department_name,
-        fd.account_number,
-        emp.start_date AS employment_date,
-        emp.end_date AS employment_end_date,
-        emp.probation_end_date,
-        emp.employment_type,
-        emp.contract_reference,
-        emp.basic_salary,
-        emp.basic_salary AS basic_earning,
-        emp.gross_salary,
-        emp.basic_salary + COALESCE(alw.total_taxable_allowances, 0) AS taxable_remuneration,
-        COALESCE(alw.transportation_allowance, 0) AS transportation_allowance,
-        COALESCE(alw.telephone_allowance, 0) AS telephone_allowance,
-        COALESCE(alw.representation_allowance, 0) AS representation_allowance,
-        COALESCE(alw.housing_allowance, 0) AS housing_allowance,
-        COALESCE(alw.meal_allowance, 0) AS meal_allowance,
-        COALESCE(alw.other_payments, 0) AS other_payments,
-        COALESCE(cs.remaining_cost_sharing, 0) AS cost_sharing_balance,
-        au.email,
-        m.full_name AS manager_name
-      FROM employee e
-      JOIN employment emp ON emp.employee_id = e.id AND emp.is_active = true
-      LEFT JOIN department dept ON emp.department_id = dept.id
-      LEFT JOIN job_title jt ON emp.job_title_id = jt.id
-      LEFT JOIN latest_career_event lce ON lce.employee_id = e.id
-      LEFT JOIN aggregated_allowances alw ON alw.employment_id = emp.id
-      LEFT JOIN active_cost_sharing cs ON cs.employee_id = e.id
-      LEFT JOIN financial_detail fd ON fd.employee_id = e.id AND fd.is_primary = true
-      LEFT JOIN app_user au ON au.employee_id = e.id AND au.company_id = e.company_id AND au.is_active = true
-      LEFT JOIN employee m ON m.id = emp.manager_id
-      WHERE e.company_id = $1
-      ORDER BY e.id ASC
-      `,
-      companyId,
-    );
-
-    res.status(200).json({
-      status: "success",
-      data: rows,
+    const employees = await prisma.employee.findMany({
+      where: { company_id: companyId },
+      include: {
+        employments: {
+          where: { is_active: true },
+          take: 1,
+          include: {
+            department: true,
+            jobTitle: true,
+            allowances: { include: { allowanceType: true } },
+            manager: true
+          }
+        },
+        financialDetails: { take: 1 },
+        appUsers: { take: 1 },
+      }
     });
+
+    const data = employees.map((emp: any) => {
+      const employment = emp.employments[0];
+      const financial = emp.financialDetails[0];
+      const appUser = emp.appUsers[0];
+
+      const getAllowance = (type: string) => {
+        const allowance = employment?.allowances?.find((a: any) => {
+          const name = a.allowanceType?.name?.toUpperCase() || '';
+          return name.includes(type.toUpperCase());
+        });
+        return allowance ? Number(allowance.amount) : null;
+      };
+
+      const getOtherAllowances = () => {
+         const others = employment?.allowances?.filter((a: any) => {
+           const name = a.allowanceType?.name?.toUpperCase() || '';
+           return !name.includes('TRANSPORTATION') && 
+                  !name.includes('TELEPHONE') && 
+                  !name.includes('REPRESENTATION') && 
+                  !name.includes('HOUSING') && 
+                  !name.includes('MEAL');
+         });
+         if (!others || others.length === 0) return null;
+         return others.reduce((sum: number, a: any) => sum + Number(a.amount), 0);
+      };
+
+      return {
+        employee_id: String(emp.id),
+        employee_name: emp.full_name,
+        tin_number: emp.tin_number || null,
+        pension_number: emp.pension_number || null,
+        pension_eligible: true,
+        gender: emp.gender || null,
+        date_of_birth: emp.date_of_birth ? new Date(emp.date_of_birth).toISOString() : null,
+        place_of_work: emp.place_of_work || null,
+        job_position: employment?.jobTitle?.title || null,
+        department_name: employment?.department?.name || null,
+        account_number: financial?.account_number || null,
+        employment_date: employment?.start_date ? new Date(employment.start_date).toISOString() : null,
+        employment_end_date: employment?.end_date ? new Date(employment.end_date).toISOString() : null,
+        probation_end_date: employment?.probation_end_date ? new Date(employment.probation_end_date).toISOString() : null,
+        employment_type: employment?.employment_type || null,
+        contract_reference: employment?.contract_reference || null,
+        basic_salary: employment?.basic_salary ? Number(employment.basic_salary) : null,
+        basic_earning: employment?.basic_salary ? Number(employment.basic_salary) : null,
+        gross_salary: employment?.gross_salary ? Number(employment.gross_salary) : null,
+        taxable_remuneration: null,
+        transportation_allowance: getAllowance('TRANSPORTATION'),
+        telephone_allowance: getAllowance('TELEPHONE'),
+        representation_allowance: getAllowance('REPRESENTATION'),
+        housing_allowance: getAllowance('HOUSING'),
+        meal_allowance: getAllowance('MEAL'),
+        other_payments: getOtherAllowances(),
+        cost_sharing_balance: employment?.cost_sharing_amount ? Number(employment.cost_sharing_amount) : null,
+        email: appUser?.email || null,
+        manager_name: employment?.manager?.full_name || null,
+      };
+    });
+
+    res.status(200).json({ status: "success", data });
   } catch (error) {
     next(error);
   }

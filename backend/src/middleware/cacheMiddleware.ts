@@ -5,7 +5,6 @@ import { redisService } from '../services/redisService';
  * Middleware factory for caching GET requests
  * @param resource The resource name (e.g., 'employees', 'analytics')
  * @param ttlSeconds Cache expiration time
- * @param userSpecific Whether the cache key should be specific to the requesting user
  */
 export const cacheMiddleware = (resource: string, ttlSeconds: number = 3600, userSpecific: boolean = false) => {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -21,6 +20,7 @@ export const cacheMiddleware = (resource: string, ttlSeconds: number = 3600, use
     }
 
     // Generate unique key based on URL, query, and company
+    //const cacheKey = redisService.generateKey(companyId, resource, req.path, req.query);
     let cacheKey = redisService.generateKey(companyId, resource, req.path, req.query);
 
     if (userSpecific && req.user?.user_id) {

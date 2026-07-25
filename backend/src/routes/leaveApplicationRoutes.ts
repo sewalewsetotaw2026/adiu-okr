@@ -33,7 +33,7 @@ router.use(protect);
 router.get(
   "/me",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_OWN),
-  cacheMiddleware("leave_my", 1800, true),
+  cacheMiddleware("leave_my", 1800,true),
   getMyLeaveApplications
 );
 
@@ -41,7 +41,7 @@ router.get(
 router.get(
   "/my-applications",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_OWN),
-  cacheMiddleware("leave_my", 1800, true),
+  cacheMiddleware("leave_my", 1800,true),
   getMyLeaveApplications
 );
 
@@ -79,7 +79,7 @@ router.post(
 router.get(
   "/",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_ANY),
-  cacheMiddleware("leave_list", 1800),
+  cacheMiddleware("leave_list", 1800,true),
   getAllLeaveApplications
 );
 
@@ -110,7 +110,7 @@ router.get(
 router.get(
   "/stats",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_ANY),
-  cacheMiddleware("leave_stats", 1800),
+  cacheMiddleware("leave_stats", 1800,true),
   getLeaveStats
 );
 
@@ -118,7 +118,7 @@ router.get(
 router.get(
   "/statistics",
   verifyAccessControl(Resources.LEAVE_APPLICATION, ActionTypes.READ_ANY),
-  cacheMiddleware("leave_stats", 1800),
+  cacheMiddleware("leave_stats", 1800,true),
   getLeaveStats
 );
 

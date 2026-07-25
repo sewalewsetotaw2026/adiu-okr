@@ -7,6 +7,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "src/app";
+import { Prisma } from "@prisma/client"; // Add this for the Decimal type
 import { getCareerEventEmailHtml } from "src/utils/emailTemplates";
 import { sendEmail } from "src/utils/email";
 import * as celebrationService from "src/services/celebrationService";
@@ -87,20 +88,6 @@ export const promoteEmployee = async (
         message: "Active employment not found for this employee",
       });
     }
-
-    const settings = await prisma.employeeSettings.findUnique({
-      where: { company_id: companyId },
-      select: { probation_period_days: true },
-    });
-    const probationDays = settings?.probation_period_days ?? 90;
-    const carriedProbationEndDate =
-      currentEmployment.probation_end_date ||
-      (currentEmployment.start_date
-        ? new Date(
-            new Date(currentEmployment.start_date).getTime() +
-              probationDays * 24 * 60 * 60 * 1000,
-          )
-        : null);
 
     // Resolve job title - first try by ID, then by name (upsert)
     let resolvedJobTitleId: number | null = null;
@@ -190,7 +177,7 @@ export const promoteEmployee = async (
         where: {
           employee_id: employee_id,
           company_id: companyId,
-          is_active: true,
+          is_active: true
         },
         data: {
           is_active: false,
@@ -212,7 +199,6 @@ export const promoteEmployee = async (
           basic_salary: new_basic_salary
             ? parseFloat(new_basic_salary)
             : currentEmployment.basic_salary,
-          probation_end_date: carriedProbationEndDate,
           is_active: true,
         },
       });
@@ -326,7 +312,7 @@ export const promoteEmployee = async (
         companyName,
         logoUrl,
         primaryColor,
-        secondaryColor,
+        secondaryColor
       );
 
       await sendEmail({
@@ -385,6 +371,7 @@ export const promoteEmployee = async (
       );
     }
 
+
     // Invalidate Cache for Employee data
     const patterns = [
       `company:${companyId}:employees:*`,
@@ -395,9 +382,7 @@ export const promoteEmployee = async (
       `company:${companyId}:employees_search:*`,
       `company:${companyId}:analytics:*`,
     ];
-    Promise.all(patterns.map((p) => redisService.delByPattern(p))).catch(
-      console.error,
-    );
+    Promise.all(patterns.map(p => redisService.delByPattern(p))).catch(console.error);
 
     res.status(201).json({
       status: "success",
@@ -490,7 +475,7 @@ export const demoteEmployee = async (
         where: {
           employee_id: employee_id,
           company_id: companyId,
-          is_active: true,
+          is_active: true
         },
         data: { is_active: false, end_date: new Date(effective_date) },
       });
@@ -610,7 +595,7 @@ export const demoteEmployee = async (
         companyName,
         logoUrl,
         primaryColor,
-        secondaryColor,
+        secondaryColor
       );
       await sendEmail({
         to: employeeUser.email,
@@ -618,6 +603,7 @@ export const demoteEmployee = async (
         html: emailHtml,
       });
     }
+
 
     // Invalidate Cache for Employee data
     const patterns = [
@@ -629,9 +615,7 @@ export const demoteEmployee = async (
       `company:${companyId}:employees_search:*`,
       `company:${companyId}:analytics:*`,
     ];
-    Promise.all(patterns.map((p) => redisService.delByPattern(p))).catch(
-      console.error,
-    );
+    Promise.all(patterns.map(p => redisService.delByPattern(p))).catch(console.error);
 
     res.status(201).json({
       status: "success",
@@ -715,7 +699,7 @@ export const transferEmployee = async (
         where: {
           employee_id: employee_id,
           company_id: companyId,
-          is_active: true,
+          is_active: true
         },
         data: { is_active: false, end_date: new Date(effective_date) },
       });
@@ -832,7 +816,7 @@ export const transferEmployee = async (
         companyName,
         logoUrl,
         primaryColor,
-        secondaryColor,
+        secondaryColor
       );
       await sendEmail({
         to: employeeUser.email,
@@ -840,6 +824,7 @@ export const transferEmployee = async (
         html: emailHtml,
       });
     }
+
 
     // Invalidate Cache for Employee data
     const patterns = [
@@ -851,9 +836,7 @@ export const transferEmployee = async (
       `company:${companyId}:employees_search:*`,
       `company:${companyId}:analytics:*`,
     ];
-    Promise.all(patterns.map((p) => redisService.delByPattern(p))).catch(
-      console.error,
-    );
+    Promise.all(patterns.map(p => redisService.delByPattern(p))).catch(console.error);
 
     res.status(201).json({
       status: "success",
@@ -908,9 +891,9 @@ export const getEmployeeCareerEvents = async (
             manager: {
               select: {
                 id: true,
-                full_name: true,
-              },
-            },
+                full_name: true
+              }
+            }
           },
         },
         newEmployment: {
@@ -919,15 +902,15 @@ export const getEmployeeCareerEvents = async (
             manager: {
               select: {
                 id: true,
-                full_name: true,
-              },
-            },
+                full_name: true
+              }
+            }
           },
         },
         approver: { select: { id: true, full_name: true } },
         recorder: { select: { id: true, full_name: true } },
       },
-      orderBy: { event_date: "desc" },
+      orderBy: { effective_date: "desc" },
     });
 
     res.status(200).json({
@@ -1000,6 +983,226 @@ export const getAllCareerEvents = async (
         careerEvents,
         pagination: { total, page, limit, totalPages },
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update an existing Career Event
+ */
+export const updateCareerEvent = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const companyId = req.user?.company_id;
+    const recordedBy = req.user?.employee_id;
+
+    const {
+      careerEventId,
+      new_job_title_id,
+      new_job_title_name,
+      new_department_id,
+      new_department_name,
+      new_gross_salary,
+      new_basic_salary,
+      effective_date,
+      justification,
+      notes,
+      approved_by,
+      new_allowances,
+      document_urls,
+    } = req.body;
+
+    if (!careerEventId) {
+      return res.status(400).json({
+        status: "fail",
+        message: "careerEventId is required",
+      });
+    }
+
+    // Fetch existing career event with employment data
+    const careerEvent = await prisma.employeeCareerEvent.findUnique({
+      where: { id: careerEventId },
+      include: {
+        newEmployment: true,
+        previousEmployment: true,
+      },
+    });
+
+    if (!careerEvent) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Career event not found",
+      });
+    }
+
+    const updatedResult = await prisma.$transaction(async (tx) => {
+      // Resolve job title
+      let resolvedJobTitleId = new_job_title_id
+        ? parseInt(new_job_title_id)
+        : careerEvent.new_job_title_id;
+
+      if (!resolvedJobTitleId && new_job_title_name) {
+        const jobTitle = await tx.jobTitle.upsert({
+          where: {
+            company_id_title_level: {
+              company_id: companyId!,
+              title: new_job_title_name,
+              level: "",
+            },
+          },
+          create: { company_id: companyId!, title: new_job_title_name, level: "" },
+          update: {},
+        });
+        resolvedJobTitleId = jobTitle.id;
+      }
+
+      // Resolve department
+      let resolvedDeptId = new_department_id
+        ? parseInt(new_department_id)
+        : careerEvent.newEmployment?.department_id;
+
+      if (!resolvedDeptId && new_department_name) {
+        const department = await tx.department.upsert({
+          where: {
+            company_id_name: {
+              company_id: companyId!,
+              name: new_department_name,
+            },
+          },
+          create: { company_id: companyId!, name: new_department_name },
+          update: {},
+        });
+        resolvedDeptId = department.id;
+      }
+
+      // Update the linked employment
+      const updatedEmployment = await tx.employment.update({
+        where: { id: careerEvent.new_employment_id! },
+        data: {
+          job_title_id: resolvedJobTitleId!,
+          department_id: resolvedDeptId!,
+          gross_salary: new_gross_salary
+            ? new Prisma.Decimal(new_gross_salary)
+            : careerEvent.newEmployment?.gross_salary,
+          basic_salary: new_basic_salary
+            ? new Prisma.Decimal(new_basic_salary)
+            : careerEvent.newEmployment?.basic_salary,
+          start_date: effective_date
+            ? new Date(effective_date)
+            : careerEvent.newEmployment?.start_date,
+        },
+      });
+
+      // Update career event
+      const updatedCareerEvent = await tx.employeeCareerEvent.update({
+        where: { id: careerEventId },
+        data: {
+          new_job_title_id: resolvedJobTitleId!,
+          new_employment_id: updatedEmployment.id,
+          new_salary: new_gross_salary
+            ? new Prisma.Decimal(new_gross_salary)
+            : careerEvent.new_salary,
+          previous_salary: careerEvent.previous_salary,
+          department_changed:
+            resolvedDeptId !== careerEvent.previousEmployment?.department_id,
+          effective_date: effective_date
+            ? new Date(effective_date)
+            : careerEvent.effective_date,
+          justification: justification || careerEvent.justification,
+          notes: notes || careerEvent.notes,
+          approved_by: approved_by || careerEvent.approved_by,
+          document_urls: document_urls || careerEvent.document_urls,
+        },
+      });
+
+      // Handle Allowances - DELETE, UPDATE, CREATE
+      if (new_allowances && Array.isArray(new_allowances)) {
+        // Get existing allowances
+        const existingAllowances = await tx.employeeAllowance.findMany({
+          where: {
+            employment_id: careerEvent.new_employment_id!,
+            is_active: true,
+          },
+        });
+
+        const existingAllowanceIds = existingAllowances.map(a => a.id);
+        const submittedAllowanceIds = new_allowances.filter(a => a.id).map(a => a.id);
+        
+        // DELETE allowances that are no longer in the submission
+        const allowancesToDelete = existingAllowanceIds.filter(id => !submittedAllowanceIds.includes(id));
+        
+        if (allowancesToDelete.length > 0) {
+          console.log(`Deleting allowances: ${allowancesToDelete.join(', ')}`);
+          await tx.employeeAllowance.deleteMany({
+            where: {
+              id: { in: allowancesToDelete },
+            },
+          });
+        }
+        
+        // UPDATE or CREATE allowances
+        for (const allowance of new_allowances) {
+          if (allowance.id) {
+            // Check if allowance exists
+            const existingAllowance = await tx.employeeAllowance.findUnique({
+              where: { id: allowance.id },
+            });
+            
+            if (existingAllowance) {
+              // Update existing allowance
+              console.log(`Updating allowance ${allowance.id}`);
+              await tx.employeeAllowance.update({
+                where: { id: allowance.id },
+                data: {
+                  allowance_type_id: allowance.allowance_type_id,
+                  amount: allowance.amount,
+                  currency: allowance.currency || "ETB",
+                  effective_date: effective_date ? new Date(effective_date) : new Date(),
+                },
+              });
+            } else {
+              // Create new allowance (ID provided but doesn't exist)
+              console.log(`Creating new allowance for ID ${allowance.id} (didn't exist)`);
+              await tx.employeeAllowance.create({
+                data: {
+                  employment_id: updatedEmployment.id,
+                  allowance_type_id: allowance.allowance_type_id,
+                  amount: allowance.amount,
+                  currency: allowance.currency || "ETB",
+                  is_active: true,
+                  effective_date: effective_date ? new Date(effective_date) : new Date(),
+                },
+              });
+            }
+          } else {
+            // Create brand new allowance
+            console.log(`Creating brand new allowance`);
+            await tx.employeeAllowance.create({
+              data: {
+                employment_id: updatedEmployment.id,
+                allowance_type_id: allowance.allowance_type_id,
+                amount: allowance.amount,
+                currency: allowance.currency || "ETB",
+                is_active: true,
+                effective_date: effective_date ? new Date(effective_date) : new Date(),
+              },
+            });
+          }
+        }
+      }
+
+      return { updatedCareerEvent, updatedEmployment };
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Career event updated successfully",
+      data: updatedResult,
     });
   } catch (error) {
     next(error);

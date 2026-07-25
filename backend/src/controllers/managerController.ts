@@ -61,8 +61,7 @@ export const getMyTeam = async (
     // const managerStatus = await isManager(employeeId, companyId);
     // if (!managerStatus) { ... }
 
-    const recursive = req.query.recursive === "true";
-    const teamMembers = await getTeamMembers(employeeId, companyId, recursive);
+    const teamMembers = await getTeamMembers(employeeId, companyId);
 
     res.status(200).json({
       status: "success",
