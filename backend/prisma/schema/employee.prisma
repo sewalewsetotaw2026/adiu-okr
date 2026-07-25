@@ -24,10 +24,11 @@ model Company {
   jobLevels             JobLevel[]
   leaveSettings         LeaveSettings?
   leaveTypes            LeaveType[]
+  passwordChangeLogs    PasswordChangeLog[]
   publicHolidays        PublicHoliday[]
   documentSignerConfigs DocumentSignerConfig[]
   employeeSettings      EmployeeSettings?
-
+  emailSettings     CompanyEmailSettings?
   @@map("company")
 }
 
@@ -37,6 +38,8 @@ model Department {
   name            String                @db.VarChar(100)
   department_code String?               @db.VarChar(20)
   company         Company               @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  is_active       Boolean               @default(true)
+  archived_at     DateTime?
   employments     Employment[]
   head_user_id    Int?
   head            AppUser?              @relation("DepartmentHead", fields: [head_user_id], references: [id])
@@ -461,13 +464,15 @@ model AppUser {
   company            Company             @relation(fields: [company_id], references: [id], onDelete: Cascade)
   employee           Employee?           @relation(fields: [employee_id], references: [id])
   role               AppRole             @relation(fields: [role_id], references: [id])
-  passwordResets     PasswordReset[]
+  passwordChangesMade   PasswordChangeLog[] @relation("ChangedByUser")
+  passwordChangesTarget PasswordChangeLog[] @relation("TargetUser")
+  passwordResets        PasswordReset[]
   employeeObjectives EmployeeObjective[]
   headedDepartments  Department[]        @relation("DepartmentHead")
   krContributors     KrContributor[]
   okrRequestsSent     OkrChangeRequest[]  @relation("OkrRequester")
   okrRequestsReviewed OkrChangeRequest[]  @relation("OkrReviewer")
-
+  
   @@unique([company_id, employee_id])
   @@index([company_id], map: "idx_app_user_company")
   @@index([role_id], map: "idx_app_user_role")
@@ -486,7 +491,18 @@ model PasswordReset {
   @@index([user_id])
   @@map("password_reset")
 }
+model PasswordChangeLog {
+  id             Int       @id @default(autoincrement())
+  target_user_id Int
+  changed_by_id  Int
+  company_id     Int
+  changed_at     DateTime? @default(now()) @db.Timestamp(6)
+  changed_by     AppUser   @relation("ChangedByUser", fields: [changed_by_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_changed_by")
+  company        Company   @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_company")
+  target_user    AppUser   @relation("TargetUser", fields: [target_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_target_user")
 
+  @@map("password_change_log")
+}
 model AppResource {
   id          Int             @id @default(autoincrement())
   code        String          @unique @db.VarChar(100)
@@ -717,6 +733,23 @@ model EmployeeSettings {
   company                     Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
 
   @@map("employee_settings")
+}
+model CompanyEmailSettings {
+  id               Int      @id @default(autoincrement())
+  company_id       Int      @unique
+  provider         String   @default("nodemailer") @db.VarChar(50)
+  smtp_host        String?  @db.VarChar(150)
+  smtp_port        Int?
+  smtp_user        String?  @db.VarChar(150)
+  smtp_pass        String?  @db.VarChar(255)
+  smtp_from        String?  @db.VarChar(150)
+  resend_api_key   String?  @db.VarChar(255)
+  brevo_api_key    String?  @db.VarChar(255)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  company          Company  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@map("company_email_settings")
 }
 
 // =============================================================================
